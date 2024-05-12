@@ -1,23 +1,26 @@
 const std = @import("std");
 const String = @import("string.zig").String;
-const Lexer = @import("lexer.zig");
+const Lexer = @import("zapts").Lexer;
+const Token = @import("consts.zig").Token;
+const Parser = @import("parser.zig");
+const SymbolsTable = @import("symbol_table.zig").SymbolTable;
 const fs = std.fs;
 const ArrayList = std.ArrayList;
 
-const CompileError = error{UnknownCharacter};
-
-const CHUNK_SIZE = 1000;
+// 10 MB ?
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
 pub fn main() !void {
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
+    var allocator = std.heap.page_allocator;
 
-    const args = try std.process.argsAlloc(arena.allocator());
+    const args = try std.process.argsAlloc(allocator);
+    defer std.process.argsFree(allocator, args);
+
     std.log.info("\nArgs: {s}", .{args});
 
     if (args.len < 2) {
         std.log.info("You need to provide filename!", .{});
-        std.log.info("Usage: zig-tsc <filename>", .{});
+        std.log.info("Usage: zapts <filename>", .{});
         return;
     }
 
@@ -30,21 +33,27 @@ pub fn main() !void {
     var file = try fs.cwd().openFile(filename, .{ .mode = .read_only });
     defer file.close();
 
-    var lexer = Lexer.init(arena.allocator(), .{ .file = &file });
+    const buffer = try file.readToEndAlloc(allocator, MAX_FILE_SIZE);
 
-    var token: Lexer.Token = undefined;
-    while (true) {
-        token = lexer.next() catch |err| {
-            if (err == error.EndOfStream) {
-                break;
-            }
+    var lexer = Lexer.init(allocator, buffer);
 
-            return err;
-        };
+    const tokens = try lexer.nextAll();
+    defer tokens.deinit();
+
+    allocator.free(buffer);
+
+    for (tokens.items) |token| {
         if (token.value) |v| {
-            std.log.info("token: type={} value={s} ({1d})", .{ token.type, v.value() });
+            std.log.info("token: type={} value={s} ({1d})", .{ token.type, v });
         } else {
             std.log.info("token: type={}", .{token.type});
         }
+    }
+
+    var parser = Parser.init(allocator, tokens);
+    const nodes = try parser.parse();
+
+    for (nodes.items) |node| {
+        std.log.info("node {}", .{node});
     }
 }

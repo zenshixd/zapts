@@ -1,12 +1,10 @@
 import * as fs from 'fs';
 
 const VERSION = 2_123.23;
-const \u0055 = '😠';
 
-function fn() {
+function fn(param1) {
     const hello = 'hello world';
     console.log(hello + ' 123');
-    console.log(U);
 }
 
-fn();
+fn(23);

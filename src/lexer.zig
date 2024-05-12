@@ -1,172 +1,42 @@
 const std = @import("std");
 const String = @import("string.zig").String;
+const consts = @import("consts.zig");
+const SymbolsTable = @import("symbol_table.zig").SymbolTable;
+const Symbol = @import("symbol_table.zig").Symbol;
+const SymbolType = @import("symbol_table.zig").SymbolType;
+const Token = consts.Token;
+const TokenType = consts.TokenType;
+const keywords_map = consts.keywords_map;
+const PUNCTUATION_CHARS = consts.PUNCTUATION_CHARS;
+const OPERATOR_CHARS = consts.OPERATOR_CHARS;
+const WHITESPACE = consts.WHITESPACE;
+const KEYWORDS = consts.KEYWORDS;
 const File = std.fs.File;
 const FixedBufferStream = std.io.FixedBufferStream;
 const Allocator = std.mem.Allocator;
 
-pub const PUNCTUATION_CHARS = ".,:;()[]'\"{}";
-pub const OPERATOR_CHARS = "<>?+-=*|&!%/\\";
-pub const WHITESPACE = " \t\n\r";
-// zig fmt: off
-pub const KEYWORDS = [_][]const u8{
-    "var",
-    "const",
-    "async",
-    "await",
-    "function",
-    "return",
-    "for",
-    "while",
-    "break",
-    "continue",
-    "do",
-    "if",
-    "else",
-    "class",
-    "extends",
-    "interface",
-    "type",
-    "case",
-    "catch",
-    "debugger",
-    "default",
-    "delete",
-    "enum",
-    "import",
-    "export",
-    "false",
-    "true",
-    "finally",
-    "try",
-    "catch",
-    "in",
-    "instanceof",
-    "new",
-    "null",
-    "super",
-    "switch",
-    "this",
-    "throw",
-    "void",
-    "with",
-    "as",
-    "implements",
-    "package",
-    "private",
-    "protected",
-    "public",
-    "static",
-    "yield",
-    "from"
-};
-
-pub const TokenType = enum(u8) {
-    Eof,
-    Whitespace,
-    LineComment,
-    MultilineComment,
-    Identifier,
-    Keyword,
-    StringConstant,
-    NumberConstant,
-    BigIntConstant,
-    Ampersand,
-    AmpersandAmpersand,
-    Caret,
-    Bar,
-    BarBar,
-    Plus,
-    PlusPlus,
-    Minus,
-    MinusMinus,
-    Star,
-    StarStar,
-    Slash,
-    Percent,
-    ExclamationMark,
-    ExclamationMarkEqual,
-    ExclamationMarkEqualEqual,
-    Equal,
-    EqualEqual,
-    EqualEqualEqual,
-    GreaterThan,
-    GreaterThanEqual,
-    GreaterThanGreaterThan,
-    GreaterThanGreaterThanEqual,
-    GreaterThanGreaterThanGreaterThan,
-    GreaterThanGreaterThanGreaterThanEqual,
-    LessThan,
-    LessThanEqual,
-    LessThanLessThan,
-    LessThanLessThanEqual,
-    AmpersandEqual,
-    AmpersandAmpersandEqual,
-    BarEqual,
-    BarBarEqual,
-    CaretEqual,
-    PlusEqual,
-    MinusEqual,
-    StarEqual,
-    StarStarEqual,
-    SlashEqual,
-    PercentEqual,
-    OpenCurlyBrace,
-    CloseCurlyBrace,
-    OpenSquareBracket,
-    CloseSquareBracket,
-    OpenParen,
-    CloseParen,
-    Dot,
-    DotDotDot,
-    Comma,
-    Semicolon,
-    Colon,
-    QuestionMark,
-    QuestionMarkDot,
-    QuestionMarkQuestionMark,
-    QuestionMarkQuestionMarkEqual,
-    At,
-    Tilde,
-};
-// zig fmt: on
-
-pub const Token = struct {
-    type: TokenType,
-    value: ?String,
-
-    pub fn deinit(self: *Token) void {
-        if (self.value) |value| {
-            value.deinit();
-        }
-    }
-};
-
-const StreamType = enum {
-    fixed_buffer,
-    file,
-};
-
-const Stream = union(StreamType) {
-    fixed_buffer: *FixedBufferStream([]const u8),
-    file: *File,
-};
+pub const LexerError = error{ SyntaxError, EndOfStream, OutOfMemory };
 
 const Self = @This();
 
-stream: Stream,
 allocator: Allocator,
+buffer: []const u8,
+index: usize = 0,
 
-pub fn init(allocator: Allocator, stream: Stream) Self {
-    return .{ .allocator = allocator, .stream = stream };
+pub fn init(allocator: Allocator, buffer: []const u8) Self {
+    return .{ .allocator = allocator, .buffer = buffer };
 }
 
-pub fn next(self: Self) !Token {
-    var token: Token = undefined;
-    var current_char: u8 = try self.advance();
-
+pub fn next(self: *Self, current_char: u8) !Token {
     switch (current_char) {
-        '\n', '\r', ' ', '\t' => {
-            token = Token{
+        '\n' => {
+            return Token{
+                .type = TokenType.NewLine,
+                .value = null,
+            };
+        },
+        '\r', ' ', '\t' => {
+            return Token{
                 .type = TokenType.Whitespace,
                 .value = null,
             };
@@ -174,7 +44,7 @@ pub fn next(self: Self) !Token {
         '<' => {
             var next_char = try self.advance();
             if (next_char == '=') {
-                token = Token{
+                return Token{
                     .type = TokenType.LessThanEqual,
                     .value = null,
                 };
@@ -182,20 +52,20 @@ pub fn next(self: Self) !Token {
                 next_char = try self.advance();
 
                 if (next_char == '=') {
-                    token = Token{
+                    return Token{
                         .type = TokenType.LessThanLessThanEqual,
                         .value = null,
                     };
                 } else {
                     try self.rewind(-1);
-                    token = Token{
+                    return Token{
                         .type = TokenType.LessThanLessThan,
                         .value = null,
                     };
                 }
             } else {
                 try self.rewind(-1);
-                token = Token{
+                return Token{
                     .type = TokenType.LessThan,
                     .value = null,
                 };
@@ -204,37 +74,43 @@ pub fn next(self: Self) !Token {
         '>' => {
             var next_char = try self.advance();
             if (next_char == '=') {
-                token = Token{
+                return Token{
                     .type = TokenType.GreaterThanEqual,
                     .value = null,
                 };
             } else if (next_char == '>') {
                 next_char = try self.advance();
 
-                if (next_char == '=') {
-                    token = Token{
-                        .type = TokenType.GreaterThanGreaterThanEqual,
-                        .value = null,
-                    };
-                } else {
+                if (next_char == '>') {
                     next_char = try self.advance();
 
                     if (next_char == '=') {
-                        token = Token{
+                        return Token{
                             .type = TokenType.GreaterThanGreaterThanGreaterThanEqual,
                             .value = null,
                         };
                     } else {
                         try self.rewind(-1);
-                        token = Token{
+                        return Token{
                             .type = TokenType.GreaterThanGreaterThanGreaterThan,
                             .value = null,
                         };
                     }
+                } else if (next_char == '=') {
+                    return Token{
+                        .type = TokenType.GreaterThanGreaterThanEqual,
+                        .value = null,
+                    };
+                } else {
+                    try self.rewind(-1);
+                    return Token{
+                        .type = TokenType.GreaterThanGreaterThan,
+                        .value = null,
+                    };
                 }
             } else {
                 try self.rewind(-1);
-                token = Token{
+                return Token{
                     .type = TokenType.GreaterThan,
                     .value = null,
                 };
@@ -246,19 +122,19 @@ pub fn next(self: Self) !Token {
                 next_char = try self.advance();
 
                 if (next_char == '=') {
-                    token = Token{
+                    return Token{
                         .type = TokenType.ExclamationMarkEqualEqual,
                         .value = null,
                     };
                 } else {
-                    token = Token{
+                    return Token{
                         .type = TokenType.ExclamationMarkEqual,
                         .value = null,
                     };
                 }
             } else {
                 try self.rewind(-1);
-                token = Token{
+                return Token{
                     .type = TokenType.ExclamationMark,
                     .value = null,
                 };
@@ -267,40 +143,33 @@ pub fn next(self: Self) !Token {
         '/' => {
             var next_char = try self.advance();
             if (next_char == '=') {
-                token = Token{
+                return Token{
                     .type = TokenType.SlashEqual,
                     .value = null,
                 };
             } else if (next_char == '/') {
                 var str = try String.new(self.allocator, 100);
+
                 while (true) {
-                    next_char = try self.advance();
+                    next_char = try self.maybe_advance() orelse break;
                     if (next_char == '\n' or next_char == '\r') {
                         break;
                     }
                     try str.append(next_char);
                 }
-                token = Token{
+
+                return Token{
                     .type = TokenType.LineComment,
-                    .value = str,
+                    .value = str.value(),
                 };
             } else if (next_char == '*') {
                 var str = try String.new(self.allocator, 100);
+
                 while (true) {
-                    next_char = self.advance() catch |err| {
-                        if (err == error.EndOfStream) {
-                            break;
-                        }
-                        return err;
-                    };
+                    next_char = try self.maybe_advance() orelse break;
 
                     if (next_char == '*') {
-                        const one_more_char = self.advance() catch |err| {
-                            if (err == error.EndOfStream) {
-                                break;
-                            }
-                            return err;
-                        };
+                        const one_more_char = try self.maybe_advance() orelse break;
 
                         if (one_more_char == '/') {
                             break;
@@ -312,13 +181,14 @@ pub fn next(self: Self) !Token {
                         try str.append(next_char);
                     }
                 }
-                token = Token{
+
+                return Token{
                     .type = TokenType.MultilineComment,
-                    .value = str,
+                    .value = str.value(),
                 };
             } else {
                 try self.rewind(-1);
-                token = Token{
+                return Token{
                     .type = TokenType.Slash,
                     .value = null,
                 };
@@ -329,25 +199,25 @@ pub fn next(self: Self) !Token {
             if (next_char == '&') {
                 next_char = try self.advance();
                 if (next_char == '=') {
-                    token = Token{
+                    return Token{
                         .type = TokenType.AmpersandAmpersandEqual,
                         .value = null,
                     };
                 } else {
                     try self.rewind(-1);
-                    token = Token{
+                    return Token{
                         .type = TokenType.AmpersandAmpersand,
                         .value = null,
                     };
                 }
             } else if (next_char == '=') {
-                token = Token{
+                return Token{
                     .type = TokenType.AmpersandEqual,
                     .value = null,
                 };
             } else {
                 try self.rewind(-1);
-                token = Token{
+                return Token{
                     .type = TokenType.Ampersand,
                     .value = null,
                 };
@@ -356,13 +226,13 @@ pub fn next(self: Self) !Token {
         '^' => {
             const next_char = try self.advance();
             if (next_char == '=') {
-                token = Token{
+                return Token{
                     .type = TokenType.CaretEqual,
                     .value = null,
                 };
             } else {
                 try self.rewind(-1);
-                token = Token{
+                return Token{
                     .type = TokenType.Caret,
                     .value = null,
                 };
@@ -373,25 +243,25 @@ pub fn next(self: Self) !Token {
             if (next_char == '|') {
                 next_char = try self.advance();
                 if (next_char == '=') {
-                    token = Token{
+                    return Token{
                         .type = TokenType.BarBarEqual,
                         .value = null,
                     };
                 } else {
                     try self.rewind(-1);
-                    token = Token{
+                    return Token{
                         .type = TokenType.BarBar,
                         .value = null,
                     };
                 }
             } else if (next_char == '=') {
-                token = Token{
+                return Token{
                     .type = TokenType.BarEqual,
                     .value = null,
                 };
             } else {
                 try self.rewind(-1);
-                token = Token{
+                return Token{
                     .type = TokenType.Bar,
                     .value = null,
                 };
@@ -400,13 +270,20 @@ pub fn next(self: Self) !Token {
         '+' => {
             const next_char = try self.advance();
             if (next_char == '=') {
-                token = Token{
+                return Token{
                     .type = TokenType.PlusEqual,
                     .value = null,
                 };
+            } else if (next_char == '+') {
+                return Token{
+                    .type = TokenType.PlusPlus,
+                    .value = null,
+                };
+            } else if ((next_char > '0' and next_char < '9') or next_char == '.') {
+                return self.read_numeric_literal(&[_]u8{ current_char, next_char }, next_char == '.');
             } else {
                 try self.rewind(-1);
-                token = Token{
+                return Token{
                     .type = TokenType.Plus,
                     .value = null,
                 };
@@ -415,18 +292,20 @@ pub fn next(self: Self) !Token {
         '-' => {
             const next_char = try self.advance();
             if (next_char == '=') {
-                token = Token{
+                return Token{
                     .type = TokenType.MinusEqual,
                     .value = null,
                 };
             } else if (next_char == '-') {
-                token = Token{
+                return Token{
                     .type = TokenType.MinusMinus,
                     .value = null,
                 };
+            } else if ((next_char > '0' and next_char < '9') or next_char == '.') {
+                return self.read_numeric_literal(&[_]u8{ current_char, next_char }, next_char == '.');
             } else {
                 try self.rewind(-1);
-                token = Token{
+                return Token{
                     .type = TokenType.Minus,
                     .value = null,
                 };
@@ -437,25 +316,25 @@ pub fn next(self: Self) !Token {
             if (next_char == '*') {
                 next_char = try self.advance();
                 if (next_char == '=') {
-                    token = Token{
+                    return Token{
                         .type = TokenType.StarStarEqual,
                         .value = null,
                     };
                 } else {
                     try self.rewind(-1);
-                    token = Token{
+                    return Token{
                         .type = TokenType.StarStar,
                         .value = null,
                     };
                 }
             } else if (next_char == '=') {
-                token = Token{
+                return Token{
                     .type = TokenType.StarEqual,
                     .value = null,
                 };
             } else {
                 try self.rewind(-1);
-                token = Token{
+                return Token{
                     .type = TokenType.Star,
                     .value = null,
                 };
@@ -464,13 +343,13 @@ pub fn next(self: Self) !Token {
         '%' => {
             const next_char = try self.advance();
             if (next_char == '=') {
-                token = Token{
+                return Token{
                     .type = TokenType.PercentEqual,
                     .value = null,
                 };
             } else {
                 try self.rewind(-1);
-                token = Token{
+                return Token{
                     .type = TokenType.Percent,
                     .value = null,
                 };
@@ -481,75 +360,75 @@ pub fn next(self: Self) !Token {
             if (next_char == '=') {
                 next_char = try self.advance();
                 if (next_char == '=') {
-                    token = Token{
+                    return Token{
                         .type = TokenType.EqualEqualEqual,
                         .value = null,
                     };
                 } else {
                     try self.rewind(-1);
-                    token = Token{
+                    return Token{
                         .type = TokenType.EqualEqual,
                         .value = null,
                     };
                 }
             } else {
                 try self.rewind(-1);
-                token = Token{
+                return Token{
                     .type = TokenType.Equal,
                     .value = null,
                 };
             }
         },
         '{' => {
-            token = Token{
+            return Token{
                 .type = TokenType.OpenCurlyBrace,
                 .value = null,
             };
         },
         '}' => {
-            token = Token{
+            return Token{
                 .type = TokenType.CloseCurlyBrace,
                 .value = null,
             };
         },
         '[' => {
-            token = Token{
+            return Token{
                 .type = TokenType.OpenSquareBracket,
                 .value = null,
             };
         },
         ']' => {
-            token = Token{
+            return Token{
                 .type = TokenType.CloseSquareBracket,
                 .value = null,
             };
         },
         '(' => {
-            token = Token{
+            return Token{
                 .type = TokenType.OpenParen,
                 .value = null,
             };
         },
         ')' => {
-            token = Token{
+            return Token{
                 .type = TokenType.CloseParen,
                 .value = null,
             };
         },
         ',' => {
-            token = Token{
+            return Token{
                 .type = TokenType.Comma,
                 .value = null,
             };
         },
         ';' => {
-            token = Token{
+            return Token{
                 .type = TokenType.Semicolon,
                 .value = null,
             };
         },
         ':' => {
-            token = Token{
+            return Token{
                 .type = TokenType.Colon,
                 .value = null,
             };
@@ -559,25 +438,25 @@ pub fn next(self: Self) !Token {
             if (next_char == '?') {
                 next_char = try self.advance();
                 if (next_char == '=') {
-                    token = Token{
+                    return Token{
                         .type = TokenType.QuestionMarkQuestionMarkEqual,
                         .value = null,
                     };
                 } else {
                     try self.rewind(-1);
-                    token = Token{
+                    return Token{
                         .type = TokenType.QuestionMarkQuestionMark,
                         .value = null,
                     };
                 }
             } else if (next_char == '.') {
-                token = Token{
+                return Token{
                     .type = TokenType.QuestionMarkDot,
                     .value = null,
                 };
             } else {
                 try self.rewind(-1);
-                token = Token{
+                return Token{
                     .type = TokenType.QuestionMark,
                     .value = null,
                 };
@@ -588,129 +467,202 @@ pub fn next(self: Self) !Token {
             if (next_char == '.') {
                 next_char = try self.advance();
                 if (next_char == '.') {
-                    token = Token{
+                    return Token{
                         .type = TokenType.DotDotDot,
                         .value = null,
                     };
                 } else {
                     try self.rewind(-2);
-                    token = Token{
+                    return Token{
                         .type = TokenType.Dot,
                         .value = null,
                     };
                 }
+            } else if (next_char > '0' and next_char < '9') {
+                return self.read_numeric_literal(&[_]u8{ current_char, next_char }, true);
             } else {
                 try self.rewind(-1);
-                token = Token{
+                return Token{
                     .type = TokenType.Dot,
                     .value = null,
                 };
             }
         },
         '~' => {
-            token = Token{
+            return Token{
                 .type = TokenType.Tilde,
                 .value = null,
             };
         },
         '\'', '"' => {
             var str = try String.new(self.allocator, 100);
+
             const starting_char = current_char;
             while (true) {
-                const next_char = try self.advance();
+                const next_char = try self.maybe_advance() orelse break;
                 if (next_char == '\n' or next_char == '\r' or next_char == starting_char) {
                     break;
                 }
                 try str.append(next_char);
             }
 
-            token = Token{
+            return Token{
                 .type = TokenType.StringConstant,
-                .value = str,
+                .value = str.value(),
             };
         },
         '0'...'9' => {
-            var str = try String.new(self.allocator, 100);
-
-            try str.append(current_char);
-            while (true) {
-                const next_char = try self.advance();
-
-                if ((next_char == '_' or next_char == '.') and (str.at(-1) == '_' or str.at(-1) == '.')) {
-                    try self.rewind(-1);
-                    break;
-                }
-
-                if ((next_char < '0' or next_char > '9')) {
-                    if (next_char == 'n') {
-                        try str.append(next_char);
-                        token = Token{
-                            .type = TokenType.BigIntConstant,
-                            .value = str,
-                        };
-                    } else {
-                        try self.rewind(-1);
-                        token = Token{
-                            .type = TokenType.NumberConstant,
-                            .value = str,
-                        };
-                    }
-                    break;
-                }
-                try str.append(next_char);
-            }
+            return self.read_numeric_literal(&[_]u8{current_char}, false);
         },
         else => {
             var str = try String.new(self.allocator, 100);
 
             try str.append(current_char);
 
+            var next_char: u8 = undefined;
             while (true) {
-                current_char = try self.advance();
-                if (is_whitespace(current_char) or is_punctuation(current_char) or is_operator(current_char)) {
+                next_char = try self.maybe_advance() orelse break;
+                if (is_whitespace(next_char) or is_punctuation(next_char) or is_operator(next_char)) {
                     try self.rewind(-1);
                     break;
                 }
-                try str.append(current_char);
+                try str.append(next_char);
             }
 
-            token = Token{
+            if (keywords_map.get(str.value())) |keyword_type| {
+                return Token{
+                    .type = keyword_type,
+                    .value = null,
+                };
+            }
+
+            return Token{
                 .type = TokenType.Identifier,
-                .value = str,
+                .value = str.value(),
             };
         },
     }
 
-    return token;
+    unreachable;
 }
 
-fn advance(self: Self) !u8 {
-    var buffer: [1]u8 = undefined;
-    var bytes_read: usize = undefined;
-    switch (self.stream) {
-        .fixed_buffer => {
-            bytes_read = try self.stream.fixed_buffer.read(&buffer);
-        },
-        .file => {
-            bytes_read = try self.stream.file.read(&buffer);
-        },
+pub fn nextAll(self: *Self) !std.ArrayList(Token) {
+    var current_char: u8 = self.buffer[0];
+    var tokens = std.ArrayList(Token).init(self.allocator);
+    while (true) {
+        const token = try self.next(current_char);
+
+        if (token.type != TokenType.Whitespace) {
+            try tokens.append(token);
+        }
+
+        current_char = self.advance() catch |err| {
+            if (err == error.EndOfStream) {
+                try tokens.append(Token{
+                    .type = TokenType.Eof,
+                    .value = null,
+                });
+                break;
+            }
+
+            return err;
+        };
+    }
+    return tokens;
+}
+
+fn read_numeric_literal(self: *Self, buffer: []const u8, default_has_dot: bool) !Token {
+    var token_type: TokenType = TokenType.NumberConstant;
+    var str = try String.new(self.allocator, 100);
+
+    var has_dot = default_has_dot;
+    var has_exponent = false;
+
+    try str.append_many(buffer);
+    while (true) {
+        const next_char = try self.maybe_advance() orelse break;
+
+        if (next_char == '.') {
+            if (has_exponent or has_dot or str.at(-1) == '_') {
+                return LexerError.SyntaxError;
+            }
+            has_dot = true;
+            try str.append(next_char);
+            continue;
+        }
+
+        if (next_char == 'e' or next_char == 'E') {
+            if (has_exponent or str.at(-1) == '_') {
+                return LexerError.SyntaxError;
+            }
+            has_exponent = true;
+            try str.append(next_char);
+            continue;
+        }
+
+        if (next_char == '_') {
+            if (str.at(-1) == '_' or str.at(-1) == '.' or str.at(-1) == 'e' or str.at(-1) == 'E') {
+                return LexerError.SyntaxError;
+            }
+
+            try str.append(next_char);
+            continue;
+        }
+
+        if ((next_char < '0' or next_char > '9')) {
+            if (next_char == 'n') {
+                try str.append(next_char);
+                token_type = TokenType.BigIntConstant;
+            } else {
+                try self.rewind(-1);
+            }
+            break;
+        }
+        try str.append(next_char);
     }
 
-    if (bytes_read < 1) {
+    return Token{
+        .type = token_type,
+        .value = str.value(),
+    };
+}
+
+fn advance(self: *Self) !u8 {
+    self.index += 1;
+    if (self.index >= self.buffer.len) {
+        return error.EndOfStream;
+    }
+    return self.buffer[self.index];
+}
+
+fn maybe_advance(self: *Self) !?u8 {
+    return self.advance() catch |err| switch (err) {
+        error.EndOfStream => {
+            return null;
+        },
+    };
+}
+
+fn match(self: *Self, expected_char: u8) !bool {
+    if (self.index >= self.buffer.len) {
         return error.EndOfStream;
     }
 
-    return buffer[0];
+    if (self.buffer[self.index] == expected_char) {
+        self.index += 1;
+        return true;
+    }
+
+    return false;
 }
 
-fn rewind(self: Self, offset: i64) !void {
-    switch (self.stream) {
-        .fixed_buffer => {
-            try self.stream.fixed_buffer.seekBy(offset);
-        },
-        .file => {
-            try self.stream.file.seekBy(offset);
-        },
+fn rewind(self: *Self, offset: i64) !void {
+    if (offset < 0) {
+        if (self.index > 0) {
+            self.index -= @as(usize, @intCast(-offset));
+        }
+    } else {
+        self.index += @as(usize, @intCast(offset));
     }
 }
 
@@ -772,115 +724,4 @@ test "is_operator" {
     try std.testing.expect(is_operator('%'));
     try std.testing.expect(is_operator('/'));
     try std.testing.expect(is_operator('\\'));
-}
-
-test "should tokenize comments" {
-    var buffer = FixedBufferStream([]const u8){
-        .buffer =
-        \\// single line comment
-        \\/*
-        \\ * multiline
-        \\ * comment
-        \\ *
-        \\ */
-        ,
-        .pos = 0,
-    };
-    const lexer = Self.init(std.testing.allocator, .{ .fixed_buffer = &buffer });
-
-    var token1 = try lexer.next();
-    defer token1.deinit();
-
-    try std.testing.expectEqual(TokenType.LineComment, token1.type);
-    try std.testing.expectEqualStrings(" single line comment", token1.value.?.value());
-
-    var token2 = try lexer.next();
-    defer token2.deinit();
-
-    try std.testing.expectEqual(TokenType.MultilineComment, token2.type);
-    try std.testing.expectEqualStrings("\n * multiline\n * comment\n *\n ", token2.value.?.value());
-}
-
-test "should tokenize strings" {
-    var buffer = FixedBufferStream([]const u8){
-        .buffer = "'hello' \"hello\" \"hello''world\"",
-        .pos = 0,
-    };
-    const lexer = Self.init(std.testing.allocator, .{ .fixed_buffer = &buffer });
-
-    var token1 = try lexer.next();
-    defer token1.deinit();
-
-    try std.testing.expectEqual(TokenType.StringConstant, token1.type);
-    try std.testing.expectEqualStrings("hello", token1.value.?.value());
-
-    _ = try lexer.next();
-    var token2 = try lexer.next();
-    defer token2.deinit();
-
-    try std.testing.expectEqual(TokenType.StringConstant, token2.type);
-    try std.testing.expectEqualStrings("hello", token2.value.?.value());
-
-    _ = try lexer.next();
-    var token3 = try lexer.next();
-    defer token3.deinit();
-
-    try std.testing.expectEqual(TokenType.StringConstant, token3.type);
-    try std.testing.expectEqualStrings("hello''world", token3.value.?.value());
-}
-
-test "should tokenize numbers" {
-    var buffer = FixedBufferStream([]const u8){
-        .buffer = "123 123.456 123e456 123.456e456 123n 123_456 123_456n",
-        .pos = 0,
-    };
-    const lexer = Self.init(std.testing.allocator, .{ .fixed_buffer = &buffer });
-
-    var token1 = try lexer.next();
-    defer token1.deinit();
-
-    try std.testing.expectEqual(TokenType.NumberConstant, token1.type);
-    try std.testing.expectEqualStrings("123", token1.value.?.value());
-
-    _ = try lexer.next();
-    var token2 = try lexer.next();
-    defer token2.deinit();
-
-    try std.testing.expectEqual(TokenType.NumberConstant, token2.type);
-    try std.testing.expectEqualStrings("123.456", token2.value.?.value());
-
-    _ = try lexer.next();
-    var token3 = try lexer.next();
-    defer token3.deinit();
-
-    try std.testing.expectEqual(TokenType.NumberConstant, token3.type);
-    try std.testing.expectEqualStrings("123e456", token3.value.?.value());
-
-    _ = try lexer.next();
-    var token4 = try lexer.next();
-    defer token4.deinit();
-
-    try std.testing.expectEqual(TokenType.NumberConstant, token4.type);
-    try std.testing.expectEqualStrings("123.456e456", token4.value.?.value());
-
-    _ = try lexer.next();
-    var token5 = try lexer.next();
-    defer token5.deinit();
-
-    try std.testing.expectEqual(TokenType.NumberConstant, token5.type);
-    try std.testing.expectEqualStrings("123n", token5.value.?.value());
-
-    _ = try lexer.next();
-    var token6 = try lexer.next();
-    defer token6.deinit();
-
-    try std.testing.expectEqual(TokenType.NumberConstant, token6.type);
-    try std.testing.expectEqualStrings("123_456", token6.value.?.value());
-
-    _ = try lexer.next();
-    var token7 = try lexer.next();
-    defer token7.deinit();
-
-    try std.testing.expectEqual(TokenType.NumberConstant, token7.type);
-    try std.testing.expectEqualStrings("123_456n", token7.value.?.value());
 }

@@ -1,16 +1,16 @@
 const std = @import("std");
+const FileSource = std.build.FileSource;
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
 
     const optimize = b.standardOptimizeOption(.{});
     const exe = b.addExecutable(.{
-        .name = "zig-tsc",
+        .name = "zapts",
         .root_source_file = .{ .path = "src/main.zig" },
         .target = target,
         .optimize = optimize,
     });
-
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);
@@ -24,7 +24,7 @@ pub fn build(b: *std.Build) void {
     run_step.dependOn(&run_cmd.step);
 
     const exe_unit_tests = b.addTest(.{
-        .root_source_file = .{ .path = "src/main.zig" },
+        .root_source_file = .{ .path = "src/main.test.zig" },
         .target = target,
         .optimize = optimize,
     });
