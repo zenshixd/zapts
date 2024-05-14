@@ -1,9 +1,10 @@
 const std = @import("std");
 const String = @import("string.zig").String;
-const Lexer = @import("zapts").Lexer;
-const Token = @import("consts.zig").Token;
-const Parser = @import("parser.zig");
-const SymbolsTable = @import("symbol_table.zig").SymbolTable;
+pub const Lexer = @import("lexer.zig");
+pub const Token = @import("consts.zig").Token;
+pub const TokenType = @import("consts.zig").TokenType;
+pub const Parser = @import("parser.zig");
+pub const SymbolsTable = @import("symbol_table.zig").SymbolTable;
 const fs = std.fs;
 const ArrayList = std.ArrayList;
 
@@ -56,4 +57,11 @@ pub fn main() !void {
     for (nodes.items) |node| {
         std.log.info("node {}", .{node});
     }
+}
+
+test {
+    _ = @import("string.zig");
+    _ = @import("lexer.zig");
+    _ = @import("tests/parser.zig");
+    _ = @import("tests/conformance.zig");
 }
