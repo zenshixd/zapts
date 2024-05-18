@@ -38,7 +38,7 @@ pub fn main() !void {
 
     var lexer = Lexer.init(allocator, buffer);
 
-    const tokens = try lexer.nextAll();
+    var tokens = try lexer.nextAll();
     defer tokens.deinit();
 
     allocator.free(buffer);
@@ -51,7 +51,8 @@ pub fn main() !void {
         }
     }
 
-    var parser = Parser.init(allocator, tokens);
+    const tokens_slice = try tokens.toOwnedSlice();
+    var parser = Parser.init(allocator, tokens_slice);
     const nodes = try parser.parse();
 
     for (nodes.items) |node| {

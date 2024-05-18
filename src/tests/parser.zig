@@ -5,4 +5,5 @@ test {
     _ = @import("parser/imports.zig");
     _ = @import("parser/property_access.zig");
     _ = @import("parser/simple_operators.zig");
+    _ = @import("parser/grouping.zig");
 }

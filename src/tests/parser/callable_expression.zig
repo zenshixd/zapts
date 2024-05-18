@@ -122,3 +122,104 @@ test "function call with multiple arguments" {
         },
     }, nodes.items[0]);
 }
+
+test "should call a function through a property access" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    const allocator = arena.allocator();
+    defer arena.deinit();
+
+    var arr = [_]Token{
+        valued(TokenType.Identifier, "foo"),
+        simple(TokenType.Dot),
+        valued(TokenType.Identifier, "bar"),
+        simple(TokenType.OpenParen),
+        simple(TokenType.CloseParen),
+        simple(TokenType.Semicolon),
+        simple(TokenType.Eof),
+    };
+    const tokens = std.ArrayList(Token).fromOwnedSlice(allocator, &arr);
+
+    var parser = Parser.init(allocator, tokens);
+
+    const nodes = try parser.parse();
+
+    const expectedArgs = std.ArrayList(*ASTNode).init(allocator);
+
+    try expect(nodes.items.len == 1);
+    try expectEqualDeep(&ASTNode{
+        .callable_expression = ASTCallableExpressionNode{
+            .left = @constCast(&ASTNode{
+                .binary = ASTBinaryExpressionNode{
+                    .left = @constCast(&ASTNode{
+                        .literal = ASTLiteralNode{
+                            .value = Token{ .type = TokenType.Identifier, .value = "foo" },
+                        },
+                    }),
+                    .operator = TokenType.Dot,
+                    .right = @constCast(&ASTNode{
+                        .literal = ASTLiteralNode{
+                            .value = Token{ .type = TokenType.Identifier, .value = "bar" },
+                        },
+                    }),
+                },
+            }),
+            .arguments = expectedArgs,
+        },
+    }, nodes.items[0]);
+}
+
+test "should call a function through a index access" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    const allocator = arena.allocator();
+    defer arena.deinit();
+
+    var arr = [_]Token{
+        valued(TokenType.Identifier, "foo"),
+        simple(TokenType.Dot),
+        valued(TokenType.Identifier, "bar"),
+        simple(TokenType.OpenSquareBracket),
+        valued(TokenType.NumberConstant, "1"),
+        simple(TokenType.CloseSquareBracket),
+        simple(TokenType.OpenParen),
+        simple(TokenType.CloseParen),
+        simple(TokenType.Semicolon),
+        simple(TokenType.Eof),
+    };
+    const tokens = std.ArrayList(Token).fromOwnedSlice(allocator, &arr);
+
+    var parser = Parser.init(allocator, tokens);
+
+    const nodes = try parser.parse();
+
+    const expectedArgs = std.ArrayList(*ASTNode).init(allocator);
+
+    try expect(nodes.items.len == 1);
+    try expectEqualDeep(&ASTNode{
+        .callable_expression = ASTCallableExpressionNode{
+            .left = @constCast(&ASTNode{
+                .binary = ASTBinaryExpressionNode{
+                    .left = @constCast(&ASTNode{
+                        .binary = ASTBinaryExpressionNode{
+                            .left = @constCast(&ASTNode{
+                                .literal = ASTLiteralNode{
+                                    .value = Token{ .type = TokenType.Identifier, .value = "foo" },
+                                },
+                            }),
+                            .operator = TokenType.Dot,
+                            .right = @constCast(&ASTNode{
+                                .literal = ASTLiteralNode{
+                                    .value = Token{ .type = TokenType.Identifier, .value = "bar" },
+                                },
+                            }),
+                        },
+                    }),
+                    .operator = TokenType.OpenSquareBracket,
+                    .right = @constCast(&ASTNode{
+                        .literal = ASTLiteralNode{ .value = Token{ .type = TokenType.NumberConstant, .value = "1" } },
+                    }),
+                },
+            }),
+            .arguments = expectedArgs,
+        },
+    }, nodes.items[0]);
+}
