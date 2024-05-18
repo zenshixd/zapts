@@ -7,8 +7,7 @@ const simple = @import("../helpers.zig").simple;
 
 const ASTNode = Parser.ASTNode;
 const ASTCallableExpressionNode = Parser.ASTCallableExpressionNode;
-const ASTLiteralNode = Parser.ASTLiteralNode;
-const ASTBinaryExpressionNode = Parser.ASTBinaryExpressionNode;
+const ASTBinaryNode = Parser.ASTBinaryNode;
 
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
@@ -20,7 +19,7 @@ test "should parse function call" {
     const allocator = arena.allocator();
     defer arena.deinit();
 
-    var arr = [_]Token{
+    var tokens = [_]Token{
         valued(TokenType.Identifier, "foo"),
         simple(TokenType.OpenParen),
         valued(TokenType.Identifier, "bar"),
@@ -30,38 +29,39 @@ test "should parse function call" {
         simple(TokenType.Semicolon),
         simple(TokenType.Eof),
     };
-    const tokens = std.ArrayList(Token).fromOwnedSlice(allocator, &arr);
 
-    var parser = Parser.init(allocator, tokens);
+    var parser = Parser.init(allocator, &tokens);
 
     const nodes = try parser.parse();
 
     var expectedArgs = std.ArrayList(*ASTNode).init(allocator);
     try expectedArgs.append(@constCast(&ASTNode{
-        .binary = ASTBinaryExpressionNode{
-            .left = @constCast(&ASTNode{
-                .literal = ASTLiteralNode{
-                    .value = Token{ .type = TokenType.Identifier, .value = "bar" },
-                },
-            }),
-            .operator = TokenType.Plus,
-            .right = @constCast(&ASTNode{
-                .literal = ASTLiteralNode{
-                    .value = Token{ .type = TokenType.Identifier, .value = "baz" },
-                },
-            }),
+        .tag = .plus_expr,
+        .data = .{
+            .binary = ASTBinaryNode{
+                .left = @constCast(&ASTNode{
+                    .tag = .identifier,
+                    .data = .{ .literal = "bar" },
+                }),
+                .right = @constCast(&ASTNode{
+                    .tag = .identifier,
+                    .data = .{ .literal = "baz" },
+                }),
+            },
         },
     }));
 
     try expect(nodes.items.len == 1);
     try expectEqualDeep(&ASTNode{
-        .callable_expression = ASTCallableExpressionNode{
-            .left = @constCast(&ASTNode{
-                .literal = ASTLiteralNode{
-                    .value = Token{ .type = TokenType.Identifier, .value = "foo" },
-                },
-            }),
-            .arguments = expectedArgs,
+        .tag = .call_expr,
+        .data = .{
+            .callable = ASTCallableExpressionNode{
+                .left = @constCast(&ASTNode{
+                    .tag = .identifier,
+                    .data = .{ .literal = "foo" },
+                }),
+                .arguments = try expectedArgs.toOwnedSlice(),
+            },
         },
     }, nodes.items[0]);
 }
@@ -71,7 +71,7 @@ test "function call with multiple arguments" {
     defer arena.deinit();
 
     const allocator = arena.allocator();
-    var arr = [_]Token{
+    var tokens = [_]Token{
         valued(TokenType.Identifier, "foo"),
         simple(TokenType.OpenParen),
         valued(TokenType.Identifier, "bar"),
@@ -83,42 +83,42 @@ test "function call with multiple arguments" {
         simple(TokenType.Semicolon),
         simple(TokenType.Eof),
     };
-    const tokens = std.ArrayList(Token).fromOwnedSlice(allocator, &arr);
 
-    var parser = Parser.init(allocator, tokens);
+    var parser = Parser.init(allocator, &tokens);
 
     const nodes = try parser.parse();
 
     var expectedArgs = std.ArrayList(*ASTNode).init(allocator);
     try expectedArgs.append(@constCast(&ASTNode{
-        .binary = ASTBinaryExpressionNode{
-            .left = @constCast(&ASTNode{
-                .literal = ASTLiteralNode{
-                    .value = Token{ .type = TokenType.Identifier, .value = "bar" },
-                },
-            }),
-            .operator = TokenType.Plus,
-            .right = @constCast(&ASTNode{
-                .literal = ASTLiteralNode{
-                    .value = Token{ .type = TokenType.Identifier, .value = "baz" },
-                },
-            }),
+        .tag = .plus_expr,
+        .data = .{
+            .binary = ASTBinaryNode{
+                .left = @constCast(&ASTNode{
+                    .tag = .identifier,
+                    .data = .{ .literal = "bar" },
+                }),
+                .right = @constCast(&ASTNode{
+                    .tag = .identifier,
+                    .data = .{ .literal = "baz" },
+                }),
+            },
         },
     }));
     try expectedArgs.append(@constCast(&ASTNode{
-        .literal = ASTLiteralNode{
-            .value = Token{ .type = TokenType.Identifier, .value = "qux" },
-        },
+        .tag = .identifier,
+        .data = .{ .literal = "qux" },
     }));
     try expect(nodes.items.len == 1);
     try expectEqualDeep(&ASTNode{
-        .callable_expression = ASTCallableExpressionNode{
-            .left = @constCast(&ASTNode{
-                .literal = ASTLiteralNode{
-                    .value = Token{ .type = TokenType.Identifier, .value = "foo" },
-                },
-            }),
-            .arguments = expectedArgs,
+        .tag = .call_expr,
+        .data = .{
+            .callable = ASTCallableExpressionNode{
+                .left = @constCast(&ASTNode{
+                    .tag = .identifier,
+                    .data = .{ .literal = "foo" },
+                }),
+                .arguments = try expectedArgs.toOwnedSlice(),
+            },
         },
     }, nodes.items[0]);
 }
@@ -128,7 +128,7 @@ test "should call a function through a property access" {
     const allocator = arena.allocator();
     defer arena.deinit();
 
-    var arr = [_]Token{
+    var tokens = [_]Token{
         valued(TokenType.Identifier, "foo"),
         simple(TokenType.Dot),
         valued(TokenType.Identifier, "bar"),
@@ -137,33 +137,35 @@ test "should call a function through a property access" {
         simple(TokenType.Semicolon),
         simple(TokenType.Eof),
     };
-    const tokens = std.ArrayList(Token).fromOwnedSlice(allocator, &arr);
 
-    var parser = Parser.init(allocator, tokens);
+    var parser = Parser.init(allocator, &tokens);
 
     const nodes = try parser.parse();
 
-    const expectedArgs = std.ArrayList(*ASTNode).init(allocator);
+    var expectedArgs = std.ArrayList(*ASTNode).init(allocator);
 
     try expect(nodes.items.len == 1);
     try expectEqualDeep(&ASTNode{
-        .callable_expression = ASTCallableExpressionNode{
-            .left = @constCast(&ASTNode{
-                .binary = ASTBinaryExpressionNode{
-                    .left = @constCast(&ASTNode{
-                        .literal = ASTLiteralNode{
-                            .value = Token{ .type = TokenType.Identifier, .value = "foo" },
+        .tag = .call_expr,
+        .data = .{
+            .callable = ASTCallableExpressionNode{
+                .left = @constCast(&ASTNode{
+                    .tag = .property_access,
+                    .data = .{
+                        .binary = ASTBinaryNode{
+                            .left = @constCast(&ASTNode{
+                                .tag = .identifier,
+                                .data = .{ .literal = "foo" },
+                            }),
+                            .right = @constCast(&ASTNode{
+                                .tag = .identifier,
+                                .data = .{ .literal = "bar" },
+                            }),
                         },
-                    }),
-                    .operator = TokenType.Dot,
-                    .right = @constCast(&ASTNode{
-                        .literal = ASTLiteralNode{
-                            .value = Token{ .type = TokenType.Identifier, .value = "bar" },
-                        },
-                    }),
-                },
-            }),
-            .arguments = expectedArgs,
+                    },
+                }),
+                .arguments = try expectedArgs.toOwnedSlice(),
+            },
         },
     }, nodes.items[0]);
 }
@@ -173,7 +175,7 @@ test "should call a function through a index access" {
     const allocator = arena.allocator();
     defer arena.deinit();
 
-    var arr = [_]Token{
+    var tokens = [_]Token{
         valued(TokenType.Identifier, "foo"),
         simple(TokenType.Dot),
         valued(TokenType.Identifier, "bar"),
@@ -185,41 +187,48 @@ test "should call a function through a index access" {
         simple(TokenType.Semicolon),
         simple(TokenType.Eof),
     };
-    const tokens = std.ArrayList(Token).fromOwnedSlice(allocator, &arr);
 
-    var parser = Parser.init(allocator, tokens);
+    var parser = Parser.init(allocator, &tokens);
 
     const nodes = try parser.parse();
 
-    const expectedArgs = std.ArrayList(*ASTNode).init(allocator);
+    var expectedArgs = std.ArrayList(*ASTNode).init(allocator);
 
     try expect(nodes.items.len == 1);
     try expectEqualDeep(&ASTNode{
-        .callable_expression = ASTCallableExpressionNode{
-            .left = @constCast(&ASTNode{
-                .binary = ASTBinaryExpressionNode{
-                    .left = @constCast(&ASTNode{
-                        .binary = ASTBinaryExpressionNode{
+        .tag = .call_expr,
+        .data = .{
+            .callable = ASTCallableExpressionNode{
+                .left = @constCast(&ASTNode{
+                    .tag = .index_access,
+                    .data = .{
+                        .binary = ASTBinaryNode{
                             .left = @constCast(&ASTNode{
-                                .literal = ASTLiteralNode{
-                                    .value = Token{ .type = TokenType.Identifier, .value = "foo" },
+                                .tag = .property_access,
+                                .data = .{
+                                    .binary = ASTBinaryNode{
+                                        .left = @constCast(&ASTNode{
+                                            .tag = .identifier,
+                                            .data = .{ .literal = "foo" },
+                                        }),
+                                        .right = @constCast(&ASTNode{
+                                            .tag = .identifier,
+                                            .data = .{ .literal = "bar" },
+                                        }),
+                                    },
                                 },
                             }),
-                            .operator = TokenType.Dot,
                             .right = @constCast(&ASTNode{
-                                .literal = ASTLiteralNode{
-                                    .value = Token{ .type = TokenType.Identifier, .value = "bar" },
+                                .tag = .number,
+                                .data = .{
+                                    .literal = "1",
                                 },
                             }),
                         },
-                    }),
-                    .operator = TokenType.OpenSquareBracket,
-                    .right = @constCast(&ASTNode{
-                        .literal = ASTLiteralNode{ .value = Token{ .type = TokenType.NumberConstant, .value = "1" } },
-                    }),
-                },
-            }),
-            .arguments = expectedArgs,
+                    },
+                }),
+                .arguments = try expectedArgs.toOwnedSlice(),
+            },
         },
     }, nodes.items[0]);
 }

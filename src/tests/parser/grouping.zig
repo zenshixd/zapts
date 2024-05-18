@@ -11,16 +11,14 @@ const expectEqualStrings = std.testing.expectEqualStrings;
 const expectEqualDeep = std.testing.expectEqualDeep;
 
 const ASTNode = Parser.ASTNode;
-const ASTExpressionNode = Parser.ASTExpressionNode;
-const ASTBinaryExpressionNode = Parser.ASTBinaryExpressionNode;
-const ASTLiteralNode = Parser.ASTLiteralNode;
+const ASTBinaryNode = Parser.ASTBinaryNode;
 
 test "should parse grouping" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     const allocator = arena.allocator();
     defer arena.deinit();
 
-    var arr = [_]Token{
+    var tokens = [_]Token{
         valued(TokenType.NumberConstant, "1"),
         simple(TokenType.Minus),
         simple(TokenType.OpenParen),
@@ -31,41 +29,30 @@ test "should parse grouping" {
         simple(TokenType.Semicolon),
         simple(TokenType.Eof),
     };
-    const tokens = std.ArrayList(Token).fromOwnedSlice(allocator, &arr);
 
-    var parser = Parser.init(allocator, tokens);
+    var parser = Parser.init(allocator, &tokens);
 
     const nodes = try parser.parse();
 
     try expectEqual(1, nodes.items.len);
-    try expectEqualDeep(&ASTNode{ .binary = ASTBinaryExpressionNode{
-        .left = @constCast(&ASTNode{
-            .literal = ASTLiteralNode{
-                .value = Token{
-                    .type = TokenType.NumberConstant,
-                    .value = "1",
-                },
+    try expectEqualDeep(&ASTNode{
+        .tag = .minus_expr,
+        .data = .{
+            .binary = ASTBinaryNode{
+                .left = @constCast(&ASTNode{ .tag = .number, .data = .{ .literal = "1" } }),
+                .right = @constCast(&ASTNode{
+                    .tag = .grouping,
+                    .data = .{ .node = @constCast(&ASTNode{
+                        .tag = .plus_expr,
+                        .data = .{
+                            .binary = ASTBinaryNode{
+                                .left = @constCast(&ASTNode{ .tag = .number, .data = .{ .literal = "2" } }),
+                                .right = @constCast(&ASTNode{ .tag = .number, .data = .{ .literal = "3" } }),
+                            },
+                        },
+                    }) },
+                }),
             },
-        }),
-        .operator = TokenType.Minus,
-        .right = @constCast(&ASTNode{ .expression = @constCast(&ASTNode{ .binary = ASTBinaryExpressionNode{
-            .left = @constCast(&ASTNode{
-                .literal = ASTLiteralNode{
-                    .value = Token{
-                        .type = TokenType.NumberConstant,
-                        .value = "2",
-                    },
-                },
-            }),
-            .operator = TokenType.Plus,
-            .right = @constCast(&ASTNode{
-                .literal = ASTLiteralNode{
-                    .value = Token{
-                        .type = TokenType.NumberConstant,
-                        .value = "3",
-                    },
-                },
-            }),
-        } }) }),
-    } }, nodes.items[0]);
+        },
+    }, nodes.items[0]);
 }

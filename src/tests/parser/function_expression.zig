@@ -19,7 +19,7 @@ test "should parse function expression" {
     const allocator = arena.allocator();
     defer arena.deinit();
 
-    var arr = [_]Token{
+    var tokens = [_]Token{
         simple(TokenType.Function),
         valued(TokenType.Identifier, "foo"),
         simple(TokenType.OpenParen),
@@ -31,9 +31,8 @@ test "should parse function expression" {
         simple(TokenType.CloseCurlyBrace),
         simple(TokenType.Eof),
     };
-    const tokens = std.ArrayList(Token).fromOwnedSlice(allocator, &arr);
 
-    var parser = Parser.init(allocator, tokens);
+    var parser = Parser.init(allocator, &tokens);
 
     const nodes = try parser.parse();
 
@@ -41,17 +40,16 @@ test "should parse function expression" {
     try expectedArgs.append("bar");
     try expectedArgs.append("baz");
 
+    var expectedBody = std.ArrayList(*ASTNode).init(allocator);
     try expectEqual(1, nodes.items.len);
     try expectEqualDeep(&ASTNode{
-        .function_expression = ASTFunctionExpressionNode{
-            .is_async = false,
-            .name = "foo",
-            .arguments = expectedArgs,
-            .body = @constCast(&ASTNode{
-                .block = ASTBlockNode{
-                    .statements = std.ArrayList(*ASTNode).init(allocator),
-                },
-            }),
+        .tag = .func_decl,
+        .data = .{
+            .function = ASTFunctionExpressionNode{
+                .name = "foo",
+                .arguments = try expectedArgs.toOwnedSlice(),
+                .body = try expectedBody.toOwnedSlice(),
+            },
         },
     }, nodes.items[0]);
 }
@@ -61,7 +59,7 @@ test "should parse async function expression" {
     const allocator = arena.allocator();
     defer arena.deinit();
 
-    var arr = [_]Token{
+    var tokens = [_]Token{
         simple(TokenType.Async),
         simple(TokenType.Function),
         valued(TokenType.Identifier, "foo"),
@@ -74,10 +72,7 @@ test "should parse async function expression" {
         simple(TokenType.CloseCurlyBrace),
         simple(TokenType.Eof),
     };
-    const tokens = std.ArrayList(Token).fromOwnedSlice(allocator, &arr);
-    defer tokens.deinit();
-
-    var parser = Parser.init(allocator, tokens);
+    var parser = Parser.init(allocator, &tokens);
 
     const nodes = try parser.parse();
 
@@ -85,17 +80,16 @@ test "should parse async function expression" {
     try expectedArgs.append("bar");
     try expectedArgs.append("baz");
 
+    var expectedBody = std.ArrayList(*ASTNode).init(allocator);
     try expectEqual(1, nodes.items.len);
     try expectEqualDeep(&ASTNode{
-        .function_expression = ASTFunctionExpressionNode{
-            .is_async = true,
-            .name = "foo",
-            .arguments = expectedArgs,
-            .body = @constCast(&ASTNode{
-                .block = ASTBlockNode{
-                    .statements = std.ArrayList(*ASTNode).init(allocator),
-                },
-            }),
+        .tag = .async_func_decl,
+        .data = .{
+            .function = ASTFunctionExpressionNode{
+                .name = "foo",
+                .arguments = try expectedArgs.toOwnedSlice(),
+                .body = try expectedBody.toOwnedSlice(),
+            },
         },
     }, nodes.items[0]);
 }

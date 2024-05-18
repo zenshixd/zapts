@@ -6,8 +6,8 @@ const valued = @import("../helpers.zig").valued;
 const simple = @import("../helpers.zig").simple;
 
 const ASTNode = Parser.ASTNode;
-const ASTBinaryExpressionNode = Parser.ASTBinaryExpressionNode;
-const ASTLiteralNode = Parser.ASTLiteralNode;
+const ASTBinaryNode = Parser.ASTBinaryNode;
+const ASTNodeTag = Parser.ASTNodeTag;
 
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
@@ -19,36 +19,34 @@ test "should parse comparisons" {
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    var arr = [_]Token{
+    var tokens = [_]Token{
         valued(TokenType.NumberConstant, "1"),
         simple(TokenType.EqualEqual),
         valued(TokenType.NumberConstant, "2"),
         simple(TokenType.Semicolon),
         simple(TokenType.Eof),
     };
-    var tokens = std.ArrayList(Token).fromOwnedSlice(allocator, &arr);
-    defer tokens.deinit();
-
-    var parser = Parser.init(allocator, tokens);
+    var parser = Parser.init(allocator, &tokens);
 
     const nodes = try parser.parse();
 
     try expect(nodes.items.len == 1);
-    try expectEqualDeep(&ASTNode{
-        .binary = ASTBinaryExpressionNode{
+    try expectEqualDeep(&ASTNode{ .tag = .eq, .data = .{
+        .binary = ASTBinaryNode{
             .left = @constCast(&ASTNode{
-                .literal = ASTLiteralNode{
-                    .value = Token{ .type = TokenType.NumberConstant, .value = "1" },
+                .tag = .number,
+                .data = .{
+                    .literal = "1",
                 },
             }),
-            .operator = TokenType.EqualEqual,
             .right = @constCast(&ASTNode{
-                .literal = ASTLiteralNode{
-                    .value = Token{ .type = TokenType.NumberConstant, .value = "2" },
+                .tag = .number,
+                .data = .{
+                    .literal = "2",
                 },
             }),
         },
-    }, nodes.items[0]);
+    } }, nodes.items[0]);
 }
 
 test "should parse complex comparisons" {
@@ -56,7 +54,7 @@ test "should parse complex comparisons" {
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    var arr = [_]Token{
+    var tokens = [_]Token{
         valued(TokenType.NumberConstant, "1"),
         simple(TokenType.LessThan),
         valued(TokenType.NumberConstant, "2"),
@@ -69,43 +67,54 @@ test "should parse complex comparisons" {
         simple(TokenType.Semicolon),
         simple(TokenType.Eof),
     };
-    var tokens = std.ArrayList(Token).fromOwnedSlice(allocator, &arr);
-    defer tokens.deinit();
 
-    var parser = Parser.init(allocator, tokens);
+    var parser = Parser.init(allocator, &tokens);
 
     const nodes = try parser.parse();
 
     const node = nodes.items[0];
     try expect(nodes.items.len == 1);
-    try expect(node.* == .binary);
+    try expectEqual(ASTNodeTag.@"or", node.tag);
 
-    const leftNode = node.binary.left;
-    try expect(leftNode.* == .binary);
-    try expect(leftNode.binary.left.* == .binary);
-    try expectEqual(TokenType.BarBar, leftNode.binary.operator);
+    try expectEqualDeep(&ASTNode{ .tag = .lt, .data = .{
+        .binary = ASTBinaryNode{
+            .left = @constCast(&ASTNode{
+                .tag = .number,
+                .data = .{
+                    .literal = "1",
+                },
+            }),
+            .right = @constCast(&ASTNode{
+                .tag = .number,
+                .data = .{
+                    .literal = "2",
+                },
+            }),
+        },
+    } }, node.data.binary.left);
 
-    const leftLeftNode = leftNode.binary.left;
-    try expect(leftLeftNode.binary.left.* == .literal);
-    try expectEqualDeep(Token{ .type = TokenType.NumberConstant, .value = "1" }, leftLeftNode.binary.left.literal.value);
-
-    try expectEqual(TokenType.LessThan, leftLeftNode.binary.operator);
-
-    try expect(leftLeftNode.binary.right.* == .literal);
-    try expectEqualDeep(Token{ .type = TokenType.NumberConstant, .value = "2" }, leftLeftNode.binary.right.literal.value);
-
-    try expect(leftNode.binary.right.* == .literal);
-    try expectEqualDeep(Token{ .type = TokenType.NumberConstant, .value = "3" }, leftNode.binary.right.literal.value);
-
-    try expectEqual(TokenType.AmpersandAmpersand, node.binary.operator);
-
-    const rightNode = node.binary.right;
-    try expect(rightNode.* == .binary);
-    try expectEqual(TokenType.EqualEqual, rightNode.binary.operator);
-
-    try expect(rightNode.binary.left.* == .literal);
-    try expectEqualDeep(Token{ .type = TokenType.NumberConstant, .value = "4" }, rightNode.binary.left.literal.value);
-
-    try expect(rightNode.binary.right.* == .literal);
-    try expectEqualDeep(Token{ .type = TokenType.NumberConstant, .value = "5" }, rightNode.binary.right.literal.value);
+    const rightNode = node.data.binary.right;
+    try expectEqual(ASTNodeTag.@"and", rightNode.tag);
+    try expectEqualDeep(&ASTNode{
+        .tag = .number,
+        .data = .{
+            .literal = "3",
+        },
+    }, rightNode.data.binary.left);
+    try expectEqualDeep(&ASTNode{ .tag = .eq, .data = .{
+        .binary = ASTBinaryNode{
+            .left = @constCast(&ASTNode{
+                .tag = .number,
+                .data = .{
+                    .literal = "4",
+                },
+            }),
+            .right = @constCast(&ASTNode{
+                .tag = .number,
+                .data = .{
+                    .literal = "5",
+                },
+            }),
+        },
+    } }, rightNode.data.binary.right);
 }

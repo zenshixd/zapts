@@ -5,7 +5,7 @@ const Symbol = @import("symbol_table.zig").Symbol;
 pub const PUNCTUATION_CHARS = ".,:;()[]'\"{}";
 pub const OPERATOR_CHARS = "<>?+-=*|&!%/\\";
 pub const WHITESPACE = " \t\r\n";
-// zig fmt: off
+
 pub const keywords_map = std.ComptimeStringMap(TokenType, .{
     .{ "var", TokenType.Var },
     .{ "let", TokenType.Let },
@@ -179,9 +179,8 @@ pub const TokenType = enum(u8) {
     Public,
     Static,
     Yield,
-    From
+    From,
 };
-// zig fmt: on
 
 pub const Token = struct {
     type: TokenType,

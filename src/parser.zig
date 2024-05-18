@@ -40,10 +40,6 @@ pub const ASTObjectLiteralNode = struct {
     values: []*ASTNode,
 };
 
-pub const ASTLiteralNode = struct {
-    value: Token,
-};
-
 pub const ASTBinaryNode = struct {
     left: *ASTNode,
     right: *ASTNode,
@@ -54,21 +50,16 @@ pub const ASTNoneNode = struct {};
 pub const ASTNodeTag = enum {
     simple_import,
     import,
-
     var_decl,
     const_decl,
     let_decl,
-
     block,
     assignment,
-
     async_func_decl,
     func_decl,
     call_expr,
-
     grouping,
     comma,
-
     lt,
     gt,
     lte,
@@ -79,21 +70,18 @@ pub const ASTNodeTag = enum {
     neqq,
     @"and",
     @"or",
-
     plus_expr,
     minus_expr,
     multiply_expr,
     exp_expr,
     div_expr,
     modulo_expr,
-
     bitwise_and,
     bitwise_or,
     bitwise_xor,
     bitwise_shift_left,
     bitwise_shift_right,
     bitwise_unsigned_right_shift,
-
     plus_assign,
     minus_assign,
     multiply_assign,
@@ -108,10 +96,8 @@ pub const ASTNodeTag = enum {
     bitwise_shift_left_assign,
     bitwise_shift_right_assign,
     bitwise_unsigned_right_shift_assign,
-
     instanceof,
     in,
-
     plus,
     plusplus,
     minus,
@@ -120,7 +106,6 @@ pub const ASTNodeTag = enum {
     bitwise_negate,
     spread,
     typeof,
-
     object_literal,
     property_access,
     optional_property_access,
@@ -139,7 +124,7 @@ pub const ASTNodeTag = enum {
 
 pub const ASTNode = struct {
     tag: ASTNodeTag,
-    data: union {
+    data: union(enum) {
         literal: []const u8,
         node: *ASTNode,
         nodes: []*ASTNode,
@@ -157,98 +142,6 @@ pub const ASTNode = struct {
         return node;
     }
 };
-
-// pub const ASTNode = union(enum) {
-//     simple_import: []const u8,
-//     import: ASTImportNode,
-//
-//     var_decl: *ASTNode,
-//     const_decl: *ASTNode,
-//     let_decl: *ASTNode,
-//
-//     block: []*ASTNode,
-//     assignment: ASTBinaryNode,
-//
-//     async_func_decl: ASTFunctionExpressionNode,
-//     func_decl: ASTFunctionExpressionNode,
-//     call_expr: ASTCallableExpressionNode,
-//
-//     grouping: *ASTNode,
-//     comma: ASTBinaryNode,
-//
-//     lt: ASTBinaryNode,
-//     gt: ASTBinaryNode,
-//     lte: ASTBinaryNode,
-//     gte: ASTBinaryNode,
-//     eq: ASTBinaryNode,
-//     eqq: ASTBinaryNode,
-//     neq: ASTBinaryNode,
-//     neqq: ASTBinaryNode,
-//     @"and": ASTBinaryNode,
-//     @"or": ASTBinaryNode,
-//
-//     plus_expr: ASTBinaryNode,
-//     minus_expr: ASTBinaryNode,
-//     multiply_expr: ASTBinaryNode,
-//     exp_expr: ASTBinaryNode,
-//     div_expr: ASTBinaryNode,
-//     modulo_expr: ASTBinaryNode,
-//
-//     bitwise_and: ASTBinaryNode,
-//     bitwise_or: ASTBinaryNode,
-//     bitwise_xor: ASTBinaryNode,
-//     bitwise_shift_left: ASTBinaryNode,
-//     bitwise_shift_right: ASTBinaryNode,
-//     bitwise_unsigned_right_shift: ASTBinaryNode,
-//
-//     plus_assign: ASTBinaryNode,
-//     minus_assign: ASTBinaryNode,
-//     multiply_assign: ASTBinaryNode,
-//     modulo_assign: ASTBinaryNode,
-//     div_assign: ASTBinaryNode,
-//     exp_assign: ASTBinaryNode,
-//     and_assign: ASTBinaryNode,
-//     or_assign: ASTBinaryNode,
-//     bitwise_and_assign: ASTBinaryNode,
-//     bitwise_or_assign: ASTBinaryNode,
-//     bitwise_xor_assign: ASTBinaryNode,
-//     bitwise_shift_left_assign: ASTBinaryNode,
-//     bitwise_shift_right_assign: ASTBinaryNode,
-//     bitwise_unsigned_right_shift_assign: ASTBinaryNode,
-//
-//     instanceof: ASTBinaryNode,
-//     in: ASTBinaryNode,
-//
-//     plus: *ASTNode,
-//     plusplus: *ASTNode,
-//     minus: *ASTNode,
-//     minusminus: *ASTNode,
-//     not: *ASTNode,
-//     bitwise_negate: *ASTNode,
-//     spread: *ASTNode,
-//     typeof: *ASTNode,
-//
-//     object_literal: ASTObjectLiteralNode,
-//     property_access: ASTBinaryNode,
-//     optional_property_access: ASTBinaryNode,
-//     array_literal: []*ASTNode,
-//     index_access: ASTBinaryNode,
-//     true: void,
-//     false: void,
-//     null: void,
-//     undefined: void,
-//     number: []const u8,
-//     bigint: []const u8,
-//     string: []const u8,
-//     identifier: []const u8,
-//     none: ASTNoneNode,
-//
-//     pub fn new(allocator: std.mem.Allocator, value: ASTNode) !*ASTNode {
-//         const node = try allocator.create(ASTNode);
-//         node.* = value;
-//         return node;
-//     }
-// };
 
 const Self = @This();
 
@@ -333,14 +226,14 @@ pub fn parseStatement(self: *Self) ParserError!*ASTNode {
         return ASTNode.new(self.allocator, .{ .tag = .none, .data = .{ .none = .{} } });
     }
 
-    if (self.match(TokenType.Import)) {
-        return try self.parseImportStatement();
-    } else if (self.peekMatch(TokenType.Var) or self.peekMatch(TokenType.Let) or self.peekMatch(TokenType.Const)) {
-        return try self.parseDeclaration();
-    } else if (self.match(TokenType.Function)) {
+    if (self.match(TokenType.Function)) {
         return try self.parseFunctionExpression(false);
     } else if (self.match(TokenType.Async) and self.match(TokenType.Function)) {
         return try self.parseFunctionExpression(true);
+    } else if (self.match(TokenType.Import)) {
+        return try self.parseImportStatement();
+    } else if (self.peekMatch(TokenType.Var) or self.peekMatch(TokenType.Let) or self.peekMatch(TokenType.Const)) {
+        return try self.parseDeclaration();
     }
 
     const node = try self.parseExpression();
@@ -519,7 +412,7 @@ pub fn parseAssignment(self: *Self) ParserError!*ASTNode {
 
     while (true) {
         const tag: ASTNodeTag = switch (self.token().type) {
-            .Equal => .eq,
+            .Equal => .assignment,
             .PlusEqual => .plus_assign,
             .MinusEqual => .minus_assign,
             .StarEqual => .multiply_assign,
