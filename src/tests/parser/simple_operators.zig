@@ -29,7 +29,7 @@ test "parses a addition expression" {
 
     const nodes = try parser.parse();
 
-    try expect(nodes.items.len == 1);
+    try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .plus_expr,
         .data = .{
@@ -48,7 +48,7 @@ test "parses a addition expression" {
                 }),
             },
         },
-    }, nodes.items[0]);
+    }, nodes[0]);
 }
 
 test "parses a substraction expression" {
@@ -66,7 +66,7 @@ test "parses a substraction expression" {
 
     const nodes = try parser.parse();
 
-    try expect(nodes.items.len == 1);
+    try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .minus_expr,
         .data = .{
@@ -85,7 +85,7 @@ test "parses a substraction expression" {
                 }),
             },
         },
-    }, nodes.items[0]);
+    }, nodes[0]);
 }
 
 test "parses a multiplication expression" {
@@ -104,7 +104,7 @@ test "parses a multiplication expression" {
 
     const nodes = try parser.parse();
 
-    try expect(nodes.items.len == 1);
+    try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .multiply_expr,
         .data = .{
@@ -123,7 +123,7 @@ test "parses a multiplication expression" {
                 }),
             },
         },
-    }, nodes.items[0]);
+    }, nodes[0]);
 }
 
 test "parses an expression with multiple operators" {
@@ -144,7 +144,7 @@ test "parses an expression with multiple operators" {
 
     const nodes = try parser.parse();
 
-    try expect(nodes.items.len == 1);
+    try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .plus_expr,
         .data = .{ .binary = ASTBinaryNode{
@@ -166,7 +166,7 @@ test "parses an expression with multiple operators" {
                 .data = .{ .literal = "3" },
             }),
         } },
-    }, nodes.items[0]);
+    }, nodes[0]);
 }
 
 test "parses an expression with multiple types of operators" {
@@ -188,7 +188,7 @@ test "parses an expression with multiple types of operators" {
 
     const nodes = try parser.parse();
 
-    try expect(nodes.items.len == 1);
+    try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .minus_expr,
         .data = .{ .binary = ASTBinaryNode{
@@ -210,5 +210,5 @@ test "parses an expression with multiple types of operators" {
                 } },
             }),
         } },
-    }, nodes.items[0]);
+    }, nodes[0]);
 }

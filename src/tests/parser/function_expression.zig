@@ -41,7 +41,7 @@ test "should parse function expression" {
     try expectedArgs.append("baz");
 
     var expectedBody = std.ArrayList(*ASTNode).init(allocator);
-    try expectEqual(1, nodes.items.len);
+    try expectEqual(1, nodes.len);
     try expectEqualDeep(&ASTNode{
         .tag = .func_decl,
         .data = .{
@@ -51,7 +51,7 @@ test "should parse function expression" {
                 .body = try expectedBody.toOwnedSlice(),
             },
         },
-    }, nodes.items[0]);
+    }, nodes[0]);
 }
 
 test "should parse async function expression" {
@@ -81,7 +81,7 @@ test "should parse async function expression" {
     try expectedArgs.append("baz");
 
     var expectedBody = std.ArrayList(*ASTNode).init(allocator);
-    try expectEqual(1, nodes.items.len);
+    try expectEqual(1, nodes.len);
     try expectEqualDeep(&ASTNode{
         .tag = .async_func_decl,
         .data = .{
@@ -91,5 +91,5 @@ test "should parse async function expression" {
                 .body = try expectedBody.toOwnedSlice(),
             },
         },
-    }, nodes.items[0]);
+    }, nodes[0]);
 }

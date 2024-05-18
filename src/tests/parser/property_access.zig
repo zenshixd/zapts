@@ -30,14 +30,14 @@ test "should parse property access" {
 
     const nodes = try parser.parse();
 
-    try expect(nodes.items.len == 1);
+    try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .property_access,
         .data = .{ .binary = ASTBinaryNode{
             .left = @constCast(&ASTNode{ .tag = .identifier, .data = .{ .literal = "foo" } }),
             .right = @constCast(&ASTNode{ .tag = .identifier, .data = .{ .literal = "bar" } }),
         } },
-    }, nodes.items[0]);
+    }, nodes[0]);
 }
 
 test "should parse property access with question mark" {
@@ -57,14 +57,14 @@ test "should parse property access with question mark" {
 
     const nodes = try parser.parse();
 
-    try expect(nodes.items.len == 1);
+    try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .optional_property_access,
         .data = .{ .binary = ASTBinaryNode{
             .left = @constCast(&ASTNode{ .tag = .identifier, .data = .{ .literal = "foo" } }),
             .right = @constCast(&ASTNode{ .tag = .identifier, .data = .{ .literal = "bar" } }),
         } },
-    }, nodes.items[0]);
+    }, nodes[0]);
 }
 
 test "should parse property access with index access" {
@@ -87,7 +87,7 @@ test "should parse property access with index access" {
 
     const nodes = try parser.parse();
 
-    try expect(nodes.items.len == 1);
+    try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .index_access,
         .data = .{ .binary = ASTBinaryNode{
@@ -100,7 +100,7 @@ test "should parse property access with index access" {
             }),
             .right = @constCast(&ASTNode{ .tag = .number, .data = .{ .literal = "1" } }),
         } },
-    }, nodes.items[0]);
+    }, nodes[0]);
 }
 
 test "should parse expression in index access" {
@@ -123,7 +123,7 @@ test "should parse expression in index access" {
 
     const nodes = try parser.parse();
 
-    try expect(nodes.items.len == 1);
+    try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .index_access,
         .data = .{ .binary = ASTBinaryNode{
@@ -139,5 +139,5 @@ test "should parse expression in index access" {
                 } },
             }),
         } },
-    }, nodes.items[0]);
+    }, nodes[0]);
 }

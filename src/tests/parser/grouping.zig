@@ -34,7 +34,7 @@ test "should parse grouping" {
 
     const nodes = try parser.parse();
 
-    try expectEqual(1, nodes.items.len);
+    try expectEqual(1, nodes.len);
     try expectEqualDeep(&ASTNode{
         .tag = .minus_expr,
         .data = .{
@@ -54,5 +54,5 @@ test "should parse grouping" {
                 }),
             },
         },
-    }, nodes.items[0]);
+    }, nodes[0]);
 }

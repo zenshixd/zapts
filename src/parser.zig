@@ -181,8 +181,9 @@ pub fn peekMatch(self: Self, token_type: TokenType) bool {
     return self.index < self.tokens.len and self.token().type == token_type;
 }
 
-pub fn parse(self: *Self) ParserError!ArrayList(*ASTNode) {
+pub fn parse(self: *Self) ParserError![]*ASTNode {
     var nodes = ArrayList(*ASTNode).init(self.allocator);
+    defer nodes.deinit();
 
     while (!self.match(TokenType.Eof)) {
         if (self.match(TokenType.NewLine)) {
@@ -195,7 +196,7 @@ pub fn parse(self: *Self) ParserError!ArrayList(*ASTNode) {
         }
     }
 
-    return nodes;
+    return try nodes.toOwnedSlice();
 }
 
 pub fn consume(self: *Self, token_type: TokenType, error_msg: []const u8) ParserError!Token {
@@ -410,31 +411,29 @@ pub fn parseExpression(self: *Self) ParserError!*ASTNode {
 pub fn parseAssignment(self: *Self) ParserError!*ASTNode {
     var node = try self.parseLogicalOr();
 
-    while (true) {
-        const tag: ASTNodeTag = switch (self.token().type) {
-            .Equal => .assignment,
-            .PlusEqual => .plus_assign,
-            .MinusEqual => .minus_assign,
-            .StarEqual => .multiply_assign,
-            .StarStarEqual => .exp_assign,
-            .SlashEqual => .div_assign,
-            .PercentEqual => .modulo_assign,
-            .AmpersandEqual => .bitwise_and_assign,
-            .BarEqual => .bitwise_or_assign,
-            .CaretEqual => .bitwise_xor_assign,
-            .BarBarEqual => .or_assign,
-            .AmpersandAmpersandEqual => .and_assign,
-            .GreaterThanGreaterThanEqual => .bitwise_shift_right,
-            .GreaterThanGreaterThanGreaterThanEqual => .bitwise_unsigned_right_shift,
-            .LessThanLessThanEqual => .bitwise_shift_left,
-            else => break,
-        };
-        _ = self.advance();
-        node = try ASTNode.new(self.allocator, .{ .tag = tag, .data = .{ .binary = ASTBinaryNode{
-            .left = node,
-            .right = try self.parseLogicalOr(),
-        } } });
-    }
+    const tag: ASTNodeTag = switch (self.token().type) {
+        .Equal => .assignment,
+        .PlusEqual => .plus_assign,
+        .MinusEqual => .minus_assign,
+        .StarEqual => .multiply_assign,
+        .StarStarEqual => .exp_assign,
+        .SlashEqual => .div_assign,
+        .PercentEqual => .modulo_assign,
+        .AmpersandEqual => .bitwise_and_assign,
+        .BarEqual => .bitwise_or_assign,
+        .CaretEqual => .bitwise_xor_assign,
+        .BarBarEqual => .or_assign,
+        .AmpersandAmpersandEqual => .and_assign,
+        .GreaterThanGreaterThanEqual => .bitwise_shift_right,
+        .GreaterThanGreaterThanGreaterThanEqual => .bitwise_unsigned_right_shift,
+        .LessThanLessThanEqual => .bitwise_shift_left,
+        else => return node,
+    };
+    _ = self.advance();
+    node = try ASTNode.new(self.allocator, .{ .tag = tag, .data = .{ .binary = ASTBinaryNode{
+        .left = node,
+        .right = try self.parseAssignment(),
+    } } });
 
     return node;
 }

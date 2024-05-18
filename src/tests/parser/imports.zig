@@ -42,7 +42,7 @@ test "should parse star import statements" {
         .name = "fs",
     });
 
-    try expect(nodes.items.len == 1);
+    try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .import,
         .data = .{
@@ -51,7 +51,7 @@ test "should parse star import statements" {
                 .path = "node:fs",
             },
         },
-    }, nodes.items[0]);
+    }, nodes[0]);
 }
 
 test "should parse named import statements" {
@@ -82,7 +82,7 @@ test "should parse named import statements" {
         .name = "readFile",
     });
 
-    try expect(nodes.items.len == 1);
+    try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .import,
         .data = .{
@@ -91,7 +91,7 @@ test "should parse named import statements" {
                 .path = "node:fs",
             },
         },
-    }, nodes.items[0]);
+    }, nodes[0]);
 }
 
 test "should parse named import statements with multiple symbols" {
@@ -130,7 +130,7 @@ test "should parse named import statements with multiple symbols" {
         .name = "writeFile",
     });
 
-    try expect(nodes.items.len == 1);
+    try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .import,
         .data = .{
@@ -139,7 +139,7 @@ test "should parse named import statements with multiple symbols" {
                 .path = "node:fs",
             },
         },
-    }, nodes.items[0]);
+    }, nodes[0]);
 }
 
 test "should parse named import statements with no symbols" {
@@ -162,7 +162,7 @@ test "should parse named import statements with no symbols" {
     const nodes = try parser.parse();
 
     var expectedSymbols = std.ArrayList(ASTImportBinding).init(allocator);
-    try expect(nodes.items.len == 1);
+    try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .import,
         .data = .{
@@ -171,7 +171,7 @@ test "should parse named import statements with no symbols" {
                 .path = "node:fs",
             },
         },
-    }, nodes.items[0]);
+    }, nodes[0]);
 }
 
 test "should parse basic imports" {
@@ -190,11 +190,11 @@ test "should parse basic imports" {
 
     const nodes = try parser.parse();
 
-    try expect(nodes.items.len == 1);
+    try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .simple_import,
         .data = .{ .literal = "node:fs" },
-    }, nodes.items[0]);
+    }, nodes[0]);
 }
 
 test "should parse default imports" {
@@ -223,7 +223,7 @@ test "should parse default imports" {
         .name = "fs",
     });
 
-    try expect(nodes.items.len == 1);
+    try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .import,
         .data = .{
@@ -232,5 +232,5 @@ test "should parse default imports" {
                 .path = "node:fs",
             },
         },
-    }, nodes.items[0]);
+    }, nodes[0]);
 }

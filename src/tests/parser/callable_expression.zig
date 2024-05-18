@@ -51,7 +51,7 @@ test "should parse function call" {
         },
     }));
 
-    try expect(nodes.items.len == 1);
+    try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .call_expr,
         .data = .{
@@ -63,7 +63,7 @@ test "should parse function call" {
                 .arguments = try expectedArgs.toOwnedSlice(),
             },
         },
-    }, nodes.items[0]);
+    }, nodes[0]);
 }
 
 test "function call with multiple arguments" {
@@ -108,7 +108,7 @@ test "function call with multiple arguments" {
         .tag = .identifier,
         .data = .{ .literal = "qux" },
     }));
-    try expect(nodes.items.len == 1);
+    try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .call_expr,
         .data = .{
@@ -120,7 +120,7 @@ test "function call with multiple arguments" {
                 .arguments = try expectedArgs.toOwnedSlice(),
             },
         },
-    }, nodes.items[0]);
+    }, nodes[0]);
 }
 
 test "should call a function through a property access" {
@@ -144,7 +144,7 @@ test "should call a function through a property access" {
 
     var expectedArgs = std.ArrayList(*ASTNode).init(allocator);
 
-    try expect(nodes.items.len == 1);
+    try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .call_expr,
         .data = .{
@@ -167,7 +167,7 @@ test "should call a function through a property access" {
                 .arguments = try expectedArgs.toOwnedSlice(),
             },
         },
-    }, nodes.items[0]);
+    }, nodes[0]);
 }
 
 test "should call a function through a index access" {
@@ -194,7 +194,7 @@ test "should call a function through a index access" {
 
     var expectedArgs = std.ArrayList(*ASTNode).init(allocator);
 
-    try expect(nodes.items.len == 1);
+    try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .call_expr,
         .data = .{
@@ -230,5 +230,5 @@ test "should call a function through a index access" {
                 .arguments = try expectedArgs.toOwnedSlice(),
             },
         },
-    }, nodes.items[0]);
+    }, nodes[0]);
 }

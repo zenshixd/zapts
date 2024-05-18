@@ -30,7 +30,7 @@ test "should parse comparisons" {
 
     const nodes = try parser.parse();
 
-    try expect(nodes.items.len == 1);
+    try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{ .tag = .eq, .data = .{
         .binary = ASTBinaryNode{
             .left = @constCast(&ASTNode{
@@ -46,7 +46,7 @@ test "should parse comparisons" {
                 },
             }),
         },
-    } }, nodes.items[0]);
+    } }, nodes[0]);
 }
 
 test "should parse complex comparisons" {
@@ -72,8 +72,8 @@ test "should parse complex comparisons" {
 
     const nodes = try parser.parse();
 
-    const node = nodes.items[0];
-    try expect(nodes.items.len == 1);
+    const node = nodes[0];
+    try expect(nodes.len == 1);
     try expectEqual(ASTNodeTag.@"or", node.tag);
 
     try expectEqualDeep(&ASTNode{ .tag = .lt, .data = .{

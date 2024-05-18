@@ -1,4 +1,5 @@
 test {
+    _ = @import("parser/assignments.zig");
     _ = @import("parser/callable_expression.zig");
     _ = @import("parser/comparisons.zig");
     _ = @import("parser/function_expression.zig");
