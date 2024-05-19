@@ -1,5 +1,4 @@
 const std = @import("std");
-const String = @import("string.zig").String;
 const Symbol = @import("symbol_table.zig").Symbol;
 
 pub const PUNCTUATION_CHARS = ".,:;()[]'\"{}";

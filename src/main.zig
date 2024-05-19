@@ -1,5 +1,4 @@
 const std = @import("std");
-const String = @import("string.zig").String;
 pub const Lexer = @import("lexer.zig");
 pub const Token = @import("consts.zig").Token;
 pub const TokenType = @import("consts.zig").TokenType;
@@ -61,8 +60,6 @@ pub fn main() !void {
 }
 
 test {
-    _ = @import("string.zig");
     _ = @import("lexer.zig");
-    _ = @import("tests/parser.zig");
-    _ = @import("tests/conformance.zig");
+    _ = @import("parser.zig");
 }

@@ -1,9 +1,9 @@
 const std = @import("std");
-const String = @import("string.zig").String;
 const consts = @import("consts.zig");
 const SymbolsTable = @import("symbol_table.zig").SymbolTable;
 const Symbol = @import("symbol_table.zig").Symbol;
 const SymbolType = @import("symbol_table.zig").SymbolType;
+const ArrayList = std.ArrayList;
 const Token = consts.Token;
 const TokenType = consts.TokenType;
 const keywords_map = consts.keywords_map;
@@ -153,7 +153,9 @@ pub fn next(self: *Self, current_char: u8) !Token {
                     .value = null,
                 };
             } else if (next_char == '/') {
-                var str = try String.new(self.allocator, 100);
+                var str = ArrayList(u8).init(self.allocator);
+                defer str.deinit();
+                try str.ensureTotalCapacity(100);
 
                 while (true) {
                     next_char = try self.maybe_advance() orelse break;
@@ -165,10 +167,12 @@ pub fn next(self: *Self, current_char: u8) !Token {
 
                 return Token{
                     .type = TokenType.LineComment,
-                    .value = str.value(),
+                    .value = try str.toOwnedSlice(),
                 };
             } else if (next_char == '*') {
-                var str = try String.new(self.allocator, 100);
+                var str = ArrayList(u8).init(self.allocator);
+                defer str.deinit();
+                try str.ensureTotalCapacity(100);
 
                 while (true) {
                     next_char = try self.maybe_advance() orelse break;
@@ -189,7 +193,7 @@ pub fn next(self: *Self, current_char: u8) !Token {
 
                 return Token{
                     .type = TokenType.MultilineComment,
-                    .value = str.value(),
+                    .value = try str.toOwnedSlice(),
                 };
             } else {
                 try self.rewind(-1);
@@ -500,7 +504,9 @@ pub fn next(self: *Self, current_char: u8) !Token {
             };
         },
         '\'', '"' => {
-            var str = try String.new(self.allocator, 100);
+            var str = ArrayList(u8).init(self.allocator);
+            defer str.deinit();
+            try str.ensureTotalCapacity(100);
 
             const starting_char = current_char;
             while (true) {
@@ -513,15 +519,17 @@ pub fn next(self: *Self, current_char: u8) !Token {
 
             return Token{
                 .type = TokenType.StringConstant,
-                .value = str.value(),
+                .value = try str.toOwnedSlice(),
             };
         },
         '0'...'9' => {
             return self.read_numeric_literal(&[_]u8{current_char}, false);
         },
         else => {
-            var str = try String.new(self.allocator, 100);
+            var str = ArrayList(u8).init(self.allocator);
+            defer str.deinit();
 
+            try str.ensureTotalCapacity(100);
             try str.append(current_char);
 
             var next_char: u8 = undefined;
@@ -534,7 +542,7 @@ pub fn next(self: *Self, current_char: u8) !Token {
                 try str.append(next_char);
             }
 
-            if (keywords_map.get(str.value())) |keyword_type| {
+            if (keywords_map.get(str.items)) |keyword_type| {
                 return Token{
                     .type = keyword_type,
                     .value = null,
@@ -543,7 +551,7 @@ pub fn next(self: *Self, current_char: u8) !Token {
 
             return Token{
                 .type = TokenType.Identifier,
-                .value = str.value(),
+                .value = try str.toOwnedSlice(),
             };
         },
     }
@@ -551,9 +559,11 @@ pub fn next(self: *Self, current_char: u8) !Token {
     unreachable;
 }
 
-pub fn nextAll(self: *Self) !std.ArrayList(Token) {
+pub fn nextAll(self: *Self) ![]Token {
     var current_char: u8 = self.buffer[0];
     var tokens = std.ArrayList(Token).init(self.allocator);
+    defer tokens.deinit();
+
     while (true) {
         const token = try self.next(current_char);
 
@@ -573,22 +583,25 @@ pub fn nextAll(self: *Self) !std.ArrayList(Token) {
             return err;
         };
     }
-    return tokens;
+
+    return tokens.toOwnedSlice();
 }
 
 fn read_numeric_literal(self: *Self, buffer: []const u8, default_has_dot: bool) !Token {
     var token_type: TokenType = TokenType.NumberConstant;
-    var str = try String.new(self.allocator, 100);
+    var str = ArrayList(u8).init(self.allocator);
+    defer str.deinit();
+    try str.ensureTotalCapacity(100);
 
     var has_dot = default_has_dot;
     var has_exponent = false;
 
-    try str.append_many(buffer);
+    try str.appendSlice(buffer);
     while (true) {
         const next_char = try self.maybe_advance() orelse break;
 
         if (next_char == '.') {
-            if (has_exponent or has_dot or str.at(-1) == '_') {
+            if (has_exponent or has_dot or str.items[str.items.len - 1] == '_') {
                 return LexerError.SyntaxError;
             }
             has_dot = true;
@@ -597,7 +610,7 @@ fn read_numeric_literal(self: *Self, buffer: []const u8, default_has_dot: bool) 
         }
 
         if (next_char == 'e' or next_char == 'E') {
-            if (has_exponent or str.at(-1) == '_') {
+            if (has_exponent or str.items[str.items.len - 1] == '_') {
                 return LexerError.SyntaxError;
             }
             has_exponent = true;
@@ -606,7 +619,7 @@ fn read_numeric_literal(self: *Self, buffer: []const u8, default_has_dot: bool) 
         }
 
         if (next_char == '_') {
-            if (str.at(-1) == '_' or str.at(-1) == '.' or str.at(-1) == 'e' or str.at(-1) == 'E') {
+            if (str.items[str.items.len - 1] == '_' or str.items[str.items.len - 1] == '.' or str.items[str.items.len - 1] == 'e' or str.items[str.items.len - 1] == 'E') {
                 return LexerError.SyntaxError;
             }
 
@@ -628,7 +641,7 @@ fn read_numeric_literal(self: *Self, buffer: []const u8, default_has_dot: bool) 
 
     return Token{
         .type = token_type,
-        .value = str.value(),
+        .value = try str.toOwnedSlice(),
     };
 }
 
@@ -843,9 +856,9 @@ test "should tokenize keywords" {
     var lexer = Lexer.init(arena.allocator(), try std.mem.join(arena.allocator(), " ", &keywords));
     const tokens = try lexer.nextAll();
 
-    try expectEqual(expected_tokens.len, tokens.items.len - 1);
-    for (expected_tokens, 0..tokens.items.len - 1) |expected_token, i| {
-        try expectEqual(expected_token, tokens.items[i].type);
+    try expectEqual(expected_tokens.len, tokens.len - 1);
+    for (expected_tokens, 0..tokens.len - 1) |expected_token, i| {
+        try expectEqual(expected_token, tokens[i].type);
     }
 }
 
@@ -916,9 +929,9 @@ test "should tokenize operators" {
     const tokens = try lexer.nextAll();
 
     // we remove one because of Eof token
-    try expectEqual(expected_tokens.len, tokens.items.len - 1);
-    for (expected_tokens, 0..tokens.items.len - 1) |expected_token, i| {
-        try expectEqual(expected_token, tokens.items[i].type);
+    try expectEqual(expected_tokens.len, tokens.len - 1);
+    for (expected_tokens, 0..tokens.len - 1) |expected_token, i| {
+        try expectEqual(expected_token, tokens[i].type);
     }
 }
 
@@ -937,11 +950,11 @@ test "should tokenize comments" {
     var lexer = Lexer.init(arena.allocator(), buffer);
     const tokens = try lexer.nextAll();
 
-    try expectEqual(TokenType.LineComment, tokens.items[0].type);
-    try expectEqualStrings(" single line comment", tokens.items[0].value.?);
+    try expectEqual(TokenType.LineComment, tokens[0].type);
+    try expectEqualStrings(" single line comment", tokens[0].value.?);
 
-    try expectEqual(TokenType.MultilineComment, tokens.items[1].type);
-    try expectEqualStrings("\n * multiline\n * comment\n *\n ", tokens.items[1].value.?);
+    try expectEqual(TokenType.MultilineComment, tokens[1].type);
+    try expectEqualStrings("\n * multiline\n * comment\n *\n ", tokens[1].value.?);
 }
 
 test "should tokenize strings" {
@@ -952,14 +965,14 @@ test "should tokenize strings" {
     var lexer = Lexer.init(arena.allocator(), buffer);
     const tokens = try lexer.nextAll();
 
-    try expectEqual(TokenType.StringConstant, tokens.items[0].type);
-    try expectEqualStrings("hello", tokens.items[0].value.?);
+    try expectEqual(TokenType.StringConstant, tokens[0].type);
+    try expectEqualStrings("hello", tokens[0].value.?);
 
-    try expectEqual(TokenType.StringConstant, tokens.items[1].type);
-    try expectEqualStrings("hello", tokens.items[1].value.?);
+    try expectEqual(TokenType.StringConstant, tokens[1].type);
+    try expectEqualStrings("hello", tokens[1].value.?);
 
-    try expectEqual(TokenType.StringConstant, tokens.items[2].type);
-    try expectEqualStrings("hello''world", tokens.items[2].value.?);
+    try expectEqual(TokenType.StringConstant, tokens[2].type);
+    try expectEqualStrings("hello''world", tokens[2].value.?);
 }
 
 test "should tokenize decimal numbers" {
@@ -970,66 +983,66 @@ test "should tokenize decimal numbers" {
     var lexer = Lexer.init(arena.allocator(), buffer);
     const tokens = try lexer.nextAll();
 
-    try expectEqual(TokenType.NumberConstant, tokens.items[0].type);
-    try expectEqualStrings("123", tokens.items[0].value.?);
+    try expectEqual(TokenType.NumberConstant, tokens[0].type);
+    try expectEqualStrings("123", tokens[0].value.?);
 
-    try expectEqual(TokenType.NumberConstant, tokens.items[1].type);
-    try expectEqualStrings("123.456", tokens.items[1].value.?);
+    try expectEqual(TokenType.NumberConstant, tokens[1].type);
+    try expectEqualStrings("123.456", tokens[1].value.?);
 
-    try expectEqual(TokenType.NumberConstant, tokens.items[2].type);
-    try expectEqualStrings("123e456", tokens.items[2].value.?);
+    try expectEqual(TokenType.NumberConstant, tokens[2].type);
+    try expectEqualStrings("123e456", tokens[2].value.?);
 
-    try expectEqual(TokenType.NumberConstant, tokens.items[3].type);
-    try expectEqualStrings("123.456e456", tokens.items[3].value.?);
+    try expectEqual(TokenType.NumberConstant, tokens[3].type);
+    try expectEqualStrings("123.456e456", tokens[3].value.?);
 
-    try expectEqual(TokenType.BigIntConstant, tokens.items[4].type);
-    try expectEqualStrings("123n", tokens.items[4].value.?);
+    try expectEqual(TokenType.BigIntConstant, tokens[4].type);
+    try expectEqualStrings("123n", tokens[4].value.?);
 
-    try expectEqual(TokenType.NumberConstant, tokens.items[5].type);
-    try expectEqualStrings("123_456", tokens.items[5].value.?);
+    try expectEqual(TokenType.NumberConstant, tokens[5].type);
+    try expectEqualStrings("123_456", tokens[5].value.?);
 
-    try expectEqual(TokenType.BigIntConstant, tokens.items[6].type);
-    try expectEqualStrings("123_456n", tokens.items[6].value.?);
+    try expectEqual(TokenType.BigIntConstant, tokens[6].type);
+    try expectEqualStrings("123_456n", tokens[6].value.?);
 
-    try expectEqual(TokenType.NumberConstant, tokens.items[7].type);
-    try expectEqualStrings(".123", tokens.items[7].value.?);
+    try expectEqual(TokenType.NumberConstant, tokens[7].type);
+    try expectEqualStrings(".123", tokens[7].value.?);
 
-    try expectEqual(TokenType.NumberConstant, tokens.items[8].type);
-    try expectEqualStrings(".123e456", tokens.items[8].value.?);
+    try expectEqual(TokenType.NumberConstant, tokens[8].type);
+    try expectEqualStrings(".123e456", tokens[8].value.?);
 
-    try expectEqual(TokenType.NumberConstant, tokens.items[9].type);
-    try expectEqualStrings("+123", tokens.items[9].value.?);
+    try expectEqual(TokenType.NumberConstant, tokens[9].type);
+    try expectEqualStrings("+123", tokens[9].value.?);
 
-    try expectEqual(TokenType.NumberConstant, tokens.items[10].type);
-    try expectEqualStrings("-123", tokens.items[10].value.?);
+    try expectEqual(TokenType.NumberConstant, tokens[10].type);
+    try expectEqualStrings("-123", tokens[10].value.?);
 
-    try expectEqual(TokenType.NumberConstant, tokens.items[11].type);
-    try expectEqualStrings("+123.456", tokens.items[11].value.?);
+    try expectEqual(TokenType.NumberConstant, tokens[11].type);
+    try expectEqualStrings("+123.456", tokens[11].value.?);
 
-    try expectEqual(TokenType.NumberConstant, tokens.items[12].type);
-    try expectEqualStrings("-123.456", tokens.items[12].value.?);
+    try expectEqual(TokenType.NumberConstant, tokens[12].type);
+    try expectEqualStrings("-123.456", tokens[12].value.?);
 
-    try expectEqual(TokenType.BigIntConstant, tokens.items[13].type);
-    try expectEqualStrings("+123n", tokens.items[13].value.?);
+    try expectEqual(TokenType.BigIntConstant, tokens[13].type);
+    try expectEqualStrings("+123n", tokens[13].value.?);
 
-    try expectEqual(TokenType.BigIntConstant, tokens.items[14].type);
-    try expectEqualStrings("-123n", tokens.items[14].value.?);
+    try expectEqual(TokenType.BigIntConstant, tokens[14].type);
+    try expectEqualStrings("-123n", tokens[14].value.?);
 
-    try expectEqual(TokenType.NumberConstant, tokens.items[15].type);
-    try expectEqualStrings("+123_456", tokens.items[15].value.?);
+    try expectEqual(TokenType.NumberConstant, tokens[15].type);
+    try expectEqualStrings("+123_456", tokens[15].value.?);
 
-    try expectEqual(TokenType.NumberConstant, tokens.items[16].type);
-    try expectEqualStrings("-123_456", tokens.items[16].value.?);
+    try expectEqual(TokenType.NumberConstant, tokens[16].type);
+    try expectEqualStrings("-123_456", tokens[16].value.?);
 
-    try expectEqual(TokenType.NumberConstant, tokens.items[17].type);
-    try expectEqualStrings("+.123", tokens.items[17].value.?);
+    try expectEqual(TokenType.NumberConstant, tokens[17].type);
+    try expectEqualStrings("+.123", tokens[17].value.?);
 
-    try expectEqual(TokenType.NumberConstant, tokens.items[18].type);
-    try expectEqualStrings("-.123", tokens.items[18].value.?);
+    try expectEqual(TokenType.NumberConstant, tokens[18].type);
+    try expectEqualStrings("-.123", tokens[18].value.?);
 
-    try expectEqual(TokenType.NumberConstant, tokens.items[19].type);
-    try expectEqualStrings("+.123e456", tokens.items[19].value.?);
+    try expectEqual(TokenType.NumberConstant, tokens[19].type);
+    try expectEqualStrings("+.123e456", tokens[19].value.?);
 
-    try expectEqual(TokenType.NumberConstant, tokens.items[20].type);
-    try expectEqualStrings("-.123e456", tokens.items[20].value.?);
+    try expectEqual(TokenType.NumberConstant, tokens[20].type);
+    try expectEqualStrings("-.123e456", tokens[20].value.?);
 }

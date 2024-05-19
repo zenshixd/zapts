@@ -59,4 +59,4 @@ pub const Symbol = struct {
     value: []const u8,
 };
 
-pub const SymbolTable = std.ArrayList(*Symbol);
+pub const SymbolTable = std.ArrayList(Symbol);

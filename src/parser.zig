@@ -1,7 +1,6 @@
 const std = @import("std");
 const ArrayList = std.ArrayList;
 
-const String = @import("string.zig").String;
 const sym = @import("symbol_table.zig");
 const SymbolTable = sym.SymbolTable;
 const Symbol = sym.Symbol;
@@ -10,7 +9,7 @@ const consts = @import("consts.zig");
 const Token = consts.Token;
 const TokenType = consts.TokenType;
 
-pub const ParserError = error{ SyntaxError, OutOfMemory };
+pub const ParserError = error{ SyntaxError, OutOfMemory, NoSpaceLeft };
 
 pub const ASTImportBinding = struct {
     as_type: bool,
@@ -811,6 +810,11 @@ fn parseLiteral(self: *Self) ParserError!*ASTNode {
         return node;
     }
 
-    const error_msg = try std.fmt.allocPrint(self.allocator, "Unexpected token {}", .{self.token()});
+    var buf: [1000]u8 = undefined;
+    const error_msg = try std.fmt.bufPrint(&buf, "Unexpected token {}", .{self.token()});
     return syntaxError(*ASTNode, error_msg);
+}
+
+test {
+    _ = @import("tests/parser.zig");
 }
