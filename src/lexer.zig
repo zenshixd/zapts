@@ -560,9 +560,18 @@ pub fn next(self: *Self, current_char: u8) !Token {
 }
 
 pub fn nextAll(self: *Self) ![]Token {
-    var current_char: u8 = self.buffer[0];
     var tokens = std.ArrayList(Token).init(self.allocator);
     defer tokens.deinit();
+
+    if (self.buffer.len == 0) {
+        try tokens.append(Token{
+            .type = TokenType.Eof,
+            .value = null,
+        });
+        return try tokens.toOwnedSlice();
+    }
+
+    var current_char: u8 = self.buffer[0];
 
     while (true) {
         const token = try self.next(current_char);

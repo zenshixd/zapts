@@ -22,26 +22,26 @@ pub const SymbolPrimitiveType = enum {
 
 pub const SymbolEnumSetType = struct {
     name: []const u8,
-    values: std.StringHashMap(*SymbolLiteralType),
+    values: std.StringHashMap(SymbolLiteralType),
 };
 
 pub const SymbolArrayType = struct {
-    type: *SymbolType,
+    type: SymbolType,
 };
 
 pub const SymbolTypesList = struct {
-    types: std.ArrayList(*SymbolType),
+    types: []SymbolType,
 };
 
 pub const SymbolFunctionType = struct {
     name: []const u8,
-    parameters: std.ArrayList(*Symbol),
-    return_type: *SymbolType,
+    parameters: []Symbol,
+    return_type: SymbolType,
 };
 
 pub const SymbolObjectType = struct {
     name: []const u8,
-    fields: std.ArrayList(*Symbol),
+    fields: []Symbol,
 };
 pub const SymbolType = union(enum) {
     literal: SymbolLiteralType,

@@ -6,8 +6,6 @@ const valued = @import("../helpers.zig").valued;
 const simple = @import("../helpers.zig").simple;
 
 const ASTNode = Parser.ASTNode;
-const ASTImportNode = Parser.ASTImportNode;
-const ASTImportBinding = Parser.ASTImportBinding;
 
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
@@ -34,22 +32,24 @@ test "should parse star import statements" {
 
     const nodes = try parser.parse();
 
-    var expectedSymbols = std.ArrayList(ASTImportBinding).init(allocator);
-    try expectedSymbols.append(ASTImportBinding{
-        .as_namespace = true,
-        .as_type = false,
-        .default = false,
-        .name = "fs",
-    });
-
     try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .import,
         .data = .{
-            .import = ASTImportNode{
-                .symbols = try expectedSymbols.toOwnedSlice(),
-                .path = "node:fs",
-            },
+            .nodes = @constCast(&[_]*ASTNode{
+                @constCast(&.{
+                    .tag = .import_binding_namespace,
+                    .data = .{
+                        .literal = "fs",
+                    },
+                }),
+                @constCast(&.{
+                    .tag = .import_path,
+                    .data = .{
+                        .literal = "node:fs",
+                    },
+                }),
+            }),
         },
     }, nodes[0]);
 }
@@ -74,22 +74,24 @@ test "should parse named import statements" {
 
     const nodes = try parser.parse();
 
-    var expectedSymbols = std.ArrayList(ASTImportBinding).init(allocator);
-    try expectedSymbols.append(ASTImportBinding{
-        .as_namespace = false,
-        .as_type = false,
-        .default = false,
-        .name = "readFile",
-    });
-
     try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .import,
         .data = .{
-            .import = ASTImportNode{
-                .symbols = try expectedSymbols.toOwnedSlice(),
-                .path = "node:fs",
-            },
+            .nodes = @constCast(&[_]*ASTNode{
+                @constCast(&.{
+                    .tag = .import_binding_named,
+                    .data = .{
+                        .literal = "readFile",
+                    },
+                }),
+                @constCast(&.{
+                    .tag = .import_path,
+                    .data = .{
+                        .literal = "node:fs",
+                    },
+                }),
+            }),
         },
     }, nodes[0]);
 }
@@ -116,28 +118,30 @@ test "should parse named import statements with multiple symbols" {
 
     const nodes = try parser.parse();
 
-    var expectedSymbols = std.ArrayList(ASTImportBinding).init(allocator);
-    try expectedSymbols.append(ASTImportBinding{
-        .as_namespace = false,
-        .as_type = false,
-        .default = false,
-        .name = "readFile",
-    });
-    try expectedSymbols.append(ASTImportBinding{
-        .as_namespace = false,
-        .as_type = false,
-        .default = false,
-        .name = "writeFile",
-    });
-
     try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .import,
         .data = .{
-            .import = ASTImportNode{
-                .symbols = try expectedSymbols.toOwnedSlice(),
-                .path = "node:fs",
-            },
+            .nodes = @constCast(&[_]*ASTNode{
+                @constCast(&.{
+                    .tag = .import_binding_named,
+                    .data = .{
+                        .literal = "readFile",
+                    },
+                }),
+                @constCast(&.{
+                    .tag = .import_binding_named,
+                    .data = .{
+                        .literal = "writeFile",
+                    },
+                }),
+                @constCast(&.{
+                    .tag = .import_path,
+                    .data = .{
+                        .literal = "node:fs",
+                    },
+                }),
+            }),
         },
     }, nodes[0]);
 }
@@ -161,15 +165,18 @@ test "should parse named import statements with no symbols" {
 
     const nodes = try parser.parse();
 
-    var expectedSymbols = std.ArrayList(ASTImportBinding).init(allocator);
     try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .import,
         .data = .{
-            .import = ASTImportNode{
-                .symbols = try expectedSymbols.toOwnedSlice(),
-                .path = "node:fs",
-            },
+            .nodes = @constCast(&[_]*ASTNode{
+                @constCast(&.{
+                    .tag = .import_path,
+                    .data = .{
+                        .literal = "node:fs",
+                    },
+                }),
+            }),
         },
     }, nodes[0]);
 }
@@ -192,8 +199,15 @@ test "should parse basic imports" {
 
     try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
-        .tag = .simple_import,
-        .data = .{ .literal = "node:fs" },
+        .tag = .import,
+        .data = .{ .nodes = @constCast(&[_]*ASTNode{
+            @constCast(&.{
+                .tag = .import_path,
+                .data = .{
+                    .literal = "node:fs",
+                },
+            }),
+        }) },
     }, nodes[0]);
 }
 
@@ -215,22 +229,24 @@ test "should parse default imports" {
 
     const nodes = try parser.parse();
 
-    var expectedSymbols = std.ArrayList(ASTImportBinding).init(allocator);
-    try expectedSymbols.append(ASTImportBinding{
-        .as_namespace = false,
-        .as_type = false,
-        .default = true,
-        .name = "fs",
-    });
-
     try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .import,
         .data = .{
-            .import = ASTImportNode{
-                .symbols = try expectedSymbols.toOwnedSlice(),
-                .path = "node:fs",
-            },
+            .nodes = @constCast(&[_]*ASTNode{
+                @constCast(&.{
+                    .tag = .import_binding_default,
+                    .data = .{
+                        .literal = "fs",
+                    },
+                }),
+                @constCast(&.{
+                    .tag = .import_path,
+                    .data = .{
+                        .literal = "node:fs",
+                    },
+                }),
+            }),
         },
     }, nodes[0]);
 }

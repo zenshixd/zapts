@@ -37,12 +37,11 @@ pub fn main() !void {
 
     var lexer = Lexer.init(allocator, buffer);
 
-    var tokens = try lexer.nextAll();
-    defer tokens.deinit();
+    const tokens = try lexer.nextAll();
 
     allocator.free(buffer);
 
-    for (tokens.items) |token| {
+    for (tokens) |token| {
         if (token.value) |v| {
             std.log.info("token: type={} value={s} ({1d})", .{ token.type, v });
         } else {
@@ -50,12 +49,17 @@ pub fn main() !void {
         }
     }
 
-    const tokens_slice = try tokens.toOwnedSlice();
-    var parser = Parser.init(allocator, tokens_slice);
-    const nodes = try parser.parse();
+    var parser = Parser.init(allocator, tokens);
+    const nodes = parser.parse() catch |err| {
+        std.log.info("Parse error: {}", .{err});
+        for (parser.errors.items) |parser_error| {
+            std.log.info("  {s}", .{parser_error});
+        }
+        return;
+    };
 
-    for (nodes.items) |node| {
-        std.log.info("node {}", .{node});
+    for (nodes) |node| {
+        std.log.info("{}", .{node});
     }
 }
 

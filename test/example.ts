@@ -1,13 +1,17 @@
 import * as fs from 'fs';
 
+// comment
 const n = 123_456_789;
 const s = 'hello world';
+
+const x = 1, y = 2;
 
 console.log(n, s);
 
 function fn(param1, param2) {
-    const hello = 'hello world';
-    const x = {a: 1, b: 2};
+    const hello = 'hello world'; // comment2
+    const x = /*multilineinside*/{a: 1, b: 2};
+    const 123;
     {a: 1};
     [1,2,3];
     const y = [1,2][0];

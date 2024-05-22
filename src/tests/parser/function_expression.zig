@@ -6,7 +6,6 @@ const valued = @import("../helpers.zig").valued;
 const simple = @import("../helpers.zig").simple;
 
 const ASTNode = Parser.ASTNode;
-const ASTFunctionExpressionNode = Parser.ASTFunctionExpressionNode;
 const ASTBlockNode = Parser.ASTBlockNode;
 
 const expect = std.testing.expect;
@@ -36,20 +35,36 @@ test "should parse function expression" {
 
     const nodes = try parser.parse();
 
-    var expectedArgs = std.ArrayList([]const u8).init(allocator);
-    try expectedArgs.append("bar");
-    try expectedArgs.append("baz");
-
-    var expectedBody = std.ArrayList(*ASTNode).init(allocator);
     try expectEqual(1, nodes.len);
     try expectEqualDeep(&ASTNode{
         .tag = .func_decl,
         .data = .{
-            .function = ASTFunctionExpressionNode{
-                .name = "foo",
-                .arguments = try expectedArgs.toOwnedSlice(),
-                .body = try expectedBody.toOwnedSlice(),
-            },
+            .nodes = @constCast(&[_]*ASTNode{
+                @constCast(&ASTNode{
+                    .tag = .func_decl_name,
+                    .data = .{
+                        .literal = "foo",
+                    },
+                }),
+                @constCast(&ASTNode{
+                    .tag = .func_decl_argument,
+                    .data = .{
+                        .literal = "bar",
+                    },
+                }),
+                @constCast(&ASTNode{
+                    .tag = .func_decl_argument,
+                    .data = .{
+                        .literal = "baz",
+                    },
+                }),
+                @constCast(&ASTNode{
+                    .tag = .block,
+                    .data = .{
+                        .nodes = &[_]*ASTNode{},
+                    },
+                }),
+            }),
         },
     }, nodes[0]);
 }
@@ -76,20 +91,36 @@ test "should parse async function expression" {
 
     const nodes = try parser.parse();
 
-    var expectedArgs = std.ArrayList([]const u8).init(allocator);
-    try expectedArgs.append("bar");
-    try expectedArgs.append("baz");
-
-    var expectedBody = std.ArrayList(*ASTNode).init(allocator);
     try expectEqual(1, nodes.len);
     try expectEqualDeep(&ASTNode{
         .tag = .async_func_decl,
         .data = .{
-            .function = ASTFunctionExpressionNode{
-                .name = "foo",
-                .arguments = try expectedArgs.toOwnedSlice(),
-                .body = try expectedBody.toOwnedSlice(),
-            },
+            .nodes = @constCast(&[_]*ASTNode{
+                @constCast(&ASTNode{
+                    .tag = .func_decl_name,
+                    .data = .{
+                        .literal = "foo",
+                    },
+                }),
+                @constCast(&ASTNode{
+                    .tag = .func_decl_argument,
+                    .data = .{
+                        .literal = "bar",
+                    },
+                }),
+                @constCast(&ASTNode{
+                    .tag = .func_decl_argument,
+                    .data = .{
+                        .literal = "baz",
+                    },
+                }),
+                @constCast(&ASTNode{
+                    .tag = .block,
+                    .data = .{
+                        .nodes = &[_]*ASTNode{},
+                    },
+                }),
+            }),
         },
     }, nodes[0]);
 }

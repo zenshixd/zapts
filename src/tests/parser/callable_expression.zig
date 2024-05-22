@@ -6,7 +6,6 @@ const valued = @import("../helpers.zig").valued;
 const simple = @import("../helpers.zig").simple;
 
 const ASTNode = Parser.ASTNode;
-const ASTCallableExpressionNode = Parser.ASTCallableExpressionNode;
 const ASTBinaryNode = Parser.ASTBinaryNode;
 
 const expect = std.testing.expect;
@@ -34,34 +33,31 @@ test "should parse function call" {
 
     const nodes = try parser.parse();
 
-    var expectedArgs = std.ArrayList(*ASTNode).init(allocator);
-    try expectedArgs.append(@constCast(&ASTNode{
-        .tag = .plus_expr,
-        .data = .{
-            .binary = ASTBinaryNode{
-                .left = @constCast(&ASTNode{
-                    .tag = .identifier,
-                    .data = .{ .literal = "bar" },
-                }),
-                .right = @constCast(&ASTNode{
-                    .tag = .identifier,
-                    .data = .{ .literal = "baz" },
-                }),
-            },
-        },
-    }));
-
     try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .call_expr,
         .data = .{
-            .callable = ASTCallableExpressionNode{
-                .left = @constCast(&ASTNode{
+            .nodes = @constCast(&[_]*ASTNode{
+                @constCast(&ASTNode{
                     .tag = .identifier,
                     .data = .{ .literal = "foo" },
                 }),
-                .arguments = try expectedArgs.toOwnedSlice(),
-            },
+                @constCast(&ASTNode{
+                    .tag = .plus_expr,
+                    .data = .{
+                        .binary = ASTBinaryNode{
+                            .left = @constCast(&ASTNode{
+                                .tag = .identifier,
+                                .data = .{ .literal = "bar" },
+                            }),
+                            .right = @constCast(&ASTNode{
+                                .tag = .identifier,
+                                .data = .{ .literal = "baz" },
+                            }),
+                        },
+                    },
+                }),
+            }),
         },
     }, nodes[0]);
 }
@@ -88,37 +84,35 @@ test "function call with multiple arguments" {
 
     const nodes = try parser.parse();
 
-    var expectedArgs = std.ArrayList(*ASTNode).init(allocator);
-    try expectedArgs.append(@constCast(&ASTNode{
-        .tag = .plus_expr,
-        .data = .{
-            .binary = ASTBinaryNode{
-                .left = @constCast(&ASTNode{
-                    .tag = .identifier,
-                    .data = .{ .literal = "bar" },
-                }),
-                .right = @constCast(&ASTNode{
-                    .tag = .identifier,
-                    .data = .{ .literal = "baz" },
-                }),
-            },
-        },
-    }));
-    try expectedArgs.append(@constCast(&ASTNode{
-        .tag = .identifier,
-        .data = .{ .literal = "qux" },
-    }));
     try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .call_expr,
         .data = .{
-            .callable = ASTCallableExpressionNode{
-                .left = @constCast(&ASTNode{
+            .nodes = @constCast(&[_]*ASTNode{
+                @constCast(&ASTNode{
                     .tag = .identifier,
                     .data = .{ .literal = "foo" },
                 }),
-                .arguments = try expectedArgs.toOwnedSlice(),
-            },
+                @constCast(&ASTNode{
+                    .tag = .plus_expr,
+                    .data = .{
+                        .binary = ASTBinaryNode{
+                            .left = @constCast(&ASTNode{
+                                .tag = .identifier,
+                                .data = .{ .literal = "bar" },
+                            }),
+                            .right = @constCast(&ASTNode{
+                                .tag = .identifier,
+                                .data = .{ .literal = "baz" },
+                            }),
+                        },
+                    },
+                }),
+                @constCast(&ASTNode{
+                    .tag = .identifier,
+                    .data = .{ .literal = "qux" },
+                }),
+            }),
         },
     }, nodes[0]);
 }
@@ -142,14 +136,12 @@ test "should call a function through a property access" {
 
     const nodes = try parser.parse();
 
-    var expectedArgs = std.ArrayList(*ASTNode).init(allocator);
-
     try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .call_expr,
         .data = .{
-            .callable = ASTCallableExpressionNode{
-                .left = @constCast(&ASTNode{
+            .nodes = @constCast(&[_]*ASTNode{
+                @constCast(&ASTNode{
                     .tag = .property_access,
                     .data = .{
                         .binary = ASTBinaryNode{
@@ -164,8 +156,7 @@ test "should call a function through a property access" {
                         },
                     },
                 }),
-                .arguments = try expectedArgs.toOwnedSlice(),
-            },
+            }),
         },
     }, nodes[0]);
 }
@@ -192,14 +183,12 @@ test "should call a function through a index access" {
 
     const nodes = try parser.parse();
 
-    var expectedArgs = std.ArrayList(*ASTNode).init(allocator);
-
     try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .call_expr,
         .data = .{
-            .callable = ASTCallableExpressionNode{
-                .left = @constCast(&ASTNode{
+            .nodes = @constCast(&[_]*ASTNode{
+                @constCast(&ASTNode{
                     .tag = .index_access,
                     .data = .{
                         .binary = ASTBinaryNode{
@@ -227,8 +216,7 @@ test "should call a function through a index access" {
                         },
                     },
                 }),
-                .arguments = try expectedArgs.toOwnedSlice(),
-            },
+            }),
         },
     }, nodes[0]);
 }

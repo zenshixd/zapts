@@ -66,9 +66,9 @@ pub fn main() void {
             else => {
                 fail_count += 1;
                 progress.log("FAIL ({s})\n", .{@errorName(err)});
-                if (@errorReturnTrace()) |trace| {
-                    std.debug.dumpStackTrace(trace.*);
-                }
+                // if (@errorReturnTrace()) |trace| {
+                //     std.debug.dumpStackTrace(trace.*);
+                // }
                 test_node.end();
             },
         }
@@ -217,7 +217,11 @@ pub fn runRefTest(case_file: []const u8) !void {
     const tokens = try lexer.nextAll();
 
     var parser = Parser.init(arena.allocator(), tokens);
-    const result = parser.parse();
-
-    try std.testing.expect(result != error.SyntaxError);
+    _ = parser.parse() catch |err| {
+        std.log.info("Parse error: {}", .{err});
+        for (parser.errors.items) |parser_error| {
+            std.log.info("  {s}", .{parser_error});
+        }
+        return err;
+    };
 }
