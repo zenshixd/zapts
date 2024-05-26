@@ -1,5 +1,4 @@
 const std = @import("std");
-const Symbol = @import("symbol_table.zig").Symbol;
 
 pub const PUNCTUATION_CHARS = ".,:;()[]'\"{}";
 pub const OPERATOR_CHARS = "<>?+-=*|&!%/\\";
@@ -57,6 +56,8 @@ pub const keywords_map = std.ComptimeStringMap(TokenType, .{
     .{ "static", TokenType.Static },
     .{ "yield", TokenType.Yield },
     .{ "from", TokenType.From },
+    .{ "any", TokenType.Any },
+    .{ "unknown", TokenType.Unknown },
 });
 
 pub const TokenType = enum(u8) {
@@ -179,6 +180,8 @@ pub const TokenType = enum(u8) {
     Static,
     Yield,
     From,
+    Any,
+    Unknown,
 };
 
 pub const Token = struct {

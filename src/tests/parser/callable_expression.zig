@@ -29,29 +29,34 @@ test "should parse function call" {
         simple(TokenType.Eof),
     };
 
-    var parser = Parser.init(allocator, &tokens);
+    var parser = try Parser.init(allocator, &tokens);
 
     const nodes = try parser.parse();
 
     try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .call_expr,
+        .data_type = .{ .unknown = {} },
         .data = .{
             .nodes = @constCast(&[_]*ASTNode{
                 @constCast(&ASTNode{
                     .tag = .identifier,
+                    .data_type = .{ .any = {} },
                     .data = .{ .literal = "foo" },
                 }),
                 @constCast(&ASTNode{
                     .tag = .plus_expr,
+                    .data_type = .{ .number = {} },
                     .data = .{
                         .binary = ASTBinaryNode{
                             .left = @constCast(&ASTNode{
                                 .tag = .identifier,
+                                .data_type = .{ .any = {} },
                                 .data = .{ .literal = "bar" },
                             }),
                             .right = @constCast(&ASTNode{
                                 .tag = .identifier,
+                                .data_type = .{ .any = {} },
                                 .data = .{ .literal = "baz" },
                             }),
                         },
@@ -80,29 +85,34 @@ test "function call with multiple arguments" {
         simple(TokenType.Eof),
     };
 
-    var parser = Parser.init(allocator, &tokens);
+    var parser = try Parser.init(allocator, &tokens);
 
     const nodes = try parser.parse();
 
     try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .call_expr,
+        .data_type = .{ .unknown = {} },
         .data = .{
             .nodes = @constCast(&[_]*ASTNode{
                 @constCast(&ASTNode{
                     .tag = .identifier,
+                    .data_type = .{ .any = {} },
                     .data = .{ .literal = "foo" },
                 }),
                 @constCast(&ASTNode{
                     .tag = .plus_expr,
+                    .data_type = .{ .number = {} },
                     .data = .{
                         .binary = ASTBinaryNode{
                             .left = @constCast(&ASTNode{
                                 .tag = .identifier,
+                                .data_type = .{ .any = {} },
                                 .data = .{ .literal = "bar" },
                             }),
                             .right = @constCast(&ASTNode{
                                 .tag = .identifier,
+                                .data_type = .{ .any = {} },
                                 .data = .{ .literal = "baz" },
                             }),
                         },
@@ -110,6 +120,7 @@ test "function call with multiple arguments" {
                 }),
                 @constCast(&ASTNode{
                     .tag = .identifier,
+                    .data_type = .{ .any = {} },
                     .data = .{ .literal = "qux" },
                 }),
             }),
@@ -132,25 +143,29 @@ test "should call a function through a property access" {
         simple(TokenType.Eof),
     };
 
-    var parser = Parser.init(allocator, &tokens);
+    var parser = try Parser.init(allocator, &tokens);
 
     const nodes = try parser.parse();
 
     try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .call_expr,
+        .data_type = .{ .unknown = {} },
         .data = .{
             .nodes = @constCast(&[_]*ASTNode{
                 @constCast(&ASTNode{
                     .tag = .property_access,
+                    .data_type = .{ .any = {} },
                     .data = .{
                         .binary = ASTBinaryNode{
                             .left = @constCast(&ASTNode{
                                 .tag = .identifier,
+                                .data_type = .{ .any = {} },
                                 .data = .{ .literal = "foo" },
                             }),
                             .right = @constCast(&ASTNode{
                                 .tag = .identifier,
+                                .data_type = .{ .any = {} },
                                 .data = .{ .literal = "bar" },
                             }),
                         },
@@ -179,29 +194,34 @@ test "should call a function through a index access" {
         simple(TokenType.Eof),
     };
 
-    var parser = Parser.init(allocator, &tokens);
+    var parser = try Parser.init(allocator, &tokens);
 
     const nodes = try parser.parse();
 
     try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .call_expr,
+        .data_type = .{ .unknown = {} },
         .data = .{
             .nodes = @constCast(&[_]*ASTNode{
                 @constCast(&ASTNode{
                     .tag = .index_access,
+                    .data_type = .{ .unknown = {} },
                     .data = .{
                         .binary = ASTBinaryNode{
                             .left = @constCast(&ASTNode{
                                 .tag = .property_access,
+                                .data_type = .{ .any = {} },
                                 .data = .{
                                     .binary = ASTBinaryNode{
                                         .left = @constCast(&ASTNode{
                                             .tag = .identifier,
+                                            .data_type = .{ .any = {} },
                                             .data = .{ .literal = "foo" },
                                         }),
                                         .right = @constCast(&ASTNode{
                                             .tag = .identifier,
+                                            .data_type = .{ .any = {} },
                                             .data = .{ .literal = "bar" },
                                         }),
                                     },
@@ -209,6 +229,7 @@ test "should call a function through a index access" {
                             }),
                             .right = @constCast(&ASTNode{
                                 .tag = .number,
+                                .data_type = .{ .number = {} },
                                 .data = .{
                                     .literal = "1",
                                 },

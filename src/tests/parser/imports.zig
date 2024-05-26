@@ -28,23 +28,26 @@ test "should parse star import statements" {
         simple(TokenType.Eof),
     };
 
-    var parser = Parser.init(allocator, &tokens);
+    var parser = try Parser.init(allocator, &tokens);
 
     const nodes = try parser.parse();
 
     try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .import,
+        .data_type = .{ .none = {} },
         .data = .{
             .nodes = @constCast(&[_]*ASTNode{
                 @constCast(&.{
                     .tag = .import_binding_namespace,
+                    .data_type = .{ .unknown = {} },
                     .data = .{
                         .literal = "fs",
                     },
                 }),
                 @constCast(&.{
                     .tag = .import_path,
+                    .data_type = .{ .none = {} },
                     .data = .{
                         .literal = "node:fs",
                     },
@@ -70,23 +73,26 @@ test "should parse named import statements" {
         simple(TokenType.Eof),
     };
 
-    var parser = Parser.init(allocator, &tokens);
+    var parser = try Parser.init(allocator, &tokens);
 
     const nodes = try parser.parse();
 
     try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .import,
+        .data_type = .{ .none = {} },
         .data = .{
             .nodes = @constCast(&[_]*ASTNode{
                 @constCast(&.{
                     .tag = .import_binding_named,
+                    .data_type = .{ .unknown = {} },
                     .data = .{
                         .literal = "readFile",
                     },
                 }),
                 @constCast(&.{
                     .tag = .import_path,
+                    .data_type = .{ .none = {} },
                     .data = .{
                         .literal = "node:fs",
                     },
@@ -114,29 +120,33 @@ test "should parse named import statements with multiple symbols" {
         simple(TokenType.Eof),
     };
 
-    var parser = Parser.init(allocator, &tokens);
+    var parser = try Parser.init(allocator, &tokens);
 
     const nodes = try parser.parse();
 
     try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .import,
+        .data_type = .{ .none = {} },
         .data = .{
             .nodes = @constCast(&[_]*ASTNode{
                 @constCast(&.{
                     .tag = .import_binding_named,
+                    .data_type = .{ .unknown = {} },
                     .data = .{
                         .literal = "readFile",
                     },
                 }),
                 @constCast(&.{
                     .tag = .import_binding_named,
+                    .data_type = .{ .unknown = {} },
                     .data = .{
                         .literal = "writeFile",
                     },
                 }),
                 @constCast(&.{
                     .tag = .import_path,
+                    .data_type = .{ .none = {} },
                     .data = .{
                         .literal = "node:fs",
                     },
@@ -161,17 +171,19 @@ test "should parse named import statements with no symbols" {
         simple(TokenType.Eof),
     };
 
-    var parser = Parser.init(allocator, &tokens);
+    var parser = try Parser.init(allocator, &tokens);
 
     const nodes = try parser.parse();
 
     try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .import,
+        .data_type = .{ .none = {} },
         .data = .{
             .nodes = @constCast(&[_]*ASTNode{
                 @constCast(&.{
                     .tag = .import_path,
+                    .data_type = .{ .none = {} },
                     .data = .{
                         .literal = "node:fs",
                     },
@@ -193,16 +205,18 @@ test "should parse basic imports" {
         simple(TokenType.Eof),
     };
 
-    var parser = Parser.init(allocator, &tokens);
+    var parser = try Parser.init(allocator, &tokens);
 
     const nodes = try parser.parse();
 
     try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .import,
+        .data_type = .{ .none = {} },
         .data = .{ .nodes = @constCast(&[_]*ASTNode{
             @constCast(&.{
                 .tag = .import_path,
+                .data_type = .{ .none = {} },
                 .data = .{
                     .literal = "node:fs",
                 },
@@ -225,23 +239,26 @@ test "should parse default imports" {
         simple(TokenType.Eof),
     };
 
-    var parser = Parser.init(allocator, &tokens);
+    var parser = try Parser.init(allocator, &tokens);
 
     const nodes = try parser.parse();
 
     try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .import,
+        .data_type = .{ .none = {} },
         .data = .{
             .nodes = @constCast(&[_]*ASTNode{
                 @constCast(&.{
                     .tag = .import_binding_default,
+                    .data_type = .{ .unknown = {} },
                     .data = .{
                         .literal = "fs",
                     },
                 }),
                 @constCast(&.{
                     .tag = .import_path,
+                    .data_type = .{ .none = {} },
                     .data = .{
                         .literal = "node:fs",
                     },

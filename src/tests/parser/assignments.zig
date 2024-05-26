@@ -14,7 +14,7 @@ const expectEqual = std.testing.expectEqual;
 const expectEqualDeep = std.testing.expectEqualDeep;
 
 fn parse(allocator: std.mem.Allocator, tokens: []Token) ![]*Parser.ASTNode {
-    var parser = Parser.init(allocator, tokens);
+    var parser = try Parser.init(allocator, tokens);
     return parser.parse();
 }
 
@@ -33,18 +33,24 @@ test "should parse assignment" {
 
     const nodes = try parse(allocator, &tokens);
 
-    try expectEqualDeep(&ASTNode{ .tag = .assignment, .data = .{
-        .binary = ASTBinaryNode{
-            .left = @constCast(&ASTNode{
-                .tag = .identifier,
-                .data = .{ .literal = "a" },
-            }),
-            .right = @constCast(&ASTNode{
-                .tag = .number,
-                .data = .{ .literal = "1" },
-            }),
+    try expectEqualDeep(&ASTNode{
+        .tag = .assignment,
+        .data_type = .{ .number = {} },
+        .data = .{
+            .binary = ASTBinaryNode{
+                .left = @constCast(&ASTNode{
+                    .tag = .identifier,
+                    .data_type = .{ .any = {} },
+                    .data = .{ .literal = "a" },
+                }),
+                .right = @constCast(&ASTNode{
+                    .tag = .number,
+                    .data_type = .{ .number = {} },
+                    .data = .{ .literal = "1" },
+                }),
+            },
         },
-    } }, nodes[0]);
+    }, nodes[0]);
 }
 
 test "should parse cascade assignments" {
@@ -64,24 +70,35 @@ test "should parse cascade assignments" {
 
     const nodes = try parse(allocator, &tokens);
 
-    try expectEqualDeep(&ASTNode{ .tag = .assignment, .data = .{
-        .binary = ASTBinaryNode{
-            .left = @constCast(&ASTNode{
-                .tag = .identifier,
-                .data = .{ .literal = "a" },
-            }),
-            .right = @constCast(&ASTNode{ .tag = .assignment, .data = .{
-                .binary = ASTBinaryNode{
-                    .left = @constCast(&ASTNode{
-                        .tag = .identifier,
-                        .data = .{ .literal = "b" },
-                    }),
-                    .right = @constCast(&ASTNode{
-                        .tag = .number,
-                        .data = .{ .literal = "1" },
-                    }),
-                },
-            } }),
+    try expectEqualDeep(&ASTNode{
+        .tag = .assignment,
+        .data_type = .{ .number = {} },
+        .data = .{
+            .binary = ASTBinaryNode{
+                .left = @constCast(&ASTNode{
+                    .tag = .identifier,
+                    .data_type = .{ .any = {} },
+                    .data = .{ .literal = "a" },
+                }),
+                .right = @constCast(&ASTNode{
+                    .tag = .assignment,
+                    .data_type = .{ .number = {} },
+                    .data = .{
+                        .binary = ASTBinaryNode{
+                            .left = @constCast(&ASTNode{
+                                .tag = .identifier,
+                                .data_type = .{ .any = {} },
+                                .data = .{ .literal = "b" },
+                            }),
+                            .right = @constCast(&ASTNode{
+                                .tag = .number,
+                                .data_type = .{ .number = {} },
+                                .data = .{ .literal = "1" },
+                            }),
+                        },
+                    },
+                }),
+            },
         },
-    } }, nodes[0]);
+    }, nodes[0]);
 }

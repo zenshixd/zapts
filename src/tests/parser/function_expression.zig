@@ -31,35 +31,40 @@ test "should parse function expression" {
         simple(TokenType.Eof),
     };
 
-    var parser = Parser.init(allocator, &tokens);
+    var parser = try Parser.init(allocator, &tokens);
 
     const nodes = try parser.parse();
 
     try expectEqual(1, nodes.len);
     try expectEqualDeep(&ASTNode{
         .tag = .func_decl,
+        .data_type = .{ .none = {} },
         .data = .{
             .nodes = @constCast(&[_]*ASTNode{
                 @constCast(&ASTNode{
                     .tag = .func_decl_name,
+                    .data_type = .{ .unknown = {} },
                     .data = .{
                         .literal = "foo",
                     },
                 }),
                 @constCast(&ASTNode{
                     .tag = .func_decl_argument,
+                    .data_type = .{ .any = {} },
                     .data = .{
                         .literal = "bar",
                     },
                 }),
                 @constCast(&ASTNode{
                     .tag = .func_decl_argument,
+                    .data_type = .{ .any = {} },
                     .data = .{
                         .literal = "baz",
                     },
                 }),
                 @constCast(&ASTNode{
                     .tag = .block,
+                    .data_type = .{ .none = {} },
                     .data = .{
                         .nodes = &[_]*ASTNode{},
                     },
@@ -87,35 +92,40 @@ test "should parse async function expression" {
         simple(TokenType.CloseCurlyBrace),
         simple(TokenType.Eof),
     };
-    var parser = Parser.init(allocator, &tokens);
+    var parser = try Parser.init(allocator, &tokens);
 
     const nodes = try parser.parse();
 
     try expectEqual(1, nodes.len);
     try expectEqualDeep(&ASTNode{
         .tag = .async_func_decl,
+        .data_type = .{ .none = {} },
         .data = .{
             .nodes = @constCast(&[_]*ASTNode{
                 @constCast(&ASTNode{
                     .tag = .func_decl_name,
+                    .data_type = .{ .unknown = {} },
                     .data = .{
                         .literal = "foo",
                     },
                 }),
                 @constCast(&ASTNode{
                     .tag = .func_decl_argument,
+                    .data_type = .{ .any = {} },
                     .data = .{
                         .literal = "bar",
                     },
                 }),
                 @constCast(&ASTNode{
                     .tag = .func_decl_argument,
+                    .data_type = .{ .any = {} },
                     .data = .{
                         .literal = "baz",
                     },
                 }),
                 @constCast(&ASTNode{
                     .tag = .block,
+                    .data_type = .{ .none = {} },
                     .data = .{
                         .nodes = &[_]*ASTNode{},
                     },

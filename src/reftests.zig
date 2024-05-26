@@ -1,8 +1,11 @@
 const std = @import("std");
-const io = std.io;
 const builtin = @import("builtin");
+const io = std.io;
 const Lexer = @import("./lexer.zig");
 const Parser = @import("./parser.zig");
+const compile = @import("./compile.zig").compile;
+const CompileResult = @import("./compile.zig").CompileResult;
+const JdzGlobalAllocator = @import("jdz_allocator").JdzGlobalAllocator;
 const Client = std.http.Client;
 
 const MAX_FILE_SIZE = 1024 * 1024 * 1024;
@@ -17,13 +20,24 @@ var log_err_count: usize = 0;
 var cmdline_buffer: [4096]u8 = undefined;
 var fba = std.heap.FixedBufferAllocator.init(&cmdline_buffer);
 
+const compile_tests_path = if (builtin.target.os.tag == .windows) "compiler\\" else "compiler/";
+const conformance_tests_path = if (builtin.target.os.tag == .windows) "conformance\\" else "conformance/";
+
 pub fn main() void {
-    const cases_list = getRefTestCases(std.testing.allocator) catch @panic("Failed to get reference test files");
+    std.debug.attachSegfaultHandler();
+
+    const allocator = std.heap.c_allocator;
+
+    const args = std.process.argsAlloc(allocator) catch @panic("Cannot get args. OOM?");
+    defer std.process.argsFree(allocator, args);
+
+    const case_file_filter = if (args.len > 1) args[1] else null;
+    const cases_list = getRefTestCases(allocator, case_file_filter) catch @panic("Failed to get reference test files");
     defer {
         for (cases_list) |case| {
-            std.testing.allocator.free(case);
+            allocator.free(case);
         }
-        std.testing.allocator.free(cases_list);
+        allocator.free(cases_list);
     }
 
     var ok_count: usize = 0;
@@ -37,14 +51,8 @@ pub fn main() void {
     const have_tty = progress.terminal != null and
         (progress.supports_ansi_escape_codes or progress.is_windows_terminal);
 
-    var leaks: usize = 0;
+    const leaks: usize = 0;
     for (cases_list, 0..) |case, i| {
-        std.testing.allocator_instance = .{};
-        defer {
-            if (std.testing.allocator_instance.deinit() == .leak) {
-                leaks += 1;
-            }
-        }
         std.testing.log_level = .warn;
 
         var test_node = root_node.start(case, 0);
@@ -53,7 +61,7 @@ pub fn main() void {
         if (!have_tty) {
             std.debug.print("{d}/{d} {s}... ", .{ i + 1, cases_list.len, case });
         }
-        if (runRefTest(case)) |_| {
+        if (runRefTest(allocator, case)) |_| {
             ok_count += 1;
             test_node.end();
             if (!have_tty) std.debug.print("OK\n", .{});
@@ -107,9 +115,7 @@ pub fn log(
     }
 }
 
-fn initRefTestsDir() !void {
-    const allocator = std.testing.allocator;
-
+fn initRefTestsDir(allocator: std.mem.Allocator) !void {
     var client = Client{
         .allocator = allocator,
     };
@@ -172,12 +178,12 @@ fn initRefTestsDir() !void {
     std.debug.print("Files extracted: {d}\n", .{tests_count});
 }
 
-pub fn getRefTestCases(allocator: std.mem.Allocator) ![][]const u8 {
+pub fn getRefTestCases(allocator: std.mem.Allocator, filter: ?[]const u8) ![][]const u8 {
     std.fs.cwd().access(REF_TESTS_DIR, .{}) catch |err| {
         if (err == error.FileNotFound) {
             std.debug.print("Creating {s} directory ...\n", .{REF_TESTS_DIR});
             try std.fs.cwd().makePath(REF_TESTS_DIR);
-            try initRefTestsDir();
+            try initRefTestsDir(allocator);
         } else {
             return err;
         }
@@ -199,29 +205,72 @@ pub fn getRefTestCases(allocator: std.mem.Allocator) ![][]const u8 {
 
     while (try walker.next()) |entry| {
         if (entry.kind == .file) {
-            try result.append(try allocator.dupe(u8, entry.path));
+            const is_compiler_test = std.mem.startsWith(u8, entry.path, compile_tests_path);
+            const is_conformance_test = std.mem.startsWith(u8, entry.path, conformance_tests_path);
+            const is_filter_match = if (filter) |filter_str| std.mem.startsWith(u8, filter_str, entry.path) else true;
+
+            if (is_filter_match and (is_compiler_test or is_conformance_test)) {
+                try result.append(try allocator.dupe(u8, entry.path));
+            }
         }
     }
 
     return result.toOwnedSlice();
 }
 
-pub fn runRefTest(case_file: []const u8) !void {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
+pub fn runRefTest(allocator: std.mem.Allocator, case_file: []const u8) !void {
+    const full_case_filepath = try std.fmt.allocPrint(allocator, "{s}/tests/cases/{s}", .{ REF_TESTS_DIR, case_file });
+    defer allocator.free(full_case_filepath);
 
-    const file_path = try std.fmt.allocPrint(arena.allocator(), "{s}/tests/cases/{s}", .{ REF_TESTS_DIR, case_file });
-    const buffer = try std.fs.cwd().readFileAlloc(arena.allocator(), file_path, MAX_FILE_SIZE);
+    const result = try compile(allocator, full_case_filepath);
+    defer allocator.free(result.file_name);
+    defer allocator.free(result.output);
 
-    var lexer = Lexer.init(arena.allocator(), buffer);
-    const tokens = try lexer.nextAll();
+    try checkCompileOutput(allocator, result);
+}
 
-    var parser = Parser.init(arena.allocator(), tokens);
-    _ = parser.parse() catch |err| {
-        std.log.info("Parse error: {}", .{err});
-        for (parser.errors.items) |parser_error| {
-            std.log.info("  {s}", .{parser_error});
-        }
+fn checkCompileOutput(allocator: std.mem.Allocator, compile_result: CompileResult) !void {
+    const file_path = try std.fmt.allocPrint(
+        allocator,
+        "{s}/tests/baselines/reference/{s}",
+        .{ REF_TESTS_DIR, std.fs.path.basename(compile_result.file_name) },
+    );
+    defer allocator.free(file_path);
+
+    const file = std.fs.cwd().openFile(file_path, .{}) catch |err| {
+        std.log.info("Reference output file not found: {s}", .{file_path});
         return err;
     };
+    defer file.close();
+
+    var content = std.ArrayList(u8).init(allocator);
+    defer content.deinit();
+
+    try content.ensureTotalCapacity(MAX_FILE_SIZE);
+
+    const js_output_start = try std.fmt.allocPrint(allocator, "//// [{s}]", .{std.fs.path.basename(compile_result.file_name)});
+    defer allocator.free(js_output_start);
+
+    var expected_output_started = false;
+    var line_buffer: [1024]u8 = undefined;
+    while (try file.reader().readUntilDelimiterOrEof(&line_buffer, '\n')) |line| {
+        if (std.mem.startsWith(u8, line, js_output_start)) {
+            expected_output_started = true;
+            continue;
+        }
+
+        if (expected_output_started) {
+            try content.appendSlice(line);
+            try content.append('\n');
+        }
+    }
+
+    const expected = try content.toOwnedSlice();
+    defer allocator.free(expected);
+
+    try std.testing.expectEqualStrings(expected, compile_result.output);
+}
+
+test {
+    try runRefTest("compiler/anyPlusAny1.ts");
 }

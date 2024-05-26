@@ -26,16 +26,17 @@ test "should parse property access" {
         simple(TokenType.Eof),
     };
 
-    var parser = Parser.init(allocator, &tokens);
+    var parser = try Parser.init(allocator, &tokens);
 
     const nodes = try parser.parse();
 
     try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .property_access,
+        .data_type = .{ .any = {} },
         .data = .{ .binary = ASTBinaryNode{
-            .left = @constCast(&ASTNode{ .tag = .identifier, .data = .{ .literal = "foo" } }),
-            .right = @constCast(&ASTNode{ .tag = .identifier, .data = .{ .literal = "bar" } }),
+            .left = @constCast(&ASTNode{ .tag = .identifier, .data_type = .{ .any = {} }, .data = .{ .literal = "foo" } }),
+            .right = @constCast(&ASTNode{ .tag = .identifier, .data_type = .{ .any = {} }, .data = .{ .literal = "bar" } }),
         } },
     }, nodes[0]);
 }
@@ -53,16 +54,17 @@ test "should parse property access with question mark" {
         simple(TokenType.Eof),
     };
 
-    var parser = Parser.init(allocator, &tokens);
+    var parser = try Parser.init(allocator, &tokens);
 
     const nodes = try parser.parse();
 
     try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .optional_property_access,
+        .data_type = .{ .any = {} },
         .data = .{ .binary = ASTBinaryNode{
-            .left = @constCast(&ASTNode{ .tag = .identifier, .data = .{ .literal = "foo" } }),
-            .right = @constCast(&ASTNode{ .tag = .identifier, .data = .{ .literal = "bar" } }),
+            .left = @constCast(&ASTNode{ .tag = .identifier, .data_type = .{ .any = {} }, .data = .{ .literal = "foo" } }),
+            .right = @constCast(&ASTNode{ .tag = .identifier, .data_type = .{ .any = {} }, .data = .{ .literal = "bar" } }),
         } },
     }, nodes[0]);
 }
@@ -83,22 +85,24 @@ test "should parse property access with index access" {
         simple(TokenType.Eof),
     };
 
-    var parser = Parser.init(allocator, &tokens);
+    var parser = try Parser.init(allocator, &tokens);
 
     const nodes = try parser.parse();
 
     try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .index_access,
+        .data_type = .{ .unknown = {} },
         .data = .{ .binary = ASTBinaryNode{
             .left = @constCast(&ASTNode{
                 .tag = .property_access,
+                .data_type = .{ .any = {} },
                 .data = .{ .binary = ASTBinaryNode{
-                    .left = @constCast(&ASTNode{ .tag = .identifier, .data = .{ .literal = "foo" } }),
-                    .right = @constCast(&ASTNode{ .tag = .identifier, .data = .{ .literal = "bar" } }),
+                    .left = @constCast(&ASTNode{ .tag = .identifier, .data_type = .{ .any = {} }, .data = .{ .literal = "foo" } }),
+                    .right = @constCast(&ASTNode{ .tag = .identifier, .data_type = .{ .any = {} }, .data = .{ .literal = "bar" } }),
                 } },
             }),
-            .right = @constCast(&ASTNode{ .tag = .number, .data = .{ .literal = "1" } }),
+            .right = @constCast(&ASTNode{ .tag = .number, .data_type = .{ .number = {} }, .data = .{ .literal = "1" } }),
         } },
     }, nodes[0]);
 }
@@ -119,23 +123,26 @@ test "should parse expression in index access" {
         simple(TokenType.Eof),
     };
 
-    var parser = Parser.init(allocator, &tokens);
+    var parser = try Parser.init(allocator, &tokens);
 
     const nodes = try parser.parse();
 
     try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .index_access,
+        .data_type = .{ .unknown = {} },
         .data = .{ .binary = ASTBinaryNode{
             .left = @constCast(&ASTNode{
                 .tag = .identifier,
+                .data_type = .{ .any = {} },
                 .data = .{ .literal = "foo" },
             }),
             .right = @constCast(&ASTNode{
                 .tag = .plus_expr,
+                .data_type = .{ .number = {} },
                 .data = .{ .binary = ASTBinaryNode{
-                    .left = @constCast(&ASTNode{ .tag = .number, .data = .{ .literal = "1" } }),
-                    .right = @constCast(&ASTNode{ .tag = .number, .data = .{ .literal = "2" } }),
+                    .left = @constCast(&ASTNode{ .tag = .number, .data_type = .{ .number = {} }, .data = .{ .literal = "1" } }),
+                    .right = @constCast(&ASTNode{ .tag = .number, .data_type = .{ .number = {} }, .data = .{ .literal = "2" } }),
                 } },
             }),
         } },

@@ -30,24 +30,27 @@ test "should parse grouping" {
         simple(TokenType.Eof),
     };
 
-    var parser = Parser.init(allocator, &tokens);
+    var parser = try Parser.init(allocator, &tokens);
 
     const nodes = try parser.parse();
 
     try expectEqual(1, nodes.len);
     try expectEqualDeep(&ASTNode{
         .tag = .minus_expr,
+        .data_type = .{ .number = {} },
         .data = .{
             .binary = ASTBinaryNode{
-                .left = @constCast(&ASTNode{ .tag = .number, .data = .{ .literal = "1" } }),
+                .left = @constCast(&ASTNode{ .tag = .number, .data_type = .{ .number = {} }, .data = .{ .literal = "1" } }),
                 .right = @constCast(&ASTNode{
                     .tag = .grouping,
+                    .data_type = .{ .number = {} },
                     .data = .{ .node = @constCast(&ASTNode{
                         .tag = .plus_expr,
+                        .data_type = .{ .number = {} },
                         .data = .{
                             .binary = ASTBinaryNode{
-                                .left = @constCast(&ASTNode{ .tag = .number, .data = .{ .literal = "2" } }),
-                                .right = @constCast(&ASTNode{ .tag = .number, .data = .{ .literal = "3" } }),
+                                .left = @constCast(&ASTNode{ .tag = .number, .data_type = .{ .number = {} }, .data = .{ .literal = "2" } }),
+                                .right = @constCast(&ASTNode{ .tag = .number, .data_type = .{ .number = {} }, .data = .{ .literal = "3" } }),
                             },
                         },
                     }) },

@@ -1,8 +1,5 @@
 const std = @import("std");
 const consts = @import("consts.zig");
-const SymbolsTable = @import("symbol_table.zig").SymbolTable;
-const Symbol = @import("symbol_table.zig").Symbol;
-const SymbolType = @import("symbol_table.zig").SymbolType;
 const ArrayList = std.ArrayList;
 const Token = consts.Token;
 const TokenType = consts.TokenType;
@@ -509,12 +506,14 @@ pub fn next(self: *Self, current_char: u8) !Token {
             try str.ensureTotalCapacity(100);
 
             const starting_char = current_char;
+            try str.append(starting_char);
             while (true) {
                 const next_char = try self.maybe_advance() orelse break;
+                try str.append(next_char);
+
                 if (next_char == '\n' or next_char == '\r' or next_char == starting_char) {
                     break;
                 }
-                try str.append(next_char);
             }
 
             return Token{

@@ -26,27 +26,33 @@ test "should parse comparisons" {
         simple(TokenType.Semicolon),
         simple(TokenType.Eof),
     };
-    var parser = Parser.init(allocator, &tokens);
+    var parser = try Parser.init(allocator, &tokens);
 
     const nodes = try parser.parse();
 
     try expect(nodes.len == 1);
-    try expectEqualDeep(&ASTNode{ .tag = .eq, .data = .{
-        .binary = ASTBinaryNode{
-            .left = @constCast(&ASTNode{
-                .tag = .number,
-                .data = .{
-                    .literal = "1",
-                },
-            }),
-            .right = @constCast(&ASTNode{
-                .tag = .number,
-                .data = .{
-                    .literal = "2",
-                },
-            }),
+    try expectEqualDeep(&ASTNode{
+        .tag = .eq,
+        .data_type = .{ .boolean = {} },
+        .data = .{
+            .binary = ASTBinaryNode{
+                .left = @constCast(&ASTNode{
+                    .tag = .number,
+                    .data_type = .{ .number = {} },
+                    .data = .{
+                        .literal = "1",
+                    },
+                }),
+                .right = @constCast(&ASTNode{
+                    .tag = .number,
+                    .data_type = .{ .number = {} },
+                    .data = .{
+                        .literal = "2",
+                    },
+                }),
+            },
         },
-    } }, nodes[0]);
+    }, nodes[0]);
 }
 
 test "should parse complex comparisons" {
@@ -68,7 +74,7 @@ test "should parse complex comparisons" {
         simple(TokenType.Eof),
     };
 
-    var parser = Parser.init(allocator, &tokens);
+    var parser = try Parser.init(allocator, &tokens);
 
     const nodes = try parser.parse();
 
@@ -76,41 +82,50 @@ test "should parse complex comparisons" {
     try expect(nodes.len == 1);
     try expectEqual(ASTNodeTag.@"or", node.tag);
 
-    try expectEqualDeep(&ASTNode{ .tag = .lt, .data = .{
-        .binary = ASTBinaryNode{
-            .left = @constCast(&ASTNode{
-                .tag = .number,
-                .data = .{
-                    .literal = "1",
-                },
-            }),
-            .right = @constCast(&ASTNode{
-                .tag = .number,
-                .data = .{
-                    .literal = "2",
-                },
-            }),
+    try expectEqualDeep(&ASTNode{
+        .tag = .lt,
+        .data_type = .{ .boolean = {} },
+        .data = .{
+            .binary = ASTBinaryNode{
+                .left = @constCast(&ASTNode{
+                    .tag = .number,
+                    .data_type = .{ .number = {} },
+                    .data = .{
+                        .literal = "1",
+                    },
+                }),
+                .right = @constCast(&ASTNode{
+                    .tag = .number,
+                    .data_type = .{ .number = {} },
+                    .data = .{
+                        .literal = "2",
+                    },
+                }),
+            },
         },
-    } }, node.data.binary.left);
+    }, node.data.binary.left);
 
     const rightNode = node.data.binary.right;
     try expectEqual(ASTNodeTag.@"and", rightNode.tag);
     try expectEqualDeep(&ASTNode{
         .tag = .number,
+        .data_type = .{ .number = {} },
         .data = .{
             .literal = "3",
         },
     }, rightNode.data.binary.left);
-    try expectEqualDeep(&ASTNode{ .tag = .eq, .data = .{
+    try expectEqualDeep(&ASTNode{ .tag = .eq, .data_type = .{ .boolean = {} }, .data = .{
         .binary = ASTBinaryNode{
             .left = @constCast(&ASTNode{
                 .tag = .number,
+                .data_type = .{ .number = {} },
                 .data = .{
                     .literal = "4",
                 },
             }),
             .right = @constCast(&ASTNode{
                 .tag = .number,
+                .data_type = .{ .number = {} },
                 .data = .{
                     .literal = "5",
                 },

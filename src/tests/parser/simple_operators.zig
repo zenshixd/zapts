@@ -25,23 +25,26 @@ test "parses a addition expression" {
         simple(TokenType.Eof),
     };
 
-    var parser = Parser.init(allocator, &tokens);
+    var parser = try Parser.init(allocator, &tokens);
 
     const nodes = try parser.parse();
 
     try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .plus_expr,
+        .data_type = .{ .number = {} },
         .data = .{
             .binary = ASTBinaryNode{
                 .left = @constCast(&ASTNode{
                     .tag = .number,
+                    .data_type = .{ .number = {} },
                     .data = .{
                         .literal = "1",
                     },
                 }),
                 .right = @constCast(&ASTNode{
                     .tag = .number,
+                    .data_type = .{ .number = {} },
                     .data = .{
                         .literal = "2",
                     },
@@ -62,23 +65,26 @@ test "parses a substraction expression" {
         simple(TokenType.Semicolon),
         simple(TokenType.Eof),
     };
-    var parser = Parser.init(allocator, &tokens);
+    var parser = try Parser.init(allocator, &tokens);
 
     const nodes = try parser.parse();
 
     try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .minus_expr,
+        .data_type = .{ .number = {} },
         .data = .{
             .binary = ASTBinaryNode{
                 .left = @constCast(&ASTNode{
                     .tag = .number,
+                    .data_type = .{ .number = {} },
                     .data = .{
                         .literal = "1",
                     },
                 }),
                 .right = @constCast(&ASTNode{
                     .tag = .number,
+                    .data_type = .{ .number = {} },
                     .data = .{
                         .literal = "2",
                     },
@@ -100,23 +106,26 @@ test "parses a multiplication expression" {
         simple(TokenType.Eof),
     };
 
-    var parser = Parser.init(allocator, &tokens);
+    var parser = try Parser.init(allocator, &tokens);
 
     const nodes = try parser.parse();
 
     try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .multiply_expr,
+        .data_type = .{ .number = {} },
         .data = .{
             .binary = ASTBinaryNode{
                 .left = @constCast(&ASTNode{
                     .tag = .number,
+                    .data_type = .{ .number = {} },
                     .data = .{
                         .literal = "1",
                     },
                 }),
                 .right = @constCast(&ASTNode{
                     .tag = .number,
+                    .data_type = .{ .number = {} },
                     .data = .{
                         .literal = "2",
                     },
@@ -140,29 +149,34 @@ test "parses an expression with multiple operators" {
         simple(TokenType.Eof),
     };
 
-    var parser = Parser.init(allocator, &tokens);
+    var parser = try Parser.init(allocator, &tokens);
 
     const nodes = try parser.parse();
 
     try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .plus_expr,
+        .data_type = .{ .number = {} },
         .data = .{ .binary = ASTBinaryNode{
             .left = @constCast(&ASTNode{
                 .tag = .minus_expr,
+                .data_type = .{ .number = {} },
                 .data = .{ .binary = ASTBinaryNode{
                     .left = @constCast(&ASTNode{
                         .tag = .number,
+                        .data_type = .{ .number = {} },
                         .data = .{ .literal = "1" },
                     }),
                     .right = @constCast(&ASTNode{
                         .tag = .number,
+                        .data_type = .{ .number = {} },
                         .data = .{ .literal = "2" },
                     }),
                 } },
             }),
             .right = @constCast(&ASTNode{
                 .tag = .number,
+                .data_type = .{ .number = {} },
                 .data = .{ .literal = "3" },
             }),
         } },
@@ -184,27 +198,32 @@ test "parses an expression with multiple types of operators" {
         simple(TokenType.Eof),
     };
 
-    var parser = Parser.init(allocator, &tokens);
+    var parser = try Parser.init(allocator, &tokens);
 
     const nodes = try parser.parse();
 
     try expect(nodes.len == 1);
     try expectEqualDeep(&ASTNode{
         .tag = .minus_expr,
+        .data_type = .{ .number = {} },
         .data = .{ .binary = ASTBinaryNode{
             .left = @constCast(&ASTNode{
                 .tag = .number,
+                .data_type = .{ .number = {} },
                 .data = .{ .literal = "1" },
             }),
             .right = @constCast(&ASTNode{
                 .tag = .multiply_expr,
+                .data_type = .{ .number = {} },
                 .data = .{ .binary = ASTBinaryNode{
                     .left = @constCast(&ASTNode{
                         .tag = .number,
+                        .data_type = .{ .number = {} },
                         .data = .{ .literal = "2" },
                     }),
                     .right = @constCast(&ASTNode{
                         .tag = .number,
+                        .data_type = .{ .number = {} },
                         .data = .{ .literal = "3" },
                     }),
                 } },
