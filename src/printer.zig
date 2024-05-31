@@ -128,10 +128,10 @@ fn printNode(writer: anytype, node: *ASTNode, indent: usize) anyerror!void {
         },
         .@"if" => {
             try writer.writeAll("if (");
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(")");
 
-            const right = node.data.binary.right;
+            const right = node.data.nodes[1];
             if (right.tag == .block) {
                 try writer.writeAll(" ");
                 try printNode(writer, right, indent);
@@ -141,9 +141,9 @@ fn printNode(writer: anytype, node: *ASTNode, indent: usize) anyerror!void {
             }
         },
         .@"else" => {
-            const left = node.data.binary.left;
+            const left = node.data.nodes[0];
             std.log.info("left else{any}", .{left});
-            if (left.data.binary.right.tag == .block) {
+            if (left.data.nodes[1].tag == .block) {
                 try printNode(writer, left, indent);
                 try writer.writeAll(" else");
             } else {
@@ -152,7 +152,7 @@ fn printNode(writer: anytype, node: *ASTNode, indent: usize) anyerror!void {
                 try writer.writeAll("else");
             }
 
-            const right = node.data.binary.right;
+            const right = node.data.nodes[1];
             if (right.tag == .block or right.tag == .@"if" or right.tag == .@"else") {
                 try writer.writeAll(" ");
                 try printNode(writer, right, indent);
@@ -163,9 +163,9 @@ fn printNode(writer: anytype, node: *ASTNode, indent: usize) anyerror!void {
         },
         .@"switch" => {
             try writer.writeAll("switch (");
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(") ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .case => {
             try writer.writeAll("case ");
@@ -198,9 +198,9 @@ fn printNode(writer: anytype, node: *ASTNode, indent: usize) anyerror!void {
         },
         .@"for" => {
             try writer.writeAll("for (");
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(") ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .for_classic => {
             try printNode(writer, node.data.nodes[0], indent);
@@ -210,26 +210,26 @@ fn printNode(writer: anytype, node: *ASTNode, indent: usize) anyerror!void {
             try printNode(writer, node.data.nodes[2], indent);
         },
         .for_in => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(" in ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .for_of => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(" of ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .@"while" => {
             try writer.writeAll("while (");
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(") ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .do_while => {
             try writer.writeAll("do ");
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(" while (");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
             try writer.writeAll(")");
         },
         .block => {
@@ -256,9 +256,9 @@ fn printNode(writer: anytype, node: *ASTNode, indent: usize) anyerror!void {
             try writer.writeAll(")");
         },
         .comma => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(", ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .true => {
             try writer.writeAll("true");
@@ -282,79 +282,79 @@ fn printNode(writer: anytype, node: *ASTNode, indent: usize) anyerror!void {
             try writer.writeAll(")");
         },
         .assignment => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(" = ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .plus_assign => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(" += ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .minus_assign => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(" -= ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .multiply_assign => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(" *= ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .div_assign => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(" /= ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .modulo_assign => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(" %= ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .exp_assign => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(" **= ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .and_assign => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(" &= ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .or_assign => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(" |= ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .bitwise_and_assign => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(" &= ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .bitwise_or_assign => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(" |= ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .bitwise_xor_assign => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(" ^= ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .bitwise_shift_left_assign => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(" <<= ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .bitwise_shift_right_assign => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(" >>= ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .bitwise_unsigned_right_shift_assign => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(" >>>= ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .plusplus_pre => {
             try writer.writeAll("++");
@@ -385,78 +385,78 @@ fn printNode(writer: anytype, node: *ASTNode, indent: usize) anyerror!void {
             try printNode(writer, node.data.node, indent);
         },
         .minus_expr => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(" - ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .plus => {
             try writer.writeAll("+");
             try printNode(writer, node.data.node, indent);
         },
         .plus_expr => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(" + ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .multiply_expr => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(" * ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .exp_expr => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(" ** ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .div_expr => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(" / ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .modulo_expr => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(" % ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .bitwise_and => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(" & ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .bitwise_or => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(" | ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .bitwise_xor => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(" ^ ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .bitwise_shift_left => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(" << ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .bitwise_shift_right => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(" >> ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .bitwise_unsigned_right_shift => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(" >>> ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .instanceof => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(" instanceof ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .in => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(" in ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .spread => {
             try writer.writeAll("...");
@@ -464,6 +464,14 @@ fn printNode(writer: anytype, node: *ASTNode, indent: usize) anyerror!void {
         },
         .typeof => {
             try writer.writeAll("typeof ");
+            try printNode(writer, node.data.node, indent);
+        },
+        .delete => {
+            try writer.writeAll("delete ");
+            try printNode(writer, node.data.node, indent);
+        },
+        .void => {
+            try writer.writeAll("void ");
             try printNode(writer, node.data.node, indent);
         },
         .object_literal => {
@@ -482,22 +490,22 @@ fn printNode(writer: anytype, node: *ASTNode, indent: usize) anyerror!void {
             try writer.writeAll("}");
         },
         .object_literal_field => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(": ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .object_literal_field_shorthand => {
             try printNode(writer, node.data.node, indent);
         },
         .property_access => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(".");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .optional_property_access => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll("?.");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .array_literal => {
             try writer.writeAll("[");
@@ -511,60 +519,60 @@ fn printNode(writer: anytype, node: *ASTNode, indent: usize) anyerror!void {
             try writer.writeAll("]");
         },
         .index_access => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll("[");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
             try writer.writeAll("]");
         },
         .eq => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(" == ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .eqq => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(" === ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .neq => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(" != ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .neqq => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(" !== ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .@"and" => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(" && ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .@"or" => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(" || ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .gt => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(" > ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .gte => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(" >= ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .lt => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(" < ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
         .lte => {
-            try printNode(writer, node.data.binary.left, indent);
+            try printNode(writer, node.data.nodes[0], indent);
             try writer.writeAll(" <= ");
-            try printNode(writer, node.data.binary.right, indent);
+            try printNode(writer, node.data.nodes[1], indent);
         },
     }
 }

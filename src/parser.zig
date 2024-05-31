@@ -13,11 +13,6 @@ const TokenType = consts.TokenType;
 
 pub const ParserError = error{ SyntaxError, OutOfMemory, NoSpaceLeft };
 
-pub const ASTBinaryNode = struct {
-    left: *ASTNode,
-    right: *ASTNode,
-};
-
 pub const ASTNodeTag = enum {
     // data: nodes
     import,
@@ -45,12 +40,12 @@ pub const ASTNodeTag = enum {
     // data: nodes
     let_decl,
 
-    // data: binary
+    // data: nodes
     @"if",
-    // data: binary
+    // data: nodes
     @"else",
 
-    // data: binary
+    // data: nodes
     @"switch",
     // data: nodes
     case,
@@ -61,24 +56,24 @@ pub const ASTNodeTag = enum {
     // data: none
     @"continue",
 
-    // data: binary
+    // data: nodes
     @"for",
     // data: nodes
     for_classic,
-    // data: binary
+    // data: nodes
     for_in,
-    // data: binary
+    // data: nodes
     for_of,
 
-    // data: binary
+    // data: nodes
     @"while",
-    // data: binary
+    // data: nodes
     do_while,
 
     // data: nodes
     block,
 
-    // data: binary
+    // data: nodes
     assignment,
 
     // data: nodes
@@ -89,88 +84,88 @@ pub const ASTNodeTag = enum {
     // data: literal
     func_decl_argument,
 
-    // data: binary
+    // data: nodes
     call_expr,
     // data: node
     grouping,
-    // data: binary
+    // data: nodes
     comma,
-    // data: binary
+    // data: nodes
     lt,
-    // data: binary
+    // data: nodes
     gt,
-    // data: binary
+    // data: nodes
     lte,
-    // data: binary
+    // data: nodes
     gte,
-    // data: binary
+    // data: nodes
     eq,
-    // data: binary
+    // data: nodes
     eqq,
-    // data: binary
+    // data: nodes
     neq,
-    // data: binary
+    // data: nodes
     neqq,
-    // data: binary
+    // data: nodes
     @"and",
-    // data: binary
+    // data: nodes
     @"or",
-    // data: binary
+    // data: nodes
     plus_expr,
-    // data: binary
+    // data: nodes
     minus_expr,
-    // data: binary
-    // data: binary
+    // data: nodes
+    // data: nodes
     multiply_expr,
-    // data: binary
+    // data: nodes
     exp_expr,
-    // data: binary
+    // data: nodes
     div_expr,
-    // data: binary
+    // data: nodes
     modulo_expr,
-    // data: binary
+    // data: nodes
     bitwise_and,
-    // data: binary
+    // data: nodes
     bitwise_or,
-    // data: binary
+    // data: nodes
     bitwise_xor,
-    // data: binary
+    // data: nodes
     bitwise_shift_left,
-    // data: binary
+    // data: nodes
     bitwise_shift_right,
-    // data: binary
+    // data: nodes
     bitwise_unsigned_right_shift,
-    // data: binary
+    // data: nodes
     plus_assign,
-    // data: binary
+    // data: nodes
     minus_assign,
-    // data: binary
+    // data: nodes
     multiply_assign,
-    // data: binary
+    // data: nodes
     modulo_assign,
-    // data: binary
+    // data: nodes
     div_assign,
-    // data: binary
+    // data: nodes
     exp_assign,
-    // data: binary
+    // data: nodes
     and_assign,
-    // data: binary
+    // data: nodes
     or_assign,
-    // data: binary
+    // data: nodes
     bitwise_and_assign,
-    // data: binary
+    // data: nodes
     bitwise_or_assign,
-    // data: binary
+    // data: nodes
     bitwise_xor_assign,
-    // data: binary
+    // data: nodes
     bitwise_shift_left_assign,
-    // data: binary
+    // data: nodes
     bitwise_shift_right_assign,
-    // data: binary
+    // data: nodes
     bitwise_unsigned_right_shift_assign,
-    // data: binary
+    // data: nodes
     instanceof,
-    // data: binary
+    // data: nodes
     in,
     // data: node
     plus,
@@ -192,20 +187,24 @@ pub const ASTNodeTag = enum {
     spread,
     // data: node
     typeof,
+    // data: node
+    void,
+    // data: node
+    delete,
 
     // data: nodes
     object_literal,
-    // data: binary
+    // data: nodes
     object_literal_field,
     // data: node
     object_literal_field_shorthand,
-    // data: binary
+    // data: nodes
     property_access,
-    // data: binary
+    // data: nodes
     optional_property_access,
     // data: nodes
     array_literal,
-    // data: binary
+    // data: nodes
     index_access,
 
     // data: literal
@@ -224,7 +223,6 @@ pub const ASTNodeData = union(enum) {
     literal: []const u8,
     node: *ASTNode,
     nodes: []*ASTNode,
-    binary: ASTBinaryNode,
     none: void,
 };
 
@@ -264,19 +262,6 @@ pub const ASTNode = struct {
                 try writer.writeAll(" = {\n");
                 try repeatTab(writer, level);
                 try node.format("", .{ .width = level + 1 }, writer);
-                try writer.writeAll("\n");
-                try repeatTab(writer, level - 1);
-                try writer.writeAll("}");
-            },
-            .binary => |binary| {
-                try writer.writeAll(" = {\n");
-                try repeatTab(writer, level);
-                try writer.writeAll(".left = ");
-                try binary.left.format("", .{ .width = level + 1 }, writer);
-                try writer.writeAll(",\n");
-                try repeatTab(writer, level);
-                try writer.writeAll(".right = ");
-                try binary.right.format("", .{ .width = level + 1 }, writer);
                 try writer.writeAll("\n");
                 try repeatTab(writer, level - 1);
                 try writer.writeAll("}");
@@ -440,21 +425,21 @@ fn getNodeType(self: *Self, tag: ASTNodeTag, data: ASTNodeData) TypeSymbol {
         .identifier => .{ .any = {} },
         .none => .{ .none = {} },
         .grouping => self.getNodeType(data.node.tag, data.node.data),
-        .assignment => self.getNodeType(data.binary.right.tag, data.binary.right.data),
-        .plus_assign => self.getNodeType(data.binary.right.tag, data.binary.right.data),
-        .minus_assign => self.getNodeType(data.binary.right.tag, data.binary.right.data),
-        .multiply_assign => self.getNodeType(data.binary.right.tag, data.binary.right.data),
-        .div_assign => self.getNodeType(data.binary.right.tag, data.binary.right.data),
-        .modulo_assign => self.getNodeType(data.binary.right.tag, data.binary.right.data),
-        .exp_assign => self.getNodeType(data.binary.right.tag, data.binary.right.data),
-        .and_assign => self.getNodeType(data.binary.right.tag, data.binary.right.data),
-        .or_assign => self.getNodeType(data.binary.right.tag, data.binary.right.data),
-        .bitwise_and_assign => self.getNodeType(data.binary.right.tag, data.binary.right.data),
-        .bitwise_or_assign => self.getNodeType(data.binary.right.tag, data.binary.right.data),
-        .bitwise_xor_assign => self.getNodeType(data.binary.right.tag, data.binary.right.data),
-        .bitwise_shift_left_assign => self.getNodeType(data.binary.right.tag, data.binary.right.data),
-        .bitwise_shift_right_assign => self.getNodeType(data.binary.right.tag, data.binary.right.data),
-        .bitwise_unsigned_right_shift_assign => self.getNodeType(data.binary.right.tag, data.binary.right.data),
+        .assignment => self.getNodeType(data.nodes[1].tag, data.nodes[1].data),
+        .plus_assign => self.getNodeType(data.nodes[1].tag, data.nodes[1].data),
+        .minus_assign => self.getNodeType(data.nodes[1].tag, data.nodes[1].data),
+        .multiply_assign => self.getNodeType(data.nodes[1].tag, data.nodes[1].data),
+        .div_assign => self.getNodeType(data.nodes[1].tag, data.nodes[1].data),
+        .modulo_assign => self.getNodeType(data.nodes[1].tag, data.nodes[1].data),
+        .exp_assign => self.getNodeType(data.nodes[1].tag, data.nodes[1].data),
+        .and_assign => self.getNodeType(data.nodes[1].tag, data.nodes[1].data),
+        .or_assign => self.getNodeType(data.nodes[1].tag, data.nodes[1].data),
+        .bitwise_and_assign => self.getNodeType(data.nodes[1].tag, data.nodes[1].data),
+        .bitwise_or_assign => self.getNodeType(data.nodes[1].tag, data.nodes[1].data),
+        .bitwise_xor_assign => self.getNodeType(data.nodes[1].tag, data.nodes[1].data),
+        .bitwise_shift_left_assign => self.getNodeType(data.nodes[1].tag, data.nodes[1].data),
+        .bitwise_shift_right_assign => self.getNodeType(data.nodes[1].tag, data.nodes[1].data),
+        .bitwise_unsigned_right_shift_assign => self.getNodeType(data.nodes[1].tag, data.nodes[1].data),
         .plusplus_pre => .{ .number = {} },
         .plusplus_post => .{ .number = {} },
         .minusminus_pre => .{ .number = {} },
@@ -479,11 +464,13 @@ fn getNodeType(self: *Self, tag: ASTNodeTag, data: ASTNodeData) TypeSymbol {
         .in => .{ .boolean = {} },
         .spread => self.getNodeType(data.node.tag, data.node.data),
         .typeof => .{ .string = {} },
+        .void => .{ .none = {} },
+        .delete => .{ .boolean = {} },
         .object_literal => .{ .unknown = {} },
         .object_literal_field => .{ .none = {} },
         .object_literal_field_shorthand => .{ .none = {} },
-        .property_access => self.getNodeType(data.binary.right.tag, data.binary.right.data),
-        .optional_property_access => self.getNodeType(data.binary.right.tag, data.binary.right.data),
+        .property_access => self.getNodeType(data.nodes[1].tag, data.nodes[1].data),
+        .optional_property_access => self.getNodeType(data.nodes[1].tag, data.nodes[1].data),
         .array_literal => .{ .unknown = {} },
         .index_access => .{ .unknown = {} },
         .eq => .{ .boolean = {} },
@@ -744,10 +731,12 @@ fn parseDeclaration(self: *Self) ParserError!?*ASTNode {
                     .none => right.data_type,
                     else => identifier_data_type,
                 },
-                .{ .binary = ASTBinaryNode{
-                    .left = node,
-                    .right = right,
-                } },
+                .{
+                    .nodes = try self.allocator.dupe(*ASTNode, &[_]*ASTNode{
+                        node,
+                        right,
+                    }),
+                },
             );
         }
 
@@ -790,10 +779,15 @@ fn parseIfStatement(self: *Self) ParserError!?*ASTNode {
     const left = try self.parseExpression();
     _ = try self.consume(TokenType.CloseParen, "Expected ')'");
 
-    const node = try self.createNode(.@"if", .{ .binary = .{
-        .left = left,
-        .right = try self.parseStatement(),
-    } });
+    const node = try self.createNode(
+        .@"if",
+        .{
+            .nodes = try self.allocator.dupe(*ASTNode, &[_]*ASTNode{
+                left,
+                try self.parseStatement(),
+            }),
+        },
+    );
 
     if (!self.match(TokenType.Else)) {
         return node;
@@ -803,10 +797,12 @@ fn parseIfStatement(self: *Self) ParserError!?*ASTNode {
 
     return try self.createNode(
         .@"else",
-        .{ .binary = .{
-            .left = node,
-            .right = else_node,
-        } },
+        .{
+            .nodes = try self.allocator.dupe(*ASTNode, &[_]*ASTNode{
+                node,
+                else_node,
+            }),
+        },
     );
 }
 
@@ -827,10 +823,12 @@ fn parseDoWhileStatement(self: *Self) ParserError!?*ASTNode {
 
     return try self.createNode(
         .do_while,
-        .{ .binary = .{
-            .left = condition,
-            .right = node,
-        } },
+        .{
+            .nodes = try self.allocator.dupe(*ASTNode, &[_]*ASTNode{
+                condition,
+                node,
+            }),
+        },
     );
 }
 
@@ -845,10 +843,12 @@ fn parseWhileStatement(self: *Self) ParserError!?*ASTNode {
 
     return try self.createNode(
         .@"while",
-        .{ .binary = .{
-            .left = condition,
-            .right = try self.parseStatement(),
-        } },
+        .{
+            .nodes = try self.allocator.dupe(*ASTNode, &[_]*ASTNode{
+                condition,
+                try self.parseStatement(),
+            }),
+        },
     );
 }
 
@@ -869,10 +869,12 @@ fn parseForStatement(self: *Self) ParserError!?*ASTNode {
 
     return self.createNode(
         .@"for",
-        .{ .binary = .{
-            .left = for_inner.?,
-            .right = try self.parseStatement(),
-        } },
+        .{
+            .nodes = try self.allocator.dupe(*ASTNode, &[_]*ASTNode{
+                for_inner.?,
+                try self.parseStatement(),
+            }),
+        },
     );
 }
 
@@ -906,10 +908,12 @@ fn parseForInStatement(self: *Self, init_node: *ASTNode) ParserError!?*ASTNode {
 
     return self.createNode(
         .for_in,
-        .{ .binary = .{
-            .left = init_node,
-            .right = right,
-        } },
+        .{
+            .nodes = try self.allocator.dupe(*ASTNode, &[_]*ASTNode{
+                init_node,
+                right,
+            }),
+        },
     );
 }
 
@@ -923,10 +927,12 @@ fn parseForOfStatement(self: *Self, init_node: *ASTNode) ParserError!?*ASTNode {
 
     return self.createNode(
         .for_of,
-        .{ .binary = .{
-            .left = init_node,
-            .right = right,
-        } },
+        .{
+            .nodes = try self.allocator.dupe(*ASTNode, &[_]*ASTNode{
+                init_node,
+                right,
+            }),
+        },
     );
 }
 
@@ -943,10 +949,12 @@ fn parseExpression(self: *Self) ParserError!*ASTNode {
     while (self.match(TokenType.Comma)) {
         node = try self.createNode(
             .comma,
-            .{ .binary = ASTBinaryNode{
-                .left = node,
-                .right = try self.parseAssignment(),
-            } },
+            .{
+                .nodes = try self.allocator.dupe(*ASTNode, &[_]*ASTNode{
+                    node,
+                    try self.parseAssignment(),
+                }),
+            },
         );
     }
 
@@ -977,10 +985,12 @@ fn parseAssignment(self: *Self) ParserError!*ASTNode {
     _ = self.advance();
     node = try self.createNode(
         tag,
-        .{ .binary = .{
-            .left = node,
-            .right = try self.parseAssignment(),
-        } },
+        .{
+            .nodes = try self.allocator.dupe(*ASTNode, &[_]*ASTNode{
+                node,
+                try self.parseAssignment(),
+            }),
+        },
     );
 
     return node;
@@ -992,10 +1002,12 @@ fn parseLogicalOr(self: *Self) ParserError!*ASTNode {
     while (self.match(TokenType.BarBar)) {
         node = try self.createNode(
             .@"or",
-            .{ .binary = .{
-                .left = node,
-                .right = try self.parseLogicalAnd(),
-            } },
+            .{
+                .nodes = try self.allocator.dupe(*ASTNode, &[_]*ASTNode{
+                    node,
+                    try self.parseLogicalAnd(),
+                }),
+            },
         );
     }
 
@@ -1007,10 +1019,12 @@ fn parseLogicalAnd(self: *Self) ParserError!*ASTNode {
     while (self.match(TokenType.AmpersandAmpersand)) {
         node = try self.createNode(
             .@"and",
-            .{ .binary = .{
-                .left = node,
-                .right = try self.parseBitwiseOr(),
-            } },
+            .{
+                .nodes = try self.allocator.dupe(*ASTNode, &[_]*ASTNode{
+                    node,
+                    try self.parseBitwiseOr(),
+                }),
+            },
         );
     }
 
@@ -1024,10 +1038,12 @@ fn parseBitwiseOr(self: *Self) ParserError!*ASTNode {
         const right = try self.parseBitwiseXor();
         node = try self.createNode(
             .bitwise_or,
-            .{ .binary = .{
-                .left = node,
-                .right = right,
-            } },
+            .{
+                .nodes = try self.allocator.dupe(*ASTNode, &[_]*ASTNode{
+                    node,
+                    right,
+                }),
+            },
         );
     }
 
@@ -1041,10 +1057,12 @@ fn parseBitwiseXor(self: *Self) ParserError!*ASTNode {
         const right = try self.parseBitwiseAnd();
         node = try self.createNode(
             .bitwise_xor,
-            .{ .binary = .{
-                .left = node,
-                .right = right,
-            } },
+            .{
+                .nodes = try self.allocator.dupe(*ASTNode, &[_]*ASTNode{
+                    node,
+                    right,
+                }),
+            },
         );
     }
 
@@ -1058,10 +1076,12 @@ fn parseBitwiseAnd(self: *Self) ParserError!*ASTNode {
         const right = try self.parseEquality();
         node = try self.createNode(
             .bitwise_and,
-            .{ .binary = .{
-                .left = node,
-                .right = right,
-            } },
+            .{
+                .nodes = try self.allocator.dupe(*ASTNode, &[_]*ASTNode{
+                    node,
+                    right,
+                }),
+            },
         );
     }
 
@@ -1082,10 +1102,12 @@ fn parseEquality(self: *Self) ParserError!*ASTNode {
         _ = self.advance();
         node = try self.createNode(
             tag,
-            .{ .binary = .{
-                .left = node,
-                .right = try self.parseRelational(),
-            } },
+            .{
+                .nodes = try self.allocator.dupe(*ASTNode, &[_]*ASTNode{
+                    node,
+                    try self.parseRelational(),
+                }),
+            },
         );
     }
 
@@ -1108,10 +1130,12 @@ fn parseRelational(self: *Self) ParserError!*ASTNode {
         _ = self.advance();
         node = try self.createNode(
             tag,
-            .{ .binary = .{
-                .left = node,
-                .right = try self.parseShift(),
-            } },
+            .{
+                .nodes = try self.allocator.dupe(*ASTNode, &[_]*ASTNode{
+                    node,
+                    try self.parseShift(),
+                }),
+            },
         );
     }
 
@@ -1131,10 +1155,12 @@ fn parseShift(self: *Self) ParserError!*ASTNode {
         _ = self.advance();
         node = try self.createNode(
             tag,
-            .{ .binary = .{
-                .left = node,
-                .right = try self.parseAdditive(),
-            } },
+            .{
+                .nodes = try self.allocator.dupe(*ASTNode, &[_]*ASTNode{
+                    node,
+                    try self.parseAdditive(),
+                }),
+            },
         );
     }
 
@@ -1153,10 +1179,12 @@ fn parseAdditive(self: *Self) ParserError!*ASTNode {
         _ = self.advance();
         node = try self.createNode(
             tag,
-            .{ .binary = .{
-                .left = node,
-                .right = try self.parseMultiplicative(),
-            } },
+            .{
+                .nodes = try self.allocator.dupe(*ASTNode, &[_]*ASTNode{
+                    node,
+                    try self.parseMultiplicative(),
+                }),
+            },
         );
     }
 
@@ -1176,10 +1204,12 @@ fn parseMultiplicative(self: *Self) ParserError!*ASTNode {
         _ = self.advance();
         node = try self.createNode(
             tag,
-            .{ .binary = .{
-                .left = node,
-                .right = try self.parseExponentiation(),
-            } },
+            .{
+                .nodes = try self.allocator.dupe(*ASTNode, &[_]*ASTNode{
+                    node,
+                    try self.parseExponentiation(),
+                }),
+            },
         );
     }
 
@@ -1193,10 +1223,12 @@ fn parseExponentiation(self: *Self) ParserError!*ASTNode {
         const right = try self.parseUnary();
         node = try self.createNode(
             .exp_expr,
-            .{ .binary = .{
-                .left = node,
-                .right = right,
-            } },
+            .{
+                .nodes = try self.allocator.dupe(*ASTNode, &[_]*ASTNode{
+                    node,
+                    right,
+                }),
+            },
         );
     }
     return node;
@@ -1209,14 +1241,15 @@ fn parseUnary(self: *Self) ParserError!*ASTNode {
             .Plus => .plus,
             .ExclamationMark => .not,
             .Tilde => .bitwise_negate,
-            .DotDotDot => .spread,
             .Typeof => .typeof,
+            .Void => .void,
+            .Delete => .delete,
             else => return try self.parseUpdateExpression(),
         };
         _ = self.advance();
         return try self.createNode(
             tag,
-            .{ .node = try self.parseUpdateExpression() },
+            .{ .node = try self.parseUnary() },
         );
     }
 }
@@ -1294,10 +1327,12 @@ fn parseIndexAccess(self: *Self) ParserError!*ASTNode {
     while (self.match(TokenType.OpenSquareBracket)) {
         node = try self.createNode(
             .index_access,
-            .{ .binary = .{
-                .left = node,
-                .right = try self.parseExpression(),
-            } },
+            .{
+                .nodes = try self.allocator.dupe(*ASTNode, &[_]*ASTNode{
+                    node,
+                    try self.parseExpression(),
+                }),
+            },
         );
 
         _ = try self.consume(TokenType.CloseSquareBracket, "Expected ']'");
@@ -1354,10 +1389,10 @@ fn parsePropertyAccess(self: *Self) ParserError!*ASTNode {
         _ = self.advance();
         node = try self.createNode(
             tag,
-            .{ .binary = .{
-                .left = node,
-                .right = try self.parseLiteral(),
-            } },
+            .{ .nodes = try self.allocator.dupe(*ASTNode, &[_]*ASTNode{
+                node,
+                try self.parseLiteral(),
+            }) },
         );
     }
     return node;
@@ -1377,13 +1412,12 @@ fn parseObjectLiteral(self: *Self) ParserError!*ASTNode {
 
         var comma: ?Token = null;
         if (self.match(TokenType.Colon)) {
-            try nodes.append(try self.createNode(
-                .object_literal_field,
-                .{ .binary = .{
-                    .left = identifier,
-                    .right = try self.parseAssignment(),
-                } },
-            ));
+            try nodes.append(try self.createNode(.object_literal_field, .{
+                .nodes = try self.allocator.dupe(*ASTNode, &[_]*ASTNode{
+                    identifier,
+                    try self.parseAssignment(),
+                }),
+            }));
             comma = self.consumeOrNull(TokenType.Comma);
         } else {
             try self.emitError("Expected ':'", .{});
