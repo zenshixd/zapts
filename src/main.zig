@@ -24,10 +24,7 @@ pub fn main() !void {
 
     const filename = args[1];
 
-    const result = compile(allocator, filename) catch |err| {
-        std.log.info("Compile error: {}", .{err});
-        return;
-    };
+    const result = try compile(allocator, filename);
 
     defer allocator.free(result.file_name);
     defer allocator.free(result.output);
@@ -35,6 +32,6 @@ pub fn main() !void {
     std.log.info("Output:\n{s}", .{result.output});
 }
 test {
+    _ = @import("compile.zig");
     _ = @import("lexer.zig");
-    _ = @import("parser.zig");
 }

@@ -27,35 +27,27 @@ pub fn compile(allocator: std.mem.Allocator, filename: []const u8) !CompileResul
     defer file.close();
 
     const buffer = try file.readToEndAlloc(allocator, MAX_FILE_SIZE);
-    var lexer = Lexer.init(arena.allocator(), buffer);
-
-    const tokens = try lexer.nextAll();
-
-    for (tokens) |token| {
-        std.log.info("{}", .{token});
-    }
-
+    var parser = try Parser.init(arena.allocator(), buffer);
     allocator.free(buffer);
 
-    var parser = try Parser.init(arena.allocator(), tokens);
     const nodes = parser.parse() catch |err| {
         std.log.info("Parse error: {}", .{err});
         for (parser.errors.items) |parser_error| {
-            std.log.info("  {s}", .{parser_error});
+            std.log.info("Error: {s}", .{parser_error});
         }
         return err;
     };
 
-    for (nodes) |node| {
-        std.log.info("{}", .{node});
-    }
+    // for (nodes) |node| {
+    //     std.log.info("{}", .{node});
+    // }
 
     for (parser.errors.items) |parser_error| {
-        std.log.info("Error:  {s}", .{parser_error});
+        std.log.info("Error: {s}", .{parser_error});
     }
 
     const output = try print(allocator, nodes);
-    std.log.info("output: {s}", .{output});
+    // std.log.info("output: {s}", .{output});
 
     return .{
         .file_name = try getOutputFile(allocator, filename),
@@ -84,4 +76,8 @@ test "getOutputFile" {
     defer allocator.free(output_filename);
 
     try std.testing.expectEqualStrings("test.js", output_filename);
+}
+
+test "compile" {
+    _ = @import("tests/compile.zig");
 }

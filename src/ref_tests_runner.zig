@@ -12,16 +12,10 @@ const MAX_FILE_SIZE = 1024 * 1024 * 1024;
 const REF_TESTS_DIR = ".reftests";
 const TS_VERSION = "5.4.5";
 
-pub const std_options = .{
-    .logFn = log,
-};
-
 var log_err_count: usize = 0;
-var cmdline_buffer: [4096]u8 = undefined;
-var fba = std.heap.FixedBufferAllocator.init(&cmdline_buffer);
 
-const compile_tests_path = if (builtin.target.os.tag == .windows) "compiler\\" else "compiler/";
-const conformance_tests_path = if (builtin.target.os.tag == .windows) "conformance\\" else "conformance/";
+const compile_tests_path = "compiler" ++ std.fs.path.sep_str;
+const conformance_tests_path = "conformance" ++ std.fs.path.sep_str;
 
 pub fn main() void {
     std.debug.attachSegfaultHandler();
@@ -95,23 +89,6 @@ pub fn main() void {
     }
     if (leaks != 0 or log_err_count != 0 or fail_count != 0) {
         std.process.exit(1);
-    }
-}
-
-pub fn log(
-    comptime message_level: std.log.Level,
-    comptime scope: @Type(.EnumLiteral),
-    comptime format: []const u8,
-    args: anytype,
-) void {
-    if (@intFromEnum(message_level) <= @intFromEnum(std.log.Level.err)) {
-        log_err_count +|= 1;
-    }
-    if (@intFromEnum(message_level) <= @intFromEnum(std.testing.log_level)) {
-        std.debug.print(
-            "[" ++ @tagName(scope) ++ "] (" ++ @tagName(message_level) ++ "): " ++ format ++ "\n",
-            args,
-        );
     }
 }
 

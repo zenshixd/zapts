@@ -1,19 +1,11 @@
 const std = @import("std");
 const ArrayList = std.ArrayList;
 
+const Lexer = @import("lexer.zig");
 const Closure = @import("closure.zig").Closure;
 const Symbol = @import("symbols.zig").Symbol;
 const TypeSymbol = @import("symbols.zig").TypeSymbol;
 const ReferenceSymbol = @import("symbols.zig").ReferenceSymbol;
-const AnyTypeSymbol = @import("symbols.zig").AnyTypeSymbol;
-const UnknownTypeSymbol = @import("symbols.zig").UnknownTypeSymbol;
-const BooleanTypeSymbol = @import("symbols.zig").BooleanTypeSymbol;
-const NullTypeSymbol = @import("symbols.zig").NullTypeSymbol;
-const UndefinedTypeSymbol = @import("symbols.zig").UndefinedTypeSymbol;
-const VoidTypeSymbol = @import("symbols.zig").VoidTypeSymbol;
-const NumberTypeSymbol = @import("symbols.zig").NumberTypeSymbol;
-const BigIntTypeSymbol = @import("symbols.zig").BigIntTypeSymbol;
-const StringTypeSymbol = @import("symbols.zig").StringTypeSymbol;
 
 const consts = @import("consts.zig");
 const Token = consts.Token;
@@ -52,6 +44,36 @@ pub const ASTNodeTag = enum {
     const_decl,
     // data: nodes
     let_decl,
+
+    // data: binary
+    @"if",
+    // data: binary
+    @"else",
+
+    // data: binary
+    @"switch",
+    // data: nodes
+    case,
+    // data: node
+    default,
+    // data: none
+    @"break",
+    // data: none
+    @"continue",
+
+    // data: binary
+    @"for",
+    // data: nodes
+    for_classic,
+    // data: binary
+    for_in,
+    // data: binary
+    for_of,
+
+    // data: binary
+    @"while",
+    // data: binary
+    do_while,
 
     // data: nodes
     block,
@@ -153,11 +175,15 @@ pub const ASTNodeTag = enum {
     // data: node
     plus,
     // data: node
-    plusplus,
+    plusplus_pre,
+    // data: node
+    plusplus_post,
     // data: node
     minus,
     // data: node
-    minusminus,
+    minusminus_pre,
+    // data: node
+    minusminus_post,
     // data: node
     not,
     // data: node
@@ -275,9 +301,12 @@ tokens: []Token,
 index: usize = 0,
 errors: std.ArrayList([]const u8),
 
-pub fn init(allocator: std.mem.Allocator, tokens: []Token) !Self {
+pub fn init(allocator: std.mem.Allocator, buffer: []const u8) !Self {
     const closure = try allocator.create(Closure);
     closure.* = Closure.init(allocator);
+
+    var lexer = Lexer.init(allocator, buffer);
+    const tokens = try lexer.nextAll();
 
     return Self{
         .tokens = tokens,
@@ -287,7 +316,23 @@ pub fn init(allocator: std.mem.Allocator, tokens: []Token) !Self {
     };
 }
 
-pub fn createNode(self: *Self, tag: ASTNodeTag, data: ASTNodeData) !*ASTNode {
+pub fn parse(self: *Self) ParserError![]*ASTNode {
+    var nodes = ArrayList(*ASTNode).init(self.allocator);
+    defer nodes.deinit();
+
+    while (!self.match(TokenType.Eof)) {
+        if (self.match(TokenType.NewLine) or self.match(TokenType.LineComment) or self.match(TokenType.MultilineComment)) {
+            continue;
+        }
+
+        const node = try self.parseStatement();
+        try nodes.append(node);
+    }
+
+    return try nodes.toOwnedSlice();
+}
+
+fn createNode(self: *Self, tag: ASTNodeTag, data: ASTNodeData) !*ASTNode {
     const node = try self.allocator.create(ASTNode);
     node.* = .{
         .tag = tag,
@@ -297,7 +342,7 @@ pub fn createNode(self: *Self, tag: ASTNodeTag, data: ASTNodeData) !*ASTNode {
     return node;
 }
 
-pub fn createTypedNode(self: *Self, tag: ASTNodeTag, data_type: TypeSymbol, data: ASTNodeData) !*ASTNode {
+fn createTypedNode(self: *Self, tag: ASTNodeTag, data_type: TypeSymbol, data: ASTNodeData) !*ASTNode {
     const node = try self.allocator.create(ASTNode);
     node.* = .{
         .tag = tag,
@@ -307,21 +352,17 @@ pub fn createTypedNode(self: *Self, tag: ASTNodeTag, data_type: TypeSymbol, data
     return node;
 }
 
-pub fn token(self: Self) Token {
+fn token(self: Self) Token {
     return self.tokens[self.index];
 }
 
-pub fn advance(self: *Self) Token {
+fn advance(self: *Self) Token {
     const t = self.token();
-    std.log.info("advance {}", .{t});
     self.index += 1;
-    while (self.peekMatch(TokenType.LineComment) or self.peekMatch(TokenType.MultilineComment)) {
-        self.index += 1;
-    }
     return t;
 }
 
-pub fn match(self: *Self, token_type: TokenType) bool {
+fn match(self: *Self, token_type: TokenType) bool {
     if (self.peekMatch(token_type)) {
         _ = self.advance();
         return true;
@@ -329,36 +370,21 @@ pub fn match(self: *Self, token_type: TokenType) bool {
     return false;
 }
 
-pub fn peekMatch(self: Self, token_type: TokenType) bool {
+fn peekMatch(self: Self, token_type: TokenType) bool {
     return self.index < self.tokens.len and self.token().type == token_type;
 }
 
-pub fn parse(self: *Self) ParserError![]*ASTNode {
-    std.log.info("parent: {any}", .{self.closure.parent});
-    var nodes = ArrayList(*ASTNode).init(self.allocator);
-    defer nodes.deinit();
-
-    while (!self.match(TokenType.Eof)) {
-        if (self.match(TokenType.NewLine) or self.match(TokenType.LineComment) or self.match(TokenType.MultilineComment)) {
-            continue;
-        }
-        const node = try self.parseStatement();
-        try nodes.append(node);
-    }
-
-    return try nodes.toOwnedSlice();
-}
-
-pub fn consume(self: *Self, token_type: TokenType, comptime error_msg: []const u8) ParserError!Token {
+fn consume(self: *Self, token_type: TokenType, comptime error_msg: []const u8) ParserError!Token {
     if (self.token().type == token_type) {
         return self.advance();
     }
 
     try self.emitError(error_msg, .{});
+    try self.emitError("Current token: {}", .{self.token()});
     return error.SyntaxError;
 }
 
-pub fn consumeOrNull(self: *Self, token_type: TokenType) ?Token {
+fn consumeOrNull(self: *Self, token_type: TokenType) ?Token {
     if (self.token().type == token_type) {
         return self.advance();
     }
@@ -366,7 +392,11 @@ pub fn consumeOrNull(self: *Self, token_type: TokenType) ?Token {
     return null;
 }
 
-pub fn getNodeType(self: *Self, tag: ASTNodeTag, data: ASTNodeData) TypeSymbol {
+fn rewind(self: *Self) void {
+    self.index -= 1;
+}
+
+fn getNodeType(self: *Self, tag: ASTNodeTag, data: ASTNodeData) TypeSymbol {
     return switch (tag) {
         .import => .{ .none = {} },
         .import_named_bindings => .{ .none = {} },
@@ -384,6 +414,19 @@ pub fn getNodeType(self: *Self, tag: ASTNodeTag, data: ASTNodeData) TypeSymbol {
         .func_decl => .{ .none = {} },
         .func_decl_name => .{ .unknown = {} },
         .func_decl_argument => .{ .any = {} },
+        .@"if" => .{ .none = {} },
+        .@"else" => .{ .none = {} },
+        .@"switch" => .{ .none = {} },
+        .case => .{ .none = {} },
+        .default => .{ .none = {} },
+        .@"break" => .{ .none = {} },
+        .@"continue" => .{ .none = {} },
+        .@"for" => .{ .none = {} },
+        .for_classic => .{ .none = {} },
+        .for_in => .{ .none = {} },
+        .for_of => .{ .none = {} },
+        .@"while" => .{ .none = {} },
+        .do_while => .{ .none = {} },
         .block => .{ .none = {} },
         .call_expr => .{ .unknown = {} },
         .comma => .{ .unknown = {} },
@@ -412,8 +455,10 @@ pub fn getNodeType(self: *Self, tag: ASTNodeTag, data: ASTNodeData) TypeSymbol {
         .bitwise_shift_left_assign => self.getNodeType(data.binary.right.tag, data.binary.right.data),
         .bitwise_shift_right_assign => self.getNodeType(data.binary.right.tag, data.binary.right.data),
         .bitwise_unsigned_right_shift_assign => self.getNodeType(data.binary.right.tag, data.binary.right.data),
-        .plusplus => .{ .number = {} },
-        .minusminus => .{ .number = {} },
+        .plusplus_pre => .{ .number = {} },
+        .plusplus_post => .{ .number = {} },
+        .minusminus_pre => .{ .number = {} },
+        .minusminus_post => .{ .number = {} },
         .not => .{ .boolean = {} },
         .bitwise_negate => .{ .number = {} },
         .minus => .{ .number = {} },
@@ -454,29 +499,22 @@ pub fn getNodeType(self: *Self, tag: ASTNodeTag, data: ASTNodeData) TypeSymbol {
     };
 }
 
-pub fn emitError(self: *Self, comptime error_msg: []const u8, args: anytype) !void {
+fn emitError(self: *Self, comptime error_msg: []const u8, args: anytype) !void {
     try self.errors.append(try std.fmt.allocPrint(self.allocator, error_msg, args));
 }
 
-pub fn parseStatement(self: *Self) ParserError!*ASTNode {
+fn parseStatement(self: *Self) ParserError!*ASTNode {
     while (self.match(TokenType.NewLine)) {}
 
-    if (self.match(TokenType.Semicolon)) {
-        return self.createNode(.none, .{ .none = {} });
-    }
-
-    var node: *ASTNode = undefined;
-    if (self.match(TokenType.Function)) {
-        node = try self.parseFunctionExpression(false);
-    } else if (self.match(TokenType.Async) and self.match(TokenType.Function)) {
-        node = try self.parseFunctionExpression(true);
-    } else if (self.match(TokenType.Import)) {
-        node = try self.parseImportStatement();
-    } else if (self.peekMatch(TokenType.Var) or self.peekMatch(TokenType.Let) or self.peekMatch(TokenType.Const)) {
-        node = try self.parseDeclaration();
-    } else {
-        node = try self.parseExpression();
-    }
+    // zig fmt: off
+    const node = try self.parseBlock()
+        orelse try self.parseDeclaration()
+        orelse try self.parseImportStatement()
+        orelse try self.parseEmptyStatement()
+        orelse try self.parseIfStatement()
+        orelse try self.parseBreakableStatement()
+        orelse try self.parseExpression();
+    // zig fmt: on
 
     if (needsSemicolon(node)) {
         _ = try self.consume(TokenType.Semicolon, "Expected ';'");
@@ -484,7 +522,10 @@ pub fn parseStatement(self: *Self) ParserError!*ASTNode {
     return node;
 }
 
-pub fn parseImportStatement(self: *Self) ParserError!*ASTNode {
+fn parseImportStatement(self: *Self) ParserError!?*ASTNode {
+    if (!self.match(TokenType.Import)) {
+        return null;
+    }
     var nodes = ArrayList(*ASTNode).init(self.allocator);
     defer nodes.deinit();
 
@@ -576,7 +617,18 @@ pub fn parseImportStatement(self: *Self) ParserError!*ASTNode {
     );
 }
 
-pub fn parseFunctionExpression(self: *Self, is_async: bool) ParserError!*ASTNode {
+fn parseFunctionDecl(self: *Self) ParserError!?*ASTNode {
+    var is_async = false;
+    if (self.match(TokenType.Async)) {
+        is_async = true;
+    }
+
+    if (!self.match(TokenType.Function)) {
+        if (is_async) {
+            self.rewind();
+        }
+        return null;
+    }
     var name: []const u8 = "(anonymous)";
     var nodes = ArrayList(*ASTNode).init(self.allocator);
     defer nodes.deinit();
@@ -607,23 +659,24 @@ pub fn parseFunctionExpression(self: *Self, is_async: bool) ParserError!*ASTNode
         _ = try self.consume(TokenType.Comma, "Expected ','");
     }
 
-    _ = try self.consume(TokenType.OpenCurlyBrace, "Expected '{{'");
-
     const tag: ASTNodeTag = if (is_async) .async_func_decl else .func_decl;
 
-    try nodes.append(try self.createNode(
-        .block,
-        .{ .nodes = try self.parseBlock() },
-    ));
-
+    if (try self.parseBlock()) |block| {
+        try nodes.append(block);
+    } else {
+        try self.emitError("'{{' or ';' expected", .{});
+    }
     return try self.createNode(
         tag,
         .{ .nodes = try nodes.toOwnedSlice() },
     );
 }
 
-pub fn parseBlock(self: *Self) ParserError![]*ASTNode {
-    std.log.info("parseBlock {}", .{self.token()});
+fn parseBlock(self: *Self) ParserError!?*ASTNode {
+    if (!self.match(TokenType.OpenCurlyBrace)) {
+        return null;
+    }
+
     // every block spawns new closure
     self.closure = try self.closure.spawn();
     var statements = ArrayList(*ASTNode).init(self.allocator);
@@ -651,15 +704,19 @@ pub fn parseBlock(self: *Self) ParserError![]*ASTNode {
 
     self.closure = self.closure.parent.?;
 
-    return statements.toOwnedSlice();
+    return self.createNode(
+        .block,
+        .{ .nodes = try statements.toOwnedSlice() },
+    );
 }
 
-pub fn parseDeclaration(self: *Self) ParserError!*ASTNode {
+fn parseDeclaration(self: *Self) ParserError!?*ASTNode {
     const tag: ASTNodeTag = switch (self.token().type) {
         .Var => .var_decl,
         .Let => .let_decl,
         .Const => .const_decl,
-        else => unreachable,
+        .Async, .Function => return self.parseFunctionDecl(),
+        else => return null,
     };
     _ = self.advance();
 
@@ -713,7 +770,175 @@ pub fn parseDeclaration(self: *Self) ParserError!*ASTNode {
     );
 }
 
-pub fn parseExpression(self: *Self) ParserError!*ASTNode {
+fn parseEmptyStatement(self: *Self) ParserError!?*ASTNode {
+    if (!self.match(TokenType.Semicolon)) {
+        return null;
+    }
+
+    return self.createNode(
+        .none,
+        .{ .none = {} },
+    );
+}
+
+fn parseIfStatement(self: *Self) ParserError!?*ASTNode {
+    if (!self.match(TokenType.If)) {
+        return null;
+    }
+
+    _ = try self.consume(TokenType.OpenParen, "Expected '('");
+    const left = try self.parseExpression();
+    _ = try self.consume(TokenType.CloseParen, "Expected ')'");
+
+    const node = try self.createNode(.@"if", .{ .binary = .{
+        .left = left,
+        .right = try self.parseStatement(),
+    } });
+
+    if (!self.match(TokenType.Else)) {
+        return node;
+    }
+
+    const else_node = try self.parseStatement();
+
+    return try self.createNode(
+        .@"else",
+        .{ .binary = .{
+            .left = node,
+            .right = else_node,
+        } },
+    );
+}
+
+fn parseBreakableStatement(self: *Self) ParserError!?*ASTNode {
+    return try parseDoWhileStatement(self) orelse try parseWhileStatement(self) orelse try parseForStatement(self);
+}
+
+fn parseDoWhileStatement(self: *Self) ParserError!?*ASTNode {
+    if (!self.match(TokenType.Do)) {
+        return null;
+    }
+
+    const node = try self.parseStatement();
+    _ = try self.consume(TokenType.While, "Expected 'while'");
+    _ = try self.consume(TokenType.OpenParen, "Expected '('");
+    const condition = try self.parseExpression();
+    _ = try self.consume(TokenType.CloseParen, "Expected ')'");
+
+    return try self.createNode(
+        .do_while,
+        .{ .binary = .{
+            .left = condition,
+            .right = node,
+        } },
+    );
+}
+
+fn parseWhileStatement(self: *Self) ParserError!?*ASTNode {
+    if (!self.match(TokenType.While)) {
+        return null;
+    }
+
+    _ = try self.consume(TokenType.OpenParen, "Expected '('");
+    const condition = try self.parseExpression();
+    _ = try self.consume(TokenType.CloseParen, "Expected ')'");
+
+    return try self.createNode(
+        .@"while",
+        .{ .binary = .{
+            .left = condition,
+            .right = try self.parseStatement(),
+        } },
+    );
+}
+
+fn parseForStatement(self: *Self) ParserError!?*ASTNode {
+    if (!self.match(TokenType.For)) {
+        return null;
+    }
+
+    _ = try self.consume(TokenType.OpenParen, "Expected '('");
+    const init_node = try self.parseForInitExpression();
+
+    const for_inner = try self.parseForClassicStatement(init_node) orelse try self.parseForInStatement(init_node) orelse try self.parseForOfStatement(init_node);
+
+    if (for_inner == null) {
+        try self.emitError("'in' or ; expected", .{});
+        return error.SyntaxError;
+    }
+
+    return self.createNode(
+        .@"for",
+        .{ .binary = .{
+            .left = for_inner.?,
+            .right = try self.parseStatement(),
+        } },
+    );
+}
+
+fn parseForClassicStatement(self: *Self, init_node: *ASTNode) ParserError!?*ASTNode {
+    if (!self.match(TokenType.Semicolon)) {
+        return null;
+    }
+
+    var nodes = ArrayList(*ASTNode).init(self.allocator);
+    defer nodes.deinit();
+
+    try nodes.append(init_node);
+    try nodes.append(try self.parseExpression());
+    _ = try self.consume(TokenType.Semicolon, "Expected ';'");
+    try nodes.append(try self.parseExpression());
+    _ = try self.consume(TokenType.CloseParen, "Expected ')'");
+
+    return try self.createNode(
+        .for_classic,
+        .{ .nodes = try nodes.toOwnedSlice() },
+    );
+}
+
+fn parseForInStatement(self: *Self, init_node: *ASTNode) ParserError!?*ASTNode {
+    if (!self.match(TokenType.In)) {
+        return null;
+    }
+
+    const right = try self.parseExpression();
+    _ = try self.consume(TokenType.CloseParen, "Expected ')'");
+
+    return self.createNode(
+        .for_in,
+        .{ .binary = .{
+            .left = init_node,
+            .right = right,
+        } },
+    );
+}
+
+fn parseForOfStatement(self: *Self, init_node: *ASTNode) ParserError!?*ASTNode {
+    if (!self.match(TokenType.Of)) {
+        return null;
+    }
+
+    const right = try self.parseExpression();
+    _ = try self.consume(TokenType.CloseParen, "Expected ')'");
+
+    return self.createNode(
+        .for_of,
+        .{ .binary = .{
+            .left = init_node,
+            .right = right,
+        } },
+    );
+}
+
+fn parseForInitExpression(self: *Self) ParserError!*ASTNode {
+    if (self.match(TokenType.Semicolon)) {
+        return self.createNode(.none, .{ .none = {} });
+    }
+
+    return try self.parseDeclaration() orelse try self.parseExpression();
+}
+
+fn parseExpression(self: *Self) ParserError!*ASTNode {
     var node = try self.parseAssignment();
     while (self.match(TokenType.Comma)) {
         node = try self.createNode(
@@ -728,7 +953,7 @@ pub fn parseExpression(self: *Self) ParserError!*ASTNode {
     return node;
 }
 
-pub fn parseAssignment(self: *Self) ParserError!*ASTNode {
+fn parseAssignment(self: *Self) ParserError!*ASTNode {
     var node = try self.parseLogicalOr();
 
     const tag: ASTNodeTag = switch (self.token().type) {
@@ -744,9 +969,9 @@ pub fn parseAssignment(self: *Self) ParserError!*ASTNode {
         .CaretEqual => .bitwise_xor_assign,
         .BarBarEqual => .or_assign,
         .AmpersandAmpersandEqual => .and_assign,
-        .GreaterThanGreaterThanEqual => .bitwise_shift_right,
-        .GreaterThanGreaterThanGreaterThanEqual => .bitwise_unsigned_right_shift,
-        .LessThanLessThanEqual => .bitwise_shift_left,
+        .GreaterThanGreaterThanEqual => .bitwise_shift_right_assign,
+        .GreaterThanGreaterThanGreaterThanEqual => .bitwise_unsigned_right_shift_assign,
+        .LessThanLessThanEqual => .bitwise_shift_left_assign,
         else => return node,
     };
     _ = self.advance();
@@ -986,14 +1211,44 @@ fn parseUnary(self: *Self) ParserError!*ASTNode {
             .Tilde => .bitwise_negate,
             .DotDotDot => .spread,
             .Typeof => .typeof,
-            else => return try self.parseCallableExpression(),
+            else => return try self.parseUpdateExpression(),
         };
         _ = self.advance();
         return try self.createNode(
             tag,
+            .{ .node = try self.parseUpdateExpression() },
+        );
+    }
+}
+
+fn parseUpdateExpression(self: *Self) ParserError!*ASTNode {
+    if (self.match(TokenType.PlusPlus)) {
+        return try self.createNode(
+            .plusplus_pre,
+            .{ .node = try self.parseCallableExpression() },
+        );
+    } else if (self.match(TokenType.MinusMinus)) {
+        return try self.createNode(
+            .minusminus_pre,
             .{ .node = try self.parseCallableExpression() },
         );
     }
+
+    var node = try self.parseCallableExpression();
+
+    if (self.match(TokenType.PlusPlus)) {
+        node = try self.createNode(
+            .plusplus_post,
+            .{ .node = node },
+        );
+    } else if (self.match(TokenType.MinusMinus)) {
+        node = try self.createNode(
+            .minusminus_post,
+            .{ .node = node },
+        );
+    }
+
+    return node;
 }
 
 fn parseCallableExpression(self: *Self) ParserError!*ASTNode {
@@ -1137,7 +1392,6 @@ fn parseObjectLiteral(self: *Self) ParserError!*ASTNode {
 
         while (self.match(TokenType.NewLine)) {}
 
-        std.log.info("{any}", .{comma});
         if (self.match(TokenType.CloseCurlyBrace)) {
             break;
         } else if (comma == null) {
@@ -1188,35 +1442,35 @@ fn parseLiteral(self: *Self) ParserError!*ASTNode {
     return error.SyntaxError;
 }
 
-pub fn parseDataType(self: *Self) !TypeSymbol {
+fn parseDataType(self: *Self) !TypeSymbol {
     if (self.match(TokenType.NumberConstant)) {
-        return NumberTypeSymbol;
+        return .{ .number = {} };
     } else if (self.match(TokenType.BigIntConstant)) {
-        return BigIntTypeSymbol;
+        return .{ .bigint = {} };
     } else if (self.match(TokenType.StringConstant)) {
-        return StringTypeSymbol;
+        return .{ .string = {} };
     } else if (self.match(TokenType.True) or self.match(TokenType.False)) {
-        return BooleanTypeSymbol;
+        return .{ .boolean = {} };
     } else if (self.match(TokenType.Null)) {
-        return NullTypeSymbol;
+        return .{ .null = {} };
     } else if (self.match(TokenType.Undefined)) {
-        return UndefinedTypeSymbol;
+        return .{ .undefined = {} };
     } else if (self.match(TokenType.Void)) {
-        return VoidTypeSymbol;
+        return .{ .void = {} };
     } else if (self.match(TokenType.Any)) {
-        return AnyTypeSymbol;
+        return .{ .any = {} };
     } else if (self.match(TokenType.Unknown)) {
-        return UnknownTypeSymbol;
+        return .{ .unknown = {} };
     } else if (self.consumeOrNull(TokenType.Identifier)) |identifier| {
         const value = identifier.value.?;
         if (std.mem.eql(u8, value, "number")) {
-            return NumberTypeSymbol;
+            return .{ .number = {} };
         } else if (std.mem.eql(u8, value, "bigint")) {
-            return BigIntTypeSymbol;
+            return .{ .bigint = {} };
         } else if (std.mem.eql(u8, value, "string")) {
-            return StringTypeSymbol;
+            return .{ .string = {} };
         } else if (std.mem.eql(u8, value, "boolean")) {
-            return BooleanTypeSymbol;
+            return .{ .boolean = {} };
         }
         return self.parseIdentifierType(identifier);
     }
@@ -1225,9 +1479,8 @@ pub fn parseDataType(self: *Self) !TypeSymbol {
     return error.SyntaxError;
 }
 
-pub fn parseIdentifierType(self: *Self, identifier: Token) ParserError!TypeSymbol {
-    std.log.info("parent2: {any}", .{self.closure.parent});
-    const referenceSymbol = try self.closure.getSymbol(identifier.value.?);
+fn parseIdentifierType(self: *Self, identifier: Token) ParserError!TypeSymbol {
+    const referenceSymbol = self.closure.getSymbol(identifier.value.?);
 
     var refTypeSymbol: *TypeSymbol = undefined;
 
@@ -1270,11 +1523,7 @@ pub fn parseIdentifierType(self: *Self, identifier: Token) ParserError!TypeSymbo
 
 pub fn needsSemicolon(node: *ASTNode) bool {
     return switch (node.tag) {
-        .func_decl, .async_func_decl, .object_literal => false,
+        .block, .func_decl, .async_func_decl, .@"for", .@"while", .do_while, .@"if", .@"else" => false,
         else => true,
     };
-}
-
-test {
-    _ = @import("tests/parser.zig");
 }

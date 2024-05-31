@@ -43,17 +43,33 @@ pub fn build(b: *std.Build) void {
         .root_source_file = .{ .path = "src/main.zig" },
         .target = target,
         .optimize = optimize,
-        .test_runner = .{ .path = "src/reftests.zig" },
+        .test_runner = .{ .path = "src/ref_tests_runner.zig" },
     });
     reftests.root_module.addImport("jdz_allocator", jdz_dep.module("jdz_allocator"));
-    reftests.linkLibC();
 
     const run_reftests = b.addRunArtifact(reftests);
 
-    const reftests_step = b.step("reftests", "Run reference tests");
+    const reftests_step = b.step("test:refs", "Run reference tests");
     reftests_step.dependOn(&run_reftests.step);
 
     if (b.args) |args| {
         run_reftests.addArgs(args);
+    }
+
+    const compile_tests = b.addTest(.{
+        .root_source_file = .{ .path = "src/main.zig" },
+        .target = target,
+        .optimize = optimize,
+        .test_runner = .{ .path = "src/compile_tests_runner.zig" },
+    });
+    compile_tests.root_module.addImport("jdz_allocator", jdz_dep.module("jdz_allocator"));
+
+    const run_compile_tests = b.addRunArtifact(compile_tests);
+
+    const compile_tests_step = b.step("test:compile", "Run reference tests");
+    compile_tests_step.dependOn(&run_compile_tests.step);
+
+    if (b.args) |args| {
+        run_compile_tests.addArgs(args);
     }
 }

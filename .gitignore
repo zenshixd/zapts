@@ -6,3 +6,4 @@ build-*/
 docgen_tmp/
 
 .reftests/
+test.log

@@ -21,7 +21,7 @@ pub fn print(allocator: std.mem.Allocator, statements: []*ASTNode) ![]const u8 {
     return output.toOwnedSlice();
 }
 
-fn printNode(writer: anytype, node: *ASTNode, indent: usize) !void {
+fn printNode(writer: anytype, node: *ASTNode, indent: usize) anyerror!void {
     const tag: ASTNodeTag = node.tag;
     switch (tag) {
         .import => {
@@ -126,23 +126,119 @@ fn printNode(writer: anytype, node: *ASTNode, indent: usize) !void {
         .func_decl_argument => {
             try writer.writeAll(node.data.literal);
         },
+        .@"if" => {
+            try writer.writeAll("if (");
+            try printNode(writer, node.data.binary.left, indent);
+            try writer.writeAll(")");
+
+            const right = node.data.binary.right;
+            if (right.tag == .block) {
+                try writer.writeAll(" ");
+                try printNode(writer, right, indent);
+            } else {
+                try writeNewLine(writer);
+                try printStatement(writer, right, indent);
+            }
+        },
+        .@"else" => {
+            const left = node.data.binary.left;
+            std.log.info("left else{any}", .{left});
+            if (left.data.binary.right.tag == .block) {
+                try printNode(writer, left, indent);
+                try writer.writeAll(" else");
+            } else {
+                try printNode(writer, left, indent);
+                try writeNewLine(writer);
+                try writer.writeAll("else");
+            }
+
+            const right = node.data.binary.right;
+            if (right.tag == .block or right.tag == .@"if" or right.tag == .@"else") {
+                try writer.writeAll(" ");
+                try printNode(writer, right, indent);
+            } else {
+                try writeNewLine(writer);
+                try printStatement(writer, right, indent);
+            }
+        },
+        .@"switch" => {
+            try writer.writeAll("switch (");
+            try printNode(writer, node.data.binary.left, indent);
+            try writer.writeAll(") ");
+            try printNode(writer, node.data.binary.right, indent);
+        },
+        .case => {
+            try writer.writeAll("case ");
+            try printNode(writer, node.data.nodes[0], indent);
+            try writer.writeAll(": ");
+
+            for (node.data.nodes[1..]) |stmt| {
+                try printNode(writer, stmt, indent + 1);
+                if (needsSemicolon(stmt)) {
+                    try writer.writeAll(";");
+                }
+                try writeNewLine(writer);
+            }
+        },
+        .default => {
+            try writer.writeAll("default: ");
+            for (node.data.nodes[0..]) |stmt| {
+                try printNode(writer, stmt, indent + 1);
+                if (needsSemicolon(stmt)) {
+                    try writer.writeAll(";");
+                }
+                try writeNewLine(writer);
+            }
+        },
+        .@"break" => {
+            try writer.writeAll("break");
+        },
+        .@"continue" => {
+            try writer.writeAll("continue");
+        },
+        .@"for" => {
+            try writer.writeAll("for (");
+            try printNode(writer, node.data.binary.left, indent);
+            try writer.writeAll(") ");
+            try printNode(writer, node.data.binary.right, indent);
+        },
+        .for_classic => {
+            try printNode(writer, node.data.nodes[0], indent);
+            try writer.writeAll("; ");
+            try printNode(writer, node.data.nodes[1], indent);
+            try writer.writeAll("; ");
+            try printNode(writer, node.data.nodes[2], indent);
+        },
+        .for_in => {
+            try printNode(writer, node.data.binary.left, indent);
+            try writer.writeAll(" in ");
+            try printNode(writer, node.data.binary.right, indent);
+        },
+        .for_of => {
+            try printNode(writer, node.data.binary.left, indent);
+            try writer.writeAll(" of ");
+            try printNode(writer, node.data.binary.right, indent);
+        },
+        .@"while" => {
+            try writer.writeAll("while (");
+            try printNode(writer, node.data.binary.left, indent);
+            try writer.writeAll(") ");
+            try printNode(writer, node.data.binary.right, indent);
+        },
+        .do_while => {
+            try writer.writeAll("do ");
+            try printNode(writer, node.data.binary.left, indent);
+            try writer.writeAll(" while (");
+            try printNode(writer, node.data.binary.right, indent);
+            try writer.writeAll(")");
+        },
         .block => {
             try writer.writeAll("{");
             if (node.data.nodes.len > 0) {
                 try writeNewLine(writer);
-                try printIndent(writer, indent);
-                try printNode(writer, node.data.nodes[0], indent);
-                if (needsSemicolon(node.data.nodes[0])) {
-                    try writer.writeAll(";");
-                }
-                try writeNewLine(writer);
+                try printStatementNL(writer, node.data.nodes[0], indent);
                 for (node.data.nodes[1..]) |stmt| {
-                    try printIndent(writer, indent);
-                    try printNode(writer, stmt, indent + 1);
-                    if (needsSemicolon(stmt)) {
-                        try writer.writeAll(";");
-                    }
-                    try writeNewLine(writer);
+                    try printStatementNL(writer, stmt, indent);
                 }
             }
             try writer.writeAll("}");
@@ -260,11 +356,19 @@ fn printNode(writer: anytype, node: *ASTNode, indent: usize) !void {
             try writer.writeAll(" >>>= ");
             try printNode(writer, node.data.binary.right, indent);
         },
-        .plusplus => {
+        .plusplus_pre => {
+            try writer.writeAll("++");
+            try printNode(writer, node.data.node, indent);
+        },
+        .plusplus_post => {
             try printNode(writer, node.data.node, indent);
             try writer.writeAll("++");
         },
-        .minusminus => {
+        .minusminus_pre => {
+            try writer.writeAll("--");
+            try printNode(writer, node.data.node, indent);
+        },
+        .minusminus_post => {
             try printNode(writer, node.data.node, indent);
             try writer.writeAll("--");
         },
@@ -463,6 +567,19 @@ fn printNode(writer: anytype, node: *ASTNode, indent: usize) !void {
             try printNode(writer, node.data.binary.right, indent);
         },
     }
+}
+
+fn printStatement(writer: anytype, node: *ASTNode, indent: usize) !void {
+    try printIndent(writer, indent);
+    try printNode(writer, node, indent);
+    if (needsSemicolon(node)) {
+        try writer.writeAll(";");
+    }
+}
+
+fn printStatementNL(writer: anytype, node: *ASTNode, indent: usize) !void {
+    try printStatement(writer, node, indent);
+    try writeNewLine(writer);
 }
 
 fn printIndent(writer: anytype, indent: usize) !void {

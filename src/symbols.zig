@@ -42,14 +42,20 @@ pub const Symbol = union(enum) {
     literal: LiteralSymbol,
 };
 
-pub const SymbolTable = std.StringHashMap(*Symbol);
+pub const SymbolKey = struct {
+    closure: u8,
+    name: []const u8,
+};
 
-pub const AnyTypeSymbol = TypeSymbol{ .any = {} };
-pub const VoidTypeSymbol = TypeSymbol{ .void = {} };
-pub const NumberTypeSymbol = TypeSymbol{ .number = {} };
-pub const BigIntTypeSymbol = TypeSymbol{ .bigint = {} };
-pub const StringTypeSymbol = TypeSymbol{ .string = {} };
-pub const BooleanTypeSymbol = TypeSymbol{ .boolean = {} };
-pub const NullTypeSymbol = TypeSymbol{ .null = {} };
-pub const UndefinedTypeSymbol = TypeSymbol{ .undefined = {} };
-pub const UnknownTypeSymbol = TypeSymbol{ .unknown = {} };
+const SymbolMapContext = struct {
+    pub fn hash(self: @This(), s: SymbolKey) u64 {
+        _ = self;
+        return std.hash.Wyhash.hash(s.closure, s.name);
+    }
+    pub fn eql(self: @This(), a: SymbolKey, b: SymbolKey) bool {
+        _ = self;
+        return a.closure == b.closure and std.mem.eql(u8, a.name, b.name);
+    }
+};
+
+pub const SymbolTable = std.HashMap(SymbolKey, *Symbol, SymbolMapContext, std.hash_map.default_max_load_percentage);

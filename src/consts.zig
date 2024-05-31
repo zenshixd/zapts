@@ -36,6 +36,7 @@ pub const keywords_map = std.ComptimeStringMap(TokenType, .{
     .{ "try", TokenType.Try },
     .{ "catch", TokenType.Catch },
     .{ "in", TokenType.In },
+    .{ "of", TokenType.Of },
     .{ "instanceof", TokenType.Instanceof },
     .{ "typeof", TokenType.Typeof },
     .{ "new", TokenType.New },
@@ -160,6 +161,7 @@ pub const TokenType = enum(u8) {
     Try,
     Catch,
     In,
+    Of,
     Instanceof,
     Typeof,
     New,
@@ -186,5 +188,24 @@ pub const TokenType = enum(u8) {
 
 pub const Token = struct {
     type: TokenType,
+    pos: usize,
+    end: usize,
+    line: usize,
     value: ?[]const u8,
+
+    pub fn format(self: Token, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        try writer.writeAll("Token(.type = ");
+        try writer.writeAll(@tagName(self.type));
+        try writer.writeAll(", .pos = ");
+        try writer.print("{}", .{self.pos});
+        try writer.writeAll(", .end = ");
+        try writer.print("{}", .{self.end});
+        try writer.writeAll(", .line = ");
+        try writer.print("{}", .{self.line});
+        if (self.value) |value| {
+            try writer.writeAll(", .value = ");
+            try writer.writeAll(value);
+        }
+        try writer.writeAll(")");
+    }
 };
