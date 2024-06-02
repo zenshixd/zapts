@@ -3,6 +3,7 @@ const compile = @import("compile.zig").compile;
 const JdzGlobalAllocator = @import("jdz_allocator").JdzGlobalAllocator;
 
 pub fn main() !void {
+    std.debug.attachSegfaultHandler();
     const jdz = JdzGlobalAllocator(.{});
     defer jdz.deinit();
     defer jdz.deinitThread();

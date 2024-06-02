@@ -18,9 +18,12 @@ const compile_tests_path = "compiler" ++ std.fs.path.sep_str;
 const conformance_tests_path = "conformance" ++ std.fs.path.sep_str;
 
 pub fn main() void {
-    std.debug.attachSegfaultHandler();
-
-    const allocator = std.heap.c_allocator;
+    // const jdz = JdzGlobalAllocator(.{});
+    // defer jdz.deinit();
+    // defer jdz.deinitThread();
+    //
+    // const allocator = jdz.allocator();
+    const allocator = std.heap.page_allocator;
 
     const args = std.process.argsAlloc(allocator) catch @panic("Cannot get args. OOM?");
     defer std.process.argsFree(allocator, args);
@@ -242,10 +245,7 @@ fn checkCompileOutput(allocator: std.mem.Allocator, compile_result: CompileResul
         }
     }
 
-    const expected = try content.toOwnedSlice();
-    defer allocator.free(expected);
-
-    try std.testing.expectEqualStrings(expected, compile_result.output);
+    try std.testing.expectEqualStrings(content.items, compile_result.output);
 }
 
 test {

@@ -38,3 +38,19 @@ for (var yy in [1, 2, 3]) {
 for (const y in [1, 2, 3]) {
     y;
 }
+
+while (x > 0) {
+    x;
+}
+
+while (true) {
+    x;
+}
+
+while (x > 0) x = 1;
+
+do console.log(x); while (x > 0);
+
+do {
+    x;
+} while (x > 0);

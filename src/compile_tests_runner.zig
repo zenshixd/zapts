@@ -40,7 +40,7 @@ pub fn main() !void {
         if (!have_tty) {
             std.debug.print("{d}/{d} {s}... ", .{ i + 1, cases.len, case_file });
         }
-        if (runTest(std.testing.allocator, case_file)) |_| {
+        if (runTest(std.heap.page_allocator, case_file)) |_| {
             ok_count += 1;
             test_node.end();
             if (!have_tty) std.debug.print("OK\n", .{});

@@ -26,10 +26,11 @@ fn parseExpects(allocator: std.mem.Allocator, case_file: []const u8) !std.String
 
     var expects_map = std.StringHashMap([]const u8).init(allocator);
 
-    var line_buffer: [1024]u8 = undefined;
+    const max_size = 1024 * 1024 * 10; // 10 MB
     var output_content: std.ArrayList(u8) = std.ArrayList(u8).init(allocator);
     var output_name: ?[]const u8 = null;
-    while (try file.reader().readUntilDelimiterOrEof(&line_buffer, '\n')) |line| {
+    while (try file.reader().readUntilDelimiterOrEofAlloc(allocator, '\n', max_size)) |line| {
+        defer allocator.free(line);
         if (std.mem.startsWith(u8, line, JS_OUTPUT_START)) {
             if (output_name) |name| {
                 try expects_map.put(name, try output_content.toOwnedSlice());

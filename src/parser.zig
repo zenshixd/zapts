@@ -528,70 +528,10 @@ fn parseImportStatement(self: *Self) ParserError!?*ASTNode {
         );
     }
 
-    const default_as_type = self.match(TokenType.Type);
-
-    if (self.consumeOrNull(TokenType.Identifier)) |identifier| {
-        const tag: ASTNodeTag = if (default_as_type or self.match(TokenType.Type)) .import_type_binding_default else .import_binding_default;
-        try nodes.append(try self.createNode(
-            tag,
-            .{ .literal = identifier.value.? },
-        ));
-    }
-
-    if (nodes.items.len > 0 and !self.match(TokenType.Comma)) {
-        try self.emitError("Expected ','", .{});
-    }
-
-    if (self.match(TokenType.Star)) {
-        _ = try self.consume(TokenType.As, "Expected 'as' after '*'");
-        const identifier = try self.consume(TokenType.Identifier, "Expected identifier");
-
-        const tag: ASTNodeTag = if (default_as_type) .import_type_binding_namespace else .import_binding_namespace;
-        try nodes.append(try self.createNode(
-            tag,
-            .{ .literal = identifier.value.? },
-        ));
-    } else if (self.match(TokenType.OpenCurlyBrace)) {
-        var named_bindings = ArrayList(*ASTNode).init(self.allocator);
-        defer named_bindings.deinit();
-
-        while (true) {
-            const as_type = default_as_type or self.match(TokenType.Type);
-
-            if (self.consumeOrNull(TokenType.Identifier)) |identifier| {
-                try named_bindings.append(try self.createNode(
-                    if (as_type) .import_type_binding_named else .import_binding_named,
-                    .{ .literal = identifier.value.? },
-                ));
-            }
-
-            if (self.match(TokenType.CloseCurlyBrace)) {
-                break;
-            }
-            _ = try self.consume(TokenType.Comma, "Expected ','");
-        }
-
-        try nodes.append(try self.createNode(
-            .import_named_bindings,
-            .{ .nodes = try named_bindings.toOwnedSlice() },
-        ));
-    } else {
-        try self.emitError("Import binding or specifier expected", .{});
-    }
+    try self.parseImportClause(&nodes);
 
     _ = try self.consume(TokenType.From, "Expected 'from'");
     const path_token = try self.consume(TokenType.StringConstant, "Expected string constant");
-
-    // for (nodes.items) |node| {
-    //     _ = try self.closure.addSymbol(node.data.literal, .{
-    //         .declaration = .{
-    //             .type = .{
-    //                 .unknown = {},
-    //             },
-    //             .name = node.data.literal,
-    //         },
-    //     });
-    // }
 
     try nodes.append(try self.createNode(
         .import_path,
@@ -601,6 +541,93 @@ fn parseImportStatement(self: *Self) ParserError!?*ASTNode {
     return try self.createNode(
         .import,
         .{ .nodes = try nodes.toOwnedSlice() },
+    );
+}
+
+fn parseImportClause(self: *Self, nodes: *ArrayList(*ASTNode)) !void {
+    const default_as_type = self.match(TokenType.Type);
+
+    // zig fmt: off
+    const bindings: ?*ASTNode = try self.parseImportDefaultBinding(default_as_type)
+        orelse try self.parseImportNamespaceBinding(default_as_type)
+        orelse try self.parseImportNamedBindings(default_as_type);
+    // zig fmt: on
+
+    if (bindings == null) {
+        try self.emitError("Import binding or specifier expected", .{});
+        return;
+    }
+
+    try nodes.append(bindings.?);
+
+    if (bindings.?.tag == .import_binding_default) {
+        if (!self.peekMatch(TokenType.From)) {
+            try self.emitError("Expected ',' or ';'", .{});
+        }
+
+        if (self.match(TokenType.Comma)) {
+            const additional_bindings = try self.parseImportNamespaceBinding(default_as_type) orelse try self.parseImportNamedBindings(default_as_type);
+
+            if (additional_bindings == null) {
+                try self.emitError("{{ expected.", .{});
+            } else {
+                try nodes.append(additional_bindings.?);
+            }
+        }
+    }
+}
+fn parseImportDefaultBinding(self: *Self, default_as_type: bool) !?*ASTNode {
+    if (self.consumeOrNull(TokenType.Identifier)) |identifier| {
+        const tag: ASTNodeTag = if (default_as_type or self.match(TokenType.Type)) .import_type_binding_default else .import_binding_default;
+        return try self.createNode(
+            tag,
+            .{ .literal = identifier.value.? },
+        );
+    }
+
+    return null;
+}
+fn parseImportNamespaceBinding(self: *Self, default_as_type: bool) !?*ASTNode {
+    if (!self.match(TokenType.Star)) {
+        return null;
+    }
+
+    _ = try self.consume(TokenType.As, "Expected 'as' after '*'");
+    const identifier = try self.consume(TokenType.Identifier, "Expected identifier");
+
+    const tag: ASTNodeTag = if (default_as_type) .import_type_binding_namespace else .import_binding_namespace;
+    return try self.createNode(
+        tag,
+        .{ .literal = identifier.value.? },
+    );
+}
+fn parseImportNamedBindings(self: *Self, default_as_type: bool) !?*ASTNode {
+    if (!self.match(TokenType.OpenCurlyBrace)) {
+        return null;
+    }
+
+    var named_bindings = ArrayList(*ASTNode).init(self.allocator);
+    defer named_bindings.deinit();
+
+    while (true) {
+        const as_type = default_as_type or self.match(TokenType.Type);
+
+        if (self.consumeOrNull(TokenType.Identifier)) |identifier| {
+            try named_bindings.append(try self.createNode(
+                if (as_type) .import_type_binding_named else .import_binding_named,
+                .{ .literal = identifier.value.? },
+            ));
+        }
+
+        if (self.match(TokenType.CloseCurlyBrace)) {
+            break;
+        }
+        _ = try self.consume(TokenType.Comma, "Expected ','");
+    }
+
+    return try self.createNode(
+        .import_named_bindings,
+        .{ .nodes = try named_bindings.toOwnedSlice() },
     );
 }
 
@@ -820,6 +847,7 @@ fn parseDoWhileStatement(self: *Self) ParserError!?*ASTNode {
     _ = try self.consume(TokenType.OpenParen, "Expected '('");
     const condition = try self.parseExpression();
     _ = try self.consume(TokenType.CloseParen, "Expected ')'");
+    _ = try self.consume(TokenType.Semicolon, "Expected ';'");
 
     return try self.createNode(
         .do_while,
