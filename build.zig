@@ -11,7 +11,7 @@ pub fn build(b: *std.Build) void {
 
     const exe = b.addExecutable(.{
         .name = "zapts",
-        .root_source_file = .{ .path = "src/main.zig" },
+        .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -29,7 +29,7 @@ pub fn build(b: *std.Build) void {
     run_step.dependOn(&run_cmd.step);
 
     const exe_unit_tests = b.addTest(.{
-        .root_source_file = .{ .path = "src/main.zig" },
+        .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -40,10 +40,10 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_exe_unit_tests.step);
 
     const reftests = b.addTest(.{
-        .root_source_file = .{ .path = "src/main.zig" },
+        .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
-        .test_runner = .{ .path = "src/ref_tests_runner.zig" },
+        .test_runner = b.path("src/ref_tests_runner.zig"),
     });
     reftests.root_module.addImport("jdz_allocator", jdz_dep.module("jdz_allocator"));
 
@@ -57,10 +57,10 @@ pub fn build(b: *std.Build) void {
     }
 
     const compile_tests = b.addTest(.{
-        .root_source_file = .{ .path = "src/main.zig" },
+        .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
-        .test_runner = .{ .path = "src/compile_tests_runner.zig" },
+        .test_runner = b.path("src/compile_tests_runner.zig"),
     });
     compile_tests.root_module.addImport("jdz_allocator", jdz_dep.module("jdz_allocator"));
 

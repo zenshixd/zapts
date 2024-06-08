@@ -1,16 +1,17 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const ASTNode = @import("parser.zig").ASTNode;
+const ASTNodeList = @import("parser.zig").ASTNodeList;
 const ASTNodeTag = @import("parser.zig").ASTNodeTag;
 const needsSemicolon = @import("parser.zig").needsSemicolon;
 
 const new_line_char = if (builtin.target.os.tag == .windows) "\r\n" else "\n";
 
-pub fn print(allocator: std.mem.Allocator, statements: []*ASTNode) ![]const u8 {
+pub fn print(allocator: std.mem.Allocator, statements: *ASTNodeList) ![]const u8 {
     var output = try std.ArrayList(u8).initCapacity(allocator, 1024);
     defer output.deinit();
 
-    for (statements) |statement| {
+    while (statements.popFirst()) |statement| {
         try printNode(allocator, output.writer(), statement, 1);
         if (needsSemicolon(statement)) {
             try output.appendSlice(";");
@@ -107,110 +108,84 @@ fn printNode(allocator: std.mem.Allocator, writer: anytype, first_node: *ASTNode
         const node = item.data.node;
         switch (node.tag) {
             .import => {
-                try local_queue.append(.{
-                    .text = "import ",
-                });
-                switch (node.data.nodes.len) {
-                    0 => {},
-                    1 => try local_queue.append(.{ .node = node.data.nodes[0] }),
-                    else => {
-                        const nodes = node.data.nodes;
-                        try local_queue.append(.{ .node = nodes[0] });
-                        for (nodes[1..]) |import_node| {
-                            if (import_node.tag == .import_path) {
-                                try local_queue.append(.{ .text = " from " });
-                                try local_queue.append(.{ .node = import_node });
-                                break;
-                            }
-
-                            try local_queue.append(.{ .text = ", " });
-                            try local_queue.append(.{ .node = import_node });
-                        }
-                    },
-                }
+                try writer.writeAll("import ");
+                try local_queue.append(.{ .node = node.data.binary.left });
+                try local_queue.append(.{ .node = node.data.binary.right });
+            },
+            .import_binding_comma => {
+                try local_queue.append(.{ .node = node.data.binary.left });
+                try local_queue.append(.{ .text = ", " });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .import_named_bindings => {
-                try local_queue.append(.{ .text = "{" });
-                try local_queue.append(.{ .node = node.data.nodes[0] });
-                for (node.data.nodes[1..]) |import_node| {
+                try writer.writeAll("{");
+                try local_queue.append(.{ .node = node.data.nodes.popFirst().? });
+                while (node.data.nodes.popFirst()) |import_node| {
                     try local_queue.append(.{ .text = ", " });
                     try local_queue.append(.{ .node = import_node });
                 }
                 try local_queue.append(.{ .text = "}" });
             },
             .import_binding_named, .import_binding_default => {
-                try local_queue.append(.{ .text = node.data.literal });
+                try writer.writeAll(node.data.literal);
             },
             .import_binding_namespace => {
-                try local_queue.append(.{ .text = "* as " });
-                try local_queue.append(.{ .text = node.data.literal });
+                try writer.print("* as {s}", .{node.data.literal});
             },
             .import_type_binding_default, .import_type_binding_named, .import_type_binding_namespace => {},
+            .import_from_path => {
+                try writer.print(" from {s}", .{node.data.literal});
+            },
             .import_path => {
-                try local_queue.append(.{ .text = node.data.literal });
+                try writer.writeAll(node.data.literal);
             },
             .var_decl => {
-                try local_queue.append(.{ .text = "var " });
-                try local_queue.append(.{ .node = node.data.nodes[0] });
-                for (node.data.nodes[1..]) |decl_node| {
-                    try local_queue.append(.{ .text = ", " });
-                    try local_queue.append(.{ .node = decl_node });
-                }
+                try printDecls("var ", &local_queue, node);
             },
             .const_decl => {
-                try local_queue.append(.{ .text = "const " });
-                try local_queue.append(.{ .node = node.data.nodes[0] });
-
-                for (node.data.nodes[1..]) |decl_node| {
-                    try local_queue.append(.{ .text = ", " });
-                    try local_queue.append(.{ .node = decl_node });
-                }
+                try printDecls("const ", &local_queue, node);
             },
             .let_decl => {
-                try local_queue.append(.{ .text = "let " });
-                try local_queue.append(.{ .node = node.data.nodes[0] });
-
-                for (node.data.nodes[1..]) |decl_node| {
-                    try local_queue.append(.{ .text = ", " });
-                    try local_queue.append(.{ .node = decl_node });
-                }
+                try printDecls("let ", &local_queue, node);
             },
             .async_func_decl => {
-                try local_queue.append(.{ .text = "async function " });
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try writer.writeAll("async function ");
+                try local_queue.append(.{ .node = node.data.nodes.popFirst().? });
                 try local_queue.append(.{ .text = "(" });
                 if (node.data.nodes.len > 2) {
-                    try local_queue.append(.{ .node = node.data.nodes[1] });
-                    for (node.data.nodes[2 .. node.data.nodes.len - 1]) |arg| {
+                    try local_queue.append(.{ .node = node.data.nodes.popFirst().? });
+                    while (node.data.nodes.len > 0) {
+                        const arg = node.data.nodes.popFirst().?;
                         try local_queue.append(.{ .text = ", " });
                         try local_queue.append(.{ .node = arg });
                     }
                 }
                 try local_queue.append(.{ .text = ") " });
-                try local_queue.append(.{ .node = node.data.nodes[node.data.nodes.len - 1] });
+                try local_queue.append(.{ .node = node.data.nodes.popFirst().? });
             },
             .func_decl => {
-                try local_queue.append(.{ .text = "function " });
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try writer.writeAll("function ");
+                try local_queue.append(.{ .node = node.data.nodes.popFirst().? });
                 try local_queue.append(.{ .text = "(" });
                 if (node.data.nodes.len > 2) {
-                    try local_queue.append(.{ .node = node.data.nodes[1] });
-                    for (node.data.nodes[2 .. node.data.nodes.len - 1]) |arg| {
+                    try local_queue.append(.{ .node = node.data.nodes.popFirst().? });
+                    while (node.data.nodes.len > 0) {
+                        const arg = node.data.nodes.popFirst().?;
                         try local_queue.append(.{ .text = ", " });
                         try local_queue.append(.{ .node = arg });
                     }
                 }
                 try local_queue.append(.{ .text = ") " });
-                try local_queue.append(.{ .node = node.data.nodes[node.data.nodes.len - 1] });
+                try local_queue.append(.{ .node = node.data.nodes.popFirst().? });
             },
             .func_decl_name, .func_decl_argument => {
-                try local_queue.append(.{ .text = node.data.literal });
+                try writer.writeAll(node.data.literal);
             },
             .@"if" => {
-                try local_queue.append(.{ .text = "if (" });
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try writer.writeAll("if (");
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = ")" });
-                const right = node.data.nodes[1];
+                const right = node.data.binary.right;
                 if (right.tag == .block) {
                     try local_queue.append(.{ .text = " " });
                     try local_queue.append(.{ .node = right });
@@ -220,17 +195,17 @@ fn printNode(allocator: std.mem.Allocator, writer: anytype, first_node: *ASTNode
                 }
             },
             .@"else" => {
-                const left = node.data.nodes[0];
-                if (left.data.nodes[1].tag == .block) {
-                    try local_queue.append(.{ .node = left });
+                const ifNode = node.data.binary.left;
+                if (ifNode.data.binary.right.tag == .block) {
+                    try local_queue.append(.{ .node = ifNode });
                     try local_queue.append(.{ .text = " else" });
                 } else {
-                    try local_queue.append(.{ .node = left });
+                    try local_queue.append(.{ .node = ifNode });
                     try local_queue.append(.{ .text = new_line_char });
                     try local_queue.append(.{ .text = "else" });
                 }
 
-                const right = node.data.nodes[1];
+                const right = node.data.binary.right;
                 if (right.tag == .block or right.tag == .@"if" or right.tag == .@"else") {
                     try local_queue.append(.{ .text = " " });
                     try local_queue.append(.{ .node = right });
@@ -240,90 +215,90 @@ fn printNode(allocator: std.mem.Allocator, writer: anytype, first_node: *ASTNode
                 }
             },
             .@"switch" => {
-                try local_queue.append(.{ .text = "switch (" });
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try writer.writeAll("switch (");
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = ") " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .case => {
-                try local_queue.append(.{ .text = "case " });
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try writer.writeAll("case ");
+                try local_queue.append(.{ .node = node.data.nodes.popFirst().? });
                 try local_queue.append(.{ .text = ": " });
 
-                for (node.data.nodes[1..]) |stmt| {
+                while (node.data.nodes.popFirst()) |stmt| {
                     try printStatement(&local_queue, stmt, indent + 1);
                     try local_queue.append(.{ .text = new_line_char });
                 }
             },
             .default => {
-                try local_queue.append(.{ .text = "default: " });
-                for (node.data.nodes[0..]) |stmt| {
+                try writer.writeAll("default: ");
+                while (node.data.nodes.popFirst()) |stmt| {
                     try printStatement(&local_queue, stmt, indent + 1);
                     try local_queue.append(.{ .text = new_line_char });
                 }
             },
             .@"break" => {
-                try local_queue.append(.{ .text = "break" });
+                try writer.writeAll("break");
             },
             .@"continue" => {
-                try local_queue.append(.{ .text = "continue" });
+                try writer.writeAll("continue");
             },
             .@"for" => {
-                try local_queue.append(.{ .text = "for (" });
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try writer.writeAll("for (");
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = ") " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .for_classic => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.nodes.popFirst().? });
                 try local_queue.append(.{ .text = "; " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.nodes.popFirst().? });
                 try local_queue.append(.{ .text = "; " });
-                try local_queue.append(.{ .node = node.data.nodes[2] });
+                try local_queue.append(.{ .node = node.data.nodes.popFirst().? });
             },
             .for_in => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = " in " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .for_of => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = " of " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .@"while" => {
-                try local_queue.append(.{ .text = "while (" });
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try writer.writeAll("while (");
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = ") " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .do_while => {
-                try local_queue.append(.{ .text = "do " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
-                if (node.data.nodes[1].tag != .block) {
+                try writer.writeAll("do ");
+                try local_queue.append(.{ .node = node.data.binary.right });
+                if (node.data.binary.right.tag != .block) {
                     try local_queue.append(.{ .text = ";" });
                 }
                 try local_queue.append(.{ .text = " while (" });
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = ");" });
             },
             .block => {
-                try local_queue.append(.{ .text = "{" });
+                try writer.writeAll("{");
                 if (node.data.nodes.len > 0) {
-                    try local_queue.append(.{ .text = new_line_char });
-                    try printStatementNL(&local_queue, node.data.nodes[0], indent);
-                    for (node.data.nodes[1..]) |stmt| {
+                    try writer.writeAll(new_line_char);
+                    try printStatementNL(&local_queue, node.data.nodes.popFirst().?, indent);
+                    while (node.data.nodes.popFirst()) |stmt| {
                         try printStatementNL(&local_queue, stmt, indent);
                     }
                 }
                 try local_queue.append(.{ .text = "}" });
             },
             .call_expr => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.nodes.popFirst().? });
                 try local_queue.append(.{ .text = "(" });
-                if (node.data.nodes.len > 1) {
-                    try local_queue.append(.{ .node = node.data.nodes[1] });
-                    for (node.data.nodes[2..]) |arg| {
+                if (node.data.nodes.len > 0) {
+                    try local_queue.append(.{ .node = node.data.nodes.popFirst().? });
+                    while (node.data.nodes.popFirst()) |arg| {
                         try local_queue.append(.{ .text = ", " });
                         try local_queue.append(.{ .node = arg });
                     }
@@ -331,108 +306,108 @@ fn printNode(allocator: std.mem.Allocator, writer: anytype, first_node: *ASTNode
                 try local_queue.append(.{ .text = ")" });
             },
             .comma => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = ", " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .true => {
-                try local_queue.append(.{ .text = "true" });
+                try writer.writeAll("true");
             },
             .false => {
-                try local_queue.append(.{ .text = "false" });
+                try writer.writeAll("false");
             },
             .null => {
-                try local_queue.append(.{ .text = "null" });
+                try writer.writeAll("null");
             },
             .undefined => {
-                try local_queue.append(.{ .text = "undefined" });
+                try writer.writeAll("undefined");
             },
             .number, .bigint, .identifier, .string => {
-                try local_queue.append(.{ .text = node.data.literal });
+                try writer.writeAll(node.data.literal);
             },
             .none => {},
             .grouping => {
-                try local_queue.append(.{ .text = "(" });
+                try writer.writeAll("(");
                 try local_queue.append(.{ .node = node.data.node });
                 try local_queue.append(.{ .text = ")" });
             },
             .assignment => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = " = " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .plus_assign => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = " += " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .minus_assign => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = " -= " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .multiply_assign => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = " *= " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .div_assign => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = " /= " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .modulo_assign => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = " %= " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .exp_assign => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = " **= " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .and_assign => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = " &= " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .or_assign => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = " |= " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .bitwise_and_assign => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = " &= " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .bitwise_or_assign => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = " |= " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .bitwise_xor_assign => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = " ^= " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .bitwise_shift_left_assign => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = " <<= " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .bitwise_shift_right_assign => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = " >>= " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .bitwise_unsigned_right_shift_assign => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = " >>>= " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .plusplus_pre => {
-                try local_queue.append(.{ .text = "++" });
+                try writer.writeAll("++");
                 try local_queue.append(.{ .node = node.data.node });
             },
             .plusplus_post => {
@@ -440,7 +415,7 @@ fn printNode(allocator: std.mem.Allocator, writer: anytype, first_node: *ASTNode
                 try local_queue.append(.{ .text = "++" });
             },
             .minusminus_pre => {
-                try local_queue.append(.{ .text = "--" });
+                try writer.writeAll("--");
                 try local_queue.append(.{ .node = node.data.node });
             },
             .minusminus_post => {
@@ -448,114 +423,114 @@ fn printNode(allocator: std.mem.Allocator, writer: anytype, first_node: *ASTNode
                 try local_queue.append(.{ .text = "--" });
             },
             .not => {
-                try local_queue.append(.{ .text = "!" });
+                try writer.writeAll("!");
                 try local_queue.append(.{ .node = node.data.node });
             },
             .bitwise_negate => {
-                try local_queue.append(.{ .text = "~" });
+                try writer.writeAll("~");
                 try local_queue.append(.{ .node = node.data.node });
             },
             .minus => {
-                try local_queue.append(.{ .text = "-" });
+                try writer.writeAll("-");
                 try local_queue.append(.{ .node = node.data.node });
             },
             .minus_expr => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = " - " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .plus => {
-                try local_queue.append(.{ .text = "+" });
+                try writer.writeAll("+");
                 try local_queue.append(.{ .node = node.data.node });
             },
             .plus_expr => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = " + " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .multiply_expr => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = " * " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .exp_expr => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = " ** " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .div_expr => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = " / " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .modulo_expr => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = " % " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .bitwise_and => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = " & " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .bitwise_or => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = " | " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .bitwise_xor => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = " ^ " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .bitwise_shift_left => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = " << " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .bitwise_shift_right => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = " >> " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .bitwise_unsigned_right_shift => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = " >>> " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .instanceof => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = " instanceof " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .in => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = " in " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .spread => {
-                try local_queue.append(.{ .text = "..." });
+                try writer.writeAll("...");
                 try local_queue.append(.{ .node = node.data.node });
             },
             .typeof => {
-                try local_queue.append(.{ .text = "typeof " });
+                try writer.writeAll("typeof ");
                 try local_queue.append(.{ .node = node.data.node });
             },
             .delete => {
-                try local_queue.append(.{ .text = "delete " });
+                try writer.writeAll("delete ");
                 try local_queue.append(.{ .node = node.data.node });
             },
             .void => {
-                try local_queue.append(.{ .text = "void " });
+                try writer.writeAll("void ");
                 try local_queue.append(.{ .node = node.data.node });
             },
             .object_literal => {
-                try local_queue.append(.{ .text = "{" });
+                try writer.writeAll("{");
                 if (node.data.nodes.len > 0) {
                     try local_queue.append(.{ .text = new_line_char });
                     try printIndent(&local_queue, indent);
-                    try local_queue.append(.{ .node = node.data.nodes[0] });
-                    for (node.data.nodes[1..]) |decl_node| {
+                    try local_queue.append(.{ .node = node.data.nodes.popFirst().? });
+                    while (node.data.nodes.popFirst()) |decl_node| {
                         try local_queue.append(.{ .text = "," });
                         try local_queue.append(.{ .text = new_line_char });
                         try printIndent(&local_queue, indent);
@@ -567,28 +542,28 @@ fn printNode(allocator: std.mem.Allocator, writer: anytype, first_node: *ASTNode
                 try local_queue.append(.{ .text = "}" });
             },
             .object_literal_field => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = ": " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .object_literal_field_shorthand => {
                 try local_queue.append(.{ .node = node.data.node });
             },
             .property_access => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = "." });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .optional_property_access => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = "?." });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .array_literal => {
-                try local_queue.append(.{ .text = "[" });
+                try writer.writeAll("[");
                 if (node.data.nodes.len > 0) {
-                    try local_queue.append(.{ .node = node.data.nodes[0] });
-                    for (node.data.nodes[1..]) |decl_node| {
+                    try local_queue.append(.{ .node = node.data.nodes.popFirst().? });
+                    while (node.data.nodes.popFirst()) |decl_node| {
                         try local_queue.append(.{ .text = ", " });
                         try local_queue.append(.{ .node = decl_node });
                     }
@@ -596,60 +571,60 @@ fn printNode(allocator: std.mem.Allocator, writer: anytype, first_node: *ASTNode
                 try local_queue.append(.{ .text = "]" });
             },
             .index_access => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = "[" });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
                 try local_queue.append(.{ .text = "]" });
             },
             .eq => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = " == " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .eqq => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = " === " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .neq => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = " != " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .neqq => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = " !== " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .@"and" => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = " && " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .@"or" => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = " || " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .gt => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = " > " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .gte => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = " >= " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .lt => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = " < " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .lte => {
-                try local_queue.append(.{ .node = node.data.nodes[0] });
+                try local_queue.append(.{ .node = node.data.binary.left });
                 try local_queue.append(.{ .text = " <= " });
-                try local_queue.append(.{ .node = node.data.nodes[1] });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
         }
 
@@ -676,62 +651,11 @@ fn printIndent(local_queue: *WorkerQueue, indent: usize) !void {
     }
 }
 
-// test {
-//     var left = ASTNode{
-//         .tag = .number,
-//         .data_type = .{ .any = {} },
-//         .data = .{ .literal = "1" },
-//     };
-//     var right = ASTNode{
-//         .tag = .number,
-//         .data_type = .{ .any = {} },
-//         .data = .{ .literal = "2" },
-//     };
-//     var node = ASTNode{
-//         .tag = .plus_expr,
-//         .data_type = .{ .any = {} },
-//         .data = .{
-//             .nodes = @constCast(&[_]*ASTNode{
-//                 &left,
-//                 &right,
-//             }),
-//         },
-//     };
-//
-//     var queue = WorkerQueue{
-//         .allocator = std.heap.page_allocator,
-//     };
-//     try queue.prepend(.{ .node = &node });
-//
-//     var output = std.ArrayList(u8).init(std.heap.page_allocator);
-//     defer output.deinit();
-//
-//     while (queue.popFirst()) |item| {
-//         var local_queue = WorkerQueue{
-//             .allocator = std.heap.page_allocator,
-//         };
-//
-//         if (item.data == .text) {
-//             try output.appendSlice(item.data.text);
-//             continue;
-//         }
-//
-//         switch (item.data.node.tag) {
-//             .plus_expr => {
-//                 try local_queue.append(.{ .node = item.data.node.data.nodes[0] });
-//                 try local_queue.append(.{ .text = " + " });
-//                 try local_queue.append(.{ .node = item.data.node.data.nodes[1] });
-//             },
-//             .number => {
-//                 try local_queue.append(.{ .text = item.data.node.data.literal });
-//             },
-//             else => {
-//                 try local_queue.append(.{ .text = "Unknown node type" });
-//             },
-//         }
-//
-//         queue.prependMany(&local_queue);
-//     }
-//
-//     std.debug.print("\n\noutput: {s}\n", .{output.items});
-// }
+fn printDecls(keyword: []const u8, local_queue: *WorkerQueue, node: *ASTNode) !void {
+    try local_queue.append(.{ .text = keyword });
+    try local_queue.append(.{ .node = node.data.nodes.popFirst().? });
+    while (node.data.nodes.popFirst()) |decl_node| {
+        try local_queue.append(.{ .text = ", " });
+        try local_queue.append(.{ .node = decl_node });
+    }
+}

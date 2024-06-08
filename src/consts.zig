@@ -4,7 +4,7 @@ pub const PUNCTUATION_CHARS = ".,:;()[]'\"{}";
 pub const OPERATOR_CHARS = "<>?+-=*|&!%/\\";
 pub const WHITESPACE = " \t\r\n";
 
-pub const keywords_map = std.ComptimeStringMap(TokenType, .{
+pub const keywords_map = std.StaticStringMap(TokenType).initComptime(.{
     .{ "var", TokenType.Var },
     .{ "let", TokenType.Let },
     .{ "const", TokenType.Const },
