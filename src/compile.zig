@@ -38,16 +38,11 @@ pub fn compile(allocator: std.mem.Allocator, filename: []const u8) !CompileResul
         return err;
     };
 
-    // for (nodes) |node| {
-    //     std.log.info("{}", .{node});
-    // }
-
     for (parser.errors.items) |parser_error| {
-        std.log.info("Error: {s}", .{parser_error});
+        std.debug.print("Error: {s}\n", .{parser_error});
     }
 
     const output = try print(allocator, nodes);
-    // std.log.info("output: {s}", .{output});
 
     return .{
         .file_name = try getOutputFile(allocator, filename),

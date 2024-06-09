@@ -340,33 +340,27 @@ pub fn next(self: *Self, current_char: u8) !Token {
             return self.newToken(TokenType.Tilde);
         },
         '\'', '"' => {
-            var str = ArrayList(u8).init(self.allocator);
-            defer str.deinit();
-            try str.ensureTotalCapacity(100);
+            const start_pos = self.index;
+            var end_pos = self.index + 1;
 
             const starting_char = current_char;
-            try str.append(starting_char);
             while (true) {
                 const next_char = try self.maybe_advance() orelse break;
-                try str.append(next_char);
+                end_pos += 1;
 
                 if (next_char == '\n' or next_char == '\r' or next_char == starting_char) {
                     break;
                 }
             }
 
-            return self.newTokenWithValue(TokenType.StringConstant, try str.toOwnedSlice());
+            return self.newTokenWithValue(TokenType.StringConstant, try self.allocator.dupe(u8, self.buffer[start_pos..end_pos]));
         },
         '0'...'9' => {
             return self.read_numeric_literal(&[_]u8{current_char}, false);
         },
         else => {
-            var str = ArrayList(u8).init(self.allocator);
-            defer str.deinit();
-
-            try str.ensureTotalCapacity(100);
-            try str.append(current_char);
-
+            const start_pos = self.index;
+            var end_pos = self.index + 1;
             var next_char: u8 = undefined;
             while (true) {
                 next_char = try self.maybe_advance() orelse break;
@@ -374,14 +368,14 @@ pub fn next(self: *Self, current_char: u8) !Token {
                     try self.rewind(-1);
                     break;
                 }
-                try str.append(next_char);
+                end_pos += 1;
             }
 
-            if (keywords_map.get(str.items)) |keyword_type| {
+            if (keywords_map.get(self.buffer[start_pos..end_pos])) |keyword_type| {
                 return self.newToken(keyword_type);
             }
 
-            return self.newTokenWithValue(TokenType.Identifier, try str.toOwnedSlice());
+            return self.newTokenWithValue(TokenType.Identifier, try self.allocator.dupe(u8, self.buffer[start_pos..end_pos]));
         },
     }
 

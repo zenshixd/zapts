@@ -384,15 +384,12 @@ const Self = @This();
 
 allocator: std.mem.Allocator,
 node_mempool: MemoryPool(ASTNode, .{ .step = 32 }),
-closure: *Closure,
+closure: Closure,
 tokens: []Token,
 index: usize = 0,
 errors: std.ArrayList([]const u8),
 
 pub fn init(allocator: std.mem.Allocator, buffer: []const u8) !Self {
-    const closure = try allocator.create(Closure);
-    closure.* = Closure.init(allocator);
-
     var lexer = Lexer.init(allocator, buffer);
     const tokens = try lexer.nextAll();
 
@@ -400,7 +397,7 @@ pub fn init(allocator: std.mem.Allocator, buffer: []const u8) !Self {
         .tokens = tokens,
         .allocator = allocator,
         .node_mempool = try MemoryPool(ASTNode, .{ .step = 32 }).init(allocator),
-        .closure = closure,
+        .closure = try Closure.init(allocator),
         .errors = ArrayList([]const u8).init(allocator),
     };
 }
@@ -442,7 +439,7 @@ fn createTypedNode(self: *Self, tag: ASTNodeTag, data_type: TypeSymbol, data: AS
 }
 
 fn token(self: Self) Token {
-    return self.tokens[self.index];
+    return if (self.index >= self.tokens.len) self.tokens[self.tokens.len - 1] else self.tokens[self.index];
 }
 
 fn advance(self: *Self) Token {
@@ -593,6 +590,8 @@ fn getNodeType(self: *Self, tag: ASTNodeTag, data: ASTNodeData) TypeSymbol {
 }
 
 fn emitError(self: *Self, comptime error_msg: diagnostics.DiagnosticMessage, args: anytype) !void {
+    // std.debug.print("TS" ++ error_msg.code ++ ": " ++ error_msg.message ++ "\n", args);
+    // std.debug.print("Token {}\n", .{self.token()});
     try self.errors.append(
         try std.fmt.allocPrint(
             self.allocator,
@@ -600,6 +599,7 @@ fn emitError(self: *Self, comptime error_msg: diagnostics.DiagnosticMessage, arg
             args,
         ),
     );
+    try self.errors.append(try std.fmt.allocPrint(self.allocator, "Token: {}", .{self.token()}));
 }
 
 fn parseStatement(self: *Self) ParserError!*ASTNode {
@@ -806,8 +806,7 @@ fn parseBlock(self: *Self) ParserError!?*ASTNode {
         return null;
     }
 
-    // every block spawns new closure
-    self.closure = try self.closure.spawn();
+    self.closure.new_closure();
     var statements = ASTNodeList{};
 
     while (true) {
@@ -830,7 +829,7 @@ fn parseBlock(self: *Self) ParserError!?*ASTNode {
         }
     }
 
-    self.closure = self.closure.parent.?;
+    self.closure.close_closure();
 
     return self.createNode(
         .block,

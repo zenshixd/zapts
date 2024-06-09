@@ -18,11 +18,6 @@ pub fn main() !void {
     });
     const have_tty = std.io.getStdErr().isTty();
 
-    var async_frame_buffer: []align(builtin.target.stackAlignment()) u8 = undefined;
-    // TODO this is on the next line (using `undefined` above) because otherwise zig incorrectly
-    // ignores the alignment of the slice.
-    async_frame_buffer = &[_]u8{};
-
     var leaks: usize = 0;
     for (cases, 0..) |case_file, i| {
         std.testing.allocator_instance = .{};

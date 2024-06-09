@@ -169,7 +169,7 @@ fn printNode(allocator: std.mem.Allocator, writer: anytype, first_node: *ASTNode
                 try local_queue.append(.{ .text = "(" });
                 if (node.data.nodes.len > 2) {
                     try local_queue.append(.{ .node = node.data.nodes.popFirst().? });
-                    while (node.data.nodes.len > 0) {
+                    while (node.data.nodes.len > 1) {
                         const arg = node.data.nodes.popFirst().?;
                         try local_queue.append(.{ .text = ", " });
                         try local_queue.append(.{ .node = arg });

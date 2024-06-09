@@ -41,20 +41,17 @@ pub fn main() void {
     var skip_count: usize = 0;
     _ = &skip_count;
     var fail_count: usize = 0;
-    var progress = std.Progress{
-        .dont_print_on_dumb = true,
-    };
-    const root_node = progress.start("Test", cases_list.len);
-    const have_tty = progress.terminal != null and
-        (progress.supports_ansi_escape_codes or progress.is_windows_terminal);
+    const root_node = std.Progress.start(.{
+        .root_name = "Test",
+        .estimated_total_items = cases_list.len,
+    });
+    const have_tty = std.io.getStdErr().isTty();
 
     const leaks: usize = 0;
     for (cases_list, 0..) |case, i| {
         std.testing.log_level = .warn;
 
         var test_node = root_node.start(case, 0);
-        test_node.activate();
-        progress.refresh();
         if (!have_tty) {
             std.debug.print("{d}/{d} {s}... ", .{ i + 1, cases_list.len, case });
         }
@@ -63,17 +60,15 @@ pub fn main() void {
             test_node.end();
             if (!have_tty) std.debug.print("OK\n", .{});
         } else |err| switch (err) {
-            // error.SkipZigTest => {
-            //     skip_count += 1;
-            //     progress.log("SKIP\n", .{});
-            //     test_node.end();
-            // },
             else => {
                 fail_count += 1;
-                progress.log("FAIL ({s})\n", .{@errorName(err)});
-                // if (@errorReturnTrace()) |trace| {
-                //     std.debug.dumpStackTrace(trace.*);
-                // }
+                if (have_tty) {
+                    std.debug.print("{d}/{d} {s}...FAIL ({s})\n", .{
+                        i + 1, cases_list.len, case, @errorName(err),
+                    });
+                } else {
+                    std.debug.print("FAIL ({s})\n", .{@errorName(err)});
+                }
                 test_node.end();
             },
         }
