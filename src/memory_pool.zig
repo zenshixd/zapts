@@ -11,8 +11,8 @@ pub fn MemoryPool(comptime Item: type, comptime pool_options: Options) type {
         const Pool = @This();
 
         const Span = struct {
-            items: []Item,
-            next: ?*Span = null,
+            items: [pool_options.step]Item,
+            prev: ?*Span = null,
         };
 
         pub const span_size: comptime_int = @sizeOf(Span);
@@ -35,10 +35,11 @@ pub fn MemoryPool(comptime Item: type, comptime pool_options: Options) type {
         pub fn deinit(self: *Pool) void {
             var current_span: ?*Span = self.span;
             while (current_span) |span| {
-                const next_span = span.next;
+                const next_span = span.prev;
 
-                const ptr: [*]u8 = @ptrCast(span);
-                self.allocator.free(ptr[0..total_span_size]);
+                // const ptr: [*]u8 = @ptrCast(span);
+                // self.allocator.free(ptr[0..total_span_size]);
+                self.allocator.destroy(span);
 
                 current_span = next_span;
             }
@@ -57,12 +58,18 @@ pub fn MemoryPool(comptime Item: type, comptime pool_options: Options) type {
             return ptr;
         }
 
-        fn allocSpan(allocator: std.mem.Allocator, next: ?*Span) MemoryPoolError!*Span {
-            const mem = try allocator.alignedAlloc(u8, @alignOf(Span), total_span_size);
-            const span: *Span = @alignCast(@ptrCast(mem[0..span_size]));
-            span.items.ptr = @alignCast(@ptrCast(mem[span_size..][0 .. item_size * pool_options.step].ptr));
-            span.items.len = pool_options.step;
-            span.next = next;
+        // fn allocSpan(allocator: std.mem.Allocator, prev: ?*Span) MemoryPoolError!*Span {
+        //     const mem = try allocator.alignedAlloc(u8, @alignOf(Span), total_span_size);
+        //     const span: *Span = @alignCast(@ptrCast(mem[0..span_size]));
+        //     span.items.ptr = @alignCast(@ptrCast(mem[span_size..][0 .. item_size * pool_options.step].ptr));
+        //     span.items.len = pool_options.step;
+        //     span.prev = prev;
+        //     return span;
+        // }
+
+        fn allocSpan(allocator: std.mem.Allocator, prev: ?*Span) MemoryPoolError!*Span {
+            const span = try allocator.create(Span);
+            span.prev = prev;
             return span;
         }
     };
@@ -76,9 +83,9 @@ test "basic" {
     const p1 = try pool.create();
     const p2 = try pool.create();
 
-    try std.testing.expect(pool.span.next == null);
+    try std.testing.expect(pool.span.prev == null);
     const p3 = try pool.create();
-    try std.testing.expect(pool.span.next != null);
+    try std.testing.expect(pool.span.prev != null);
     try std.testing.expect(pool.span != first_span);
     const second_span = pool.span;
 
@@ -115,9 +122,9 @@ test "basic2" {
     const p1 = try pool.create();
     const p2 = try pool.create();
 
-    try std.testing.expect(pool.span.next == null);
+    try std.testing.expect(pool.span.prev == null);
     const p3 = try pool.create();
-    try std.testing.expect(pool.span.next != null);
+    try std.testing.expect(pool.span.prev != null);
     try std.testing.expect(pool.span != first_span);
     const second_span = pool.span;
 

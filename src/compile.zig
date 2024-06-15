@@ -7,7 +7,7 @@ const fs = std.fs;
 const ArrayList = std.ArrayList;
 
 // 10 MB ?
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
+pub const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
 pub const CompileResult = struct {
     file_name: []const u8,
@@ -27,8 +27,16 @@ pub fn compile(allocator: std.mem.Allocator, filename: []const u8) !CompileResul
     defer file.close();
 
     const buffer = try file.readToEndAlloc(allocator, MAX_FILE_SIZE);
+    defer allocator.free(buffer);
+
+    return try compileBuffer(allocator, filename, buffer);
+}
+
+pub fn compileBuffer(allocator: std.mem.Allocator, filename: []const u8, buffer: []const u8) !CompileResult {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+
     var parser = try Parser.init(arena.allocator(), buffer);
-    allocator.free(buffer);
 
     const nodes = parser.parse() catch |err| {
         std.log.info("Parse error: {}", .{err});
@@ -71,8 +79,4 @@ test "getOutputFile" {
     defer allocator.free(output_filename);
 
     try std.testing.expectEqualStrings("test.js", output_filename);
-}
-
-test "compile" {
-    _ = @import("tests/compile.zig");
 }

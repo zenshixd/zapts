@@ -670,10 +670,6 @@ fn parseImportClause(self: *Self) !?*ASTNode {
     }
 
     if (bindings.?.tag == .import_binding_default) {
-        if (!self.peekMatch(TokenType.From)) {
-            try self.emitError(diagnostics.ARG_expected, .{"{"});
-        }
-
         if (self.match(TokenType.Comma)) {
             const additional_bindings = try self.parseImportNamespaceBinding(default_as_type) orelse try self.parseImportNamedBindings(default_as_type);
 
@@ -688,6 +684,8 @@ fn parseImportClause(self: *Self) !?*ASTNode {
                     } },
                 );
             }
+        } else if (!self.peekMatch(TokenType.From)) {
+            try self.emitError(diagnostics.ARG_expected, .{"{"});
         }
     }
 

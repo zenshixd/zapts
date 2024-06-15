@@ -1,4 +1,3 @@
-//// [logicals.js]
 const a = 1 && 2;
 const b = 1 || 2;
 const c = b == a || b != a;
