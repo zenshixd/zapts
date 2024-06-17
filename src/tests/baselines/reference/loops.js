@@ -1,4 +1,4 @@
-//// [tests/compiler/cases/loops.ts] ////
+//// [tests/cases/compiler/loops.ts] ////
 
 //// [loops.ts]
 for(var i = 0; i < 10; i++) {

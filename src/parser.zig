@@ -12,6 +12,8 @@ const diagnostics = @import("diagnostics.zig");
 const consts = @import("consts.zig");
 const Token = consts.Token;
 const TokenType = consts.TokenType;
+const TokenList = Lexer.TokenList;
+const TokenListNode = Lexer.TokenListNode;
 
 pub const ParserError = error{ SyntaxError, OutOfMemory, NoSpaceLeft };
 
@@ -350,15 +352,30 @@ pub const ASTNode = struct {
         try writer.writeAll(@tagName(self.data));
         switch (self.data) {
             .nodes => |nodes| {
+                var next = nodes.first;
                 try writer.writeAll(" = [\n");
-                for (nodes) |node| {
+                while (next) |node| {
                     try repeatTab(writer, level);
                     try writer.writeAll(".node = ");
                     try node.format("", .{ .width = level + 1 }, writer);
                     try writer.writeAll(",\n");
+                    next = node.next;
                 }
                 try repeatTab(writer, level - 1);
                 try writer.writeAll("]");
+            },
+            .binary => |binary| {
+                try writer.writeAll(" = {\n");
+                try repeatTab(writer, level);
+                try writer.writeAll(".left = ");
+                try binary.left.format("", .{ .width = level + 1 }, writer);
+                try writer.writeAll(",\n");
+                try repeatTab(writer, level);
+                try writer.writeAll(".right = ");
+                try binary.right.format("", .{ .width = level + 1 }, writer);
+                try writer.writeAll("\n");
+                try repeatTab(writer, level - 1);
+                try writer.writeAll("}");
             },
             .node => |node| {
                 try writer.writeAll(" = {\n");
@@ -385,8 +402,8 @@ const Self = @This();
 allocator: std.mem.Allocator,
 node_mempool: MemoryPool(ASTNode, .{ .step = 32 }),
 closure: Closure,
-tokens: []Token,
-index: usize = 0,
+tokens: TokenList,
+current_token: *TokenListNode,
 errors: std.ArrayList([]const u8),
 
 pub fn init(allocator: std.mem.Allocator, buffer: []const u8) !Self {
@@ -395,6 +412,7 @@ pub fn init(allocator: std.mem.Allocator, buffer: []const u8) !Self {
 
     return Self{
         .tokens = tokens,
+        .current_token = tokens.first.?,
         .allocator = allocator,
         .node_mempool = try MemoryPool(ASTNode, .{ .step = 32 }).init(allocator),
         .closure = try Closure.init(allocator),
@@ -439,12 +457,14 @@ fn createTypedNode(self: *Self, tag: ASTNodeTag, data_type: TypeSymbol, data: AS
 }
 
 fn token(self: Self) Token {
-    return if (self.index >= self.tokens.len) self.tokens[self.tokens.len - 1] else self.tokens[self.index];
+    return self.current_token.data;
 }
 
 fn advance(self: *Self) Token {
     const t = self.token();
-    self.index += 1;
+    if (self.current_token.next) |next| {
+        self.current_token = next;
+    }
     return t;
 }
 
@@ -457,7 +477,7 @@ fn match(self: *Self, token_type: TokenType) bool {
 }
 
 fn peekMatch(self: Self, token_type: TokenType) bool {
-    return self.index < self.tokens.len and self.token().type == token_type;
+    return self.token().type == token_type;
 }
 
 fn consume(self: *Self, token_type: TokenType, comptime error_msg: diagnostics.DiagnosticMessage, args: anytype) ParserError!Token {
@@ -479,7 +499,9 @@ fn consumeOrNull(self: *Self, token_type: TokenType) ?Token {
 }
 
 fn rewind(self: *Self) void {
-    self.index -= 1;
+    if (self.current_token.prev) |prev| {
+        self.current_token = prev;
+    }
 }
 
 fn getNodeType(self: *Self, tag: ASTNodeTag, data: ASTNodeData) TypeSymbol {

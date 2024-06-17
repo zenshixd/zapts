@@ -1,4 +1,4 @@
-//// [tests/compiler/cases/assignments.ts] ////
+//// [tests/cases/compiler/assignments.ts] ////
 
 //// [assignments.ts]
 const x = 123;

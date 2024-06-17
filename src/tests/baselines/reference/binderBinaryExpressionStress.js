@@ -1,4 +1,4 @@
-//// [tests/compiler/cases/binderBinaryExpressionStress.ts] ////
+//// [tests/cases/compiler/binderBinaryExpressionStress.ts] ////
 
 //// [binderBinaryExpressionStress.ts]
 // @target: esnext

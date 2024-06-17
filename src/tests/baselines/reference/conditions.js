@@ -1,4 +1,4 @@
-//// [tests/compiler/cases/conditions.ts] ////
+//// [tests/cases/compiler/conditions.ts] ////
 
 //// [conditions.ts]
 const x = 1;

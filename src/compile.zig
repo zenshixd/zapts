@@ -15,9 +15,6 @@ pub const CompileResult = struct {
 };
 
 pub fn compile(allocator: std.mem.Allocator, filename: []const u8) !CompileResult {
-    var arena = std.heap.ArenaAllocator.init(allocator);
-    defer arena.deinit();
-
     fs.cwd().access(filename, .{ .mode = .read_only }) catch |err| {
         std.log.info("Access error {}!", .{err});
         return err;
@@ -27,7 +24,6 @@ pub fn compile(allocator: std.mem.Allocator, filename: []const u8) !CompileResul
     defer file.close();
 
     const buffer = try file.readToEndAlloc(allocator, MAX_FILE_SIZE);
-    defer allocator.free(buffer);
 
     return try compileBuffer(allocator, filename, buffer);
 }
@@ -45,6 +41,12 @@ pub fn compileBuffer(allocator: std.mem.Allocator, filename: []const u8, buffer:
         }
         return err;
     };
+
+    // var next = nodes.first;
+    // while (next) |node| {
+    //     std.debug.print("{}\n", .{node});
+    //     next = node.next;
+    // }
 
     for (parser.errors.items) |parser_error| {
         std.debug.print("Error: {s}\n", .{parser_error});

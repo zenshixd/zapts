@@ -1,4 +1,4 @@
-//// [tests/compiler/cases/functions.ts] ////
+//// [tests/cases/compiler/functions.ts] ////
 
 //// [functions.ts]
 async function foo() {

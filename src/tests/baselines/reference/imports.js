@@ -1,4 +1,4 @@
-//// [tests/compiler/cases/imports.ts] ////
+//// [tests/cases/compiler/imports.ts] ////
 
 //// [imports.ts]
 import * as fs from "fs";

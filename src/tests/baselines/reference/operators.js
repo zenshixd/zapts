@@ -1,4 +1,4 @@
-//// [tests/compiler/cases/operators.ts] ////
+//// [tests/cases/compiler/operators.ts] ////
 
 //// [operators.ts]
 1 + 2;

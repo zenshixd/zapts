@@ -3,15 +3,12 @@ const compile = @import("compile.zig").compile;
 const JdzGlobalAllocator = @import("jdz_allocator").JdzGlobalAllocator;
 
 pub fn main() !void {
-    std.debug.attachSegfaultHandler();
     const jdz = JdzGlobalAllocator(.{});
     defer jdz.deinit();
     defer jdz.deinitThread();
 
     const allocator = jdz.allocator();
 
-    std.debug.attachSegfaultHandler();
-    // const allocator = std.heap.page_allocator;
     const args = try std.process.argsAlloc(allocator);
     defer std.process.argsFree(allocator, args);
 

@@ -3,7 +3,8 @@ const io = std.io;
 const path = std.fs.path;
 const Client = std.http.Client;
 const builtin = @import("builtin");
-const JdzGlobalAllocator = @import("jdz_allocator").JdzGlobalAllocator;
+const raw_allocator = @import("./raw_allocator.zig");
+const JdzAllocator = @import("jdz_allocator").JdzAllocator(.{ .backing_allocator = raw_allocator.allocator() });
 
 const compile = @import("./compile.zig").compile;
 const compileBuffer = @import("./compile.zig").compileBuffer;
@@ -15,23 +16,23 @@ const expectEqualStrings = std.testing.expectEqualStrings;
 const newline = if (builtin.target.os.tag == .windows) "\r\n" else "\n";
 const REF_TESTS_DIR = ".reftests";
 const TS_VERSION = "5.4.5";
-const jdz = JdzGlobalAllocator(.{});
 
 var log_err_count: usize = 0;
 
 pub fn main() !void {
+    var jdz = JdzAllocator.init();
     defer jdz.deinit();
-    defer jdz.deinitThread();
 
-    const options = try parseArgs(jdz.allocator());
+    const allocator = jdz.allocator();
+
+    const options = try parseArgs(allocator);
 
     var ok_count: usize = 0;
     var skip_count: usize = 0;
     var fail_count: usize = 0;
 
     const root_dir = if (options.run_reftests) ".reftests" else "src";
-    std.debug.print("asdasasdasd\n", .{});
-    const cases = try getTestCases(jdz.allocator(), root_dir);
+    const cases = try getTestCases(allocator, root_dir);
     const root_node = std.Progress.start(.{
         .root_name = "Test",
         .estimated_total_items = cases.len,
@@ -49,12 +50,10 @@ pub fn main() !void {
         std.testing.log_level = .warn;
 
         var test_node = root_node.start(case_file.filename, 0);
-        std.debug.print("asdasasdasd\n", .{});
         if (!have_tty) {
             std.debug.print("{d}/{d} {s}... ", .{ i + 1, cases.len, case_file.filename });
         }
-        std.debug.print("asdasasdasd\n", .{});
-        if (runTest(std.heap.page_allocator, root_dir, case_file.filename, case_file.expect_filename)) |_| {
+        if (runTest(allocator, root_dir, case_file.filename, case_file.expect_filename)) |_| {
             ok_count += 1;
             test_node.end();
             if (!have_tty) std.debug.print("OK\n", .{});

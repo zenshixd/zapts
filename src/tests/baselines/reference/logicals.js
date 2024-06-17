@@ -1,4 +1,4 @@
-//// [tests/compiler/cases/logicals.ts] ////
+//// [tests/cases/compiler/logicals.ts] ////
 
 //// [logicals.ts]
 const a = 1 && 2;

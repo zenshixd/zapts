@@ -1,4 +1,4 @@
-//// [tests/compiler/cases/unary.ts] ////
+//// [tests/cases/compiler/unary.ts] ////
 
 //// [unary.ts]
 let x = 0;
