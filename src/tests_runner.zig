@@ -41,6 +41,11 @@ pub fn main() !void {
     const have_tty = std.io.getStdErr().isTty();
 
     var leaks: usize = 0;
+    var test_runner = TestRunner{
+        .allocator = allocator,
+        .root_dir = root_dir,
+        .update_baselines = options.update_baselines,
+    };
     for (cases, 0..) |case_file, i| {
         std.testing.allocator_instance = .{};
         defer {
@@ -54,7 +59,7 @@ pub fn main() !void {
         if (!have_tty) {
             std.debug.print("{d}/{d} {s}... ", .{ i + 1, cases.len, case_file.filename });
         }
-        if (runTest(allocator, root_dir, case_file.filename, case_file.expect_filename)) |_| {
+        if (test_runner.runTest(case_file.filename, case_file.expect_filename)) |_| {
             ok_count += 1;
             test_node.end();
             if (!have_tty) std.debug.print("OK\n", .{});
@@ -105,6 +110,7 @@ pub fn main() !void {
 
 const TestRunnerArgs = struct {
     run_reftests: bool = false,
+    update_baselines: bool = false,
 };
 
 fn parseArgs(allocator: std.mem.Allocator) !TestRunnerArgs {
@@ -117,60 +123,74 @@ fn parseArgs(allocator: std.mem.Allocator) !TestRunnerArgs {
         if (std.mem.eql(u8, arg, "--reference")) {
             result.run_reftests = true;
         }
+
+        if (std.mem.eql(u8, arg, "--update") or std.mem.eql(u8, arg, "-u")) {
+            result.update_baselines = true;
+        }
     }
 
     return result;
 }
 
-fn runTest(alloc: std.mem.Allocator, root_dir: []const u8, case_filepath: []const u8, expect_filepath: []const u8) anyerror!void {
-    var arena = std.heap.ArenaAllocator.init(alloc);
-    defer arena.deinit();
+pub const TestRunner = struct {
+    allocator: std.mem.Allocator,
+    root_dir: []const u8,
+    update_baselines: bool,
 
-    const allocator = arena.allocator();
+    fn runTest(self: *TestRunner, case_filepath: []const u8, expect_filepath: []const u8) anyerror!void {
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
 
-    std.testing.log_level = .debug;
-    var file = try std.fs.cwd().openFile(case_filepath, .{ .mode = .read_only });
-    defer file.close();
+        const allocator = arena.allocator();
 
-    const buffer = try file.readToEndAlloc(allocator, MAX_FILE_SIZE);
+        std.testing.log_level = .debug;
+        var file = try std.fs.cwd().openFile(case_filepath, .{ .mode = .read_only });
+        defer file.close();
 
-    const result = try compileBuffer(allocator, case_filepath, buffer);
-    var combined_result = std.ArrayList(u8).init(allocator);
+        const buffer = try file.readToEndAlloc(allocator, MAX_FILE_SIZE);
 
-    const case_test_path = try path.relative(allocator, root_dir, case_filepath);
-    std.mem.replaceScalar(u8, case_test_path, '\\', '/');
+        const result = try compileBuffer(allocator, case_filepath, buffer);
+        var combined_result = std.ArrayList(u8).init(allocator);
 
-    const case_root_dir = path.dirname(case_filepath) orelse unreachable;
-    const case_rel_path = try path.relative(allocator, case_root_dir, case_filepath);
-    std.mem.replaceScalar(u8, case_rel_path, '\\', '/');
+        const case_test_path = try path.relative(allocator, self.root_dir, case_filepath);
+        std.mem.replaceScalar(u8, case_test_path, '\\', '/');
 
-    try std.fmt.format(combined_result.writer(), "//// [{s}] ////" ++ newline ++ newline, .{case_test_path});
-    try std.fmt.format(combined_result.writer(), "//// [{s}]" ++ newline, .{case_rel_path});
+        const case_root_dir = path.dirname(case_filepath) orelse unreachable;
+        const case_rel_path = try path.relative(allocator, case_root_dir, case_filepath);
+        std.mem.replaceScalar(u8, case_rel_path, '\\', '/');
 
-    try combined_result.appendSlice(buffer);
-    try combined_result.appendSlice(newline ++ newline);
+        try std.fmt.format(combined_result.writer(), "//// [{s}] ////" ++ newline ++ newline, .{case_test_path});
+        try std.fmt.format(combined_result.writer(), "//// [{s}]" ++ newline, .{case_rel_path});
 
-    const result_rel_path = try path.relative(allocator, case_root_dir, result.file_name);
-    std.mem.replaceScalar(u8, result_rel_path, '\\', '/');
+        try combined_result.appendSlice(buffer);
+        try combined_result.appendSlice(newline ++ newline);
 
-    try std.fmt.format(combined_result.writer(), "//// [{s}]" ++ newline, .{result_rel_path});
-    try combined_result.appendSlice(result.output);
+        const result_rel_path = try path.relative(allocator, case_root_dir, result.file_name);
+        std.mem.replaceScalar(u8, result_rel_path, '\\', '/');
 
-    var expect_content: []u8 = "";
+        try std.fmt.format(combined_result.writer(), "//// [{s}]" ++ newline, .{result_rel_path});
+        try combined_result.appendSlice(result.output);
 
-    if (std.fs.cwd().openFile(expect_filepath, .{ .mode = .read_only })) |expect_file| {
-        expect_content = try expect_file.readToEndAlloc(allocator, MAX_FILE_SIZE);
-    } else |err| switch (err) {
-        error.FileNotFound => {
-            // std.debug.print("Error when opening file {s}: {}\n", .{ expect_filepath, err });
-        },
-        else => {
-            return err;
-        },
+        if (self.update_baselines) {
+            try std.fs.cwd().writeFile(.{
+                .sub_path = expect_filepath,
+                .data = combined_result.items,
+            });
+        }
+
+        var expect_content: []u8 = "";
+
+        if (std.fs.cwd().openFile(expect_filepath, .{ .mode = .read_only })) |expect_file| {
+            expect_content = try expect_file.readToEndAlloc(allocator, MAX_FILE_SIZE);
+        } else |err| switch (err) {
+            error.FileNotFound => {},
+            else => {
+                return err;
+            },
+        }
+        try expectEqualStrings(expect_content, combined_result.items);
     }
-
-    try expectEqualStrings(expect_content, combined_result.items);
-}
+};
 
 const CaseFile = struct {
     filename: []const u8,
