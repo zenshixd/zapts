@@ -33,7 +33,12 @@ pub fn main() !void {
     var fail_count: usize = 0;
 
     const root_dir = if (options.run_reftests) ".reftests" else "src";
-    const cases = try getTestCases(allocator, root_dir);
+    var test_runner = TestRunner{
+        .allocator = allocator,
+        .root_dir = root_dir,
+        .update_baselines = options.update_baselines,
+    };
+    const cases = try test_runner.getTestCases();
     const root_node = std.Progress.start(.{
         .root_name = "Test",
         .estimated_total_items = cases.len,
@@ -41,11 +46,6 @@ pub fn main() !void {
     const have_tty = std.io.getStdErr().isTty();
 
     var leaks: usize = 0;
-    var test_runner = TestRunner{
-        .allocator = allocator,
-        .root_dir = root_dir,
-        .update_baselines = options.update_baselines,
-    };
     for (cases, 0..) |case_file, i| {
         std.testing.allocator_instance = .{};
         defer {
@@ -137,6 +137,11 @@ pub const TestRunner = struct {
     root_dir: []const u8,
     update_baselines: bool,
 
+    const CaseFile = struct {
+        filename: []const u8,
+        expect_filename: []const u8,
+    };
+
     fn runTest(self: *TestRunner, case_filepath: []const u8, expect_filepath: []const u8) anyerror!void {
         var arena = std.heap.ArenaAllocator.init(self.allocator);
         defer arena.deinit();
@@ -190,49 +195,50 @@ pub const TestRunner = struct {
         }
         try expectEqualStrings(expect_content, combined_result.items);
     }
-};
 
-const CaseFile = struct {
-    filename: []const u8,
-    expect_filename: []const u8,
-};
+    fn getTestCases(self: *TestRunner) ![]CaseFile {
+        const base_path = try path.join(self.allocator, &[_][]const u8{ self.root_dir, "tests" });
+        defer self.allocator.free(base_path);
 
-fn getTestCases(allocator: std.mem.Allocator, root_dir: []const u8) ![]CaseFile {
-    const base_path = try path.join(allocator, &[_][]const u8{ root_dir, "tests" });
-    defer allocator.free(base_path);
+        const cases_dir = try path.join(self.allocator, &[_][]const u8{ base_path, "cases", "compiler" });
+        defer self.allocator.free(cases_dir);
+        const expects_dir = try path.join(self.allocator, &[_][]const u8{ base_path, "baselines", "reference" });
+        defer self.allocator.free(expects_dir);
 
-    const cases_dir = try path.join(allocator, &[_][]const u8{ base_path, "cases", "compiler" });
-    defer allocator.free(cases_dir);
-    const expects_dir = try path.join(allocator, &[_][]const u8{ base_path, "baselines", "reference" });
-    defer allocator.free(expects_dir);
+        var dir = try std.fs.cwd().openDir(cases_dir, .{
+            .iterate = true,
+        });
+        defer dir.close();
 
-    var dir = try std.fs.cwd().openDir(cases_dir, .{
-        .iterate = true,
-    });
-    defer dir.close();
+        var cases = std.ArrayList(CaseFile).init(self.allocator);
+        defer cases.deinit();
 
-    var cases = std.ArrayList(CaseFile).init(allocator);
-    defer cases.deinit();
+        var walker = try dir.walk(self.allocator);
+        defer walker.deinit();
 
-    var it = dir.iterate();
-    while (try it.next()) |entry| {
-        const expect_name = try std.mem.replaceOwned(u8, allocator, entry.name, ".ts", ".js");
-        defer allocator.free(expect_name);
+        while (try walker.next()) |entry| {
+            if (entry.kind != .file) {
+                continue;
+            }
 
-        const casefile = CaseFile{
-            .filename = try path.join(allocator, &[_][]const u8{
-                cases_dir,
-                entry.name,
-            }),
-            .expect_filename = try path.join(allocator, &[_][]const u8{
-                expects_dir,
-                expect_name,
-            }),
-        };
-        try cases.append(casefile);
+            const expect_name = try std.mem.replaceOwned(u8, self.allocator, entry.path, ".ts", ".js");
+            defer self.allocator.free(expect_name);
+
+            const casefile = CaseFile{
+                .filename = try path.join(self.allocator, &[_][]const u8{
+                    cases_dir,
+                    entry.path,
+                }),
+                .expect_filename = try path.join(self.allocator, &[_][]const u8{
+                    expects_dir,
+                    expect_name,
+                }),
+            };
+            try cases.append(casefile);
+        }
+        return try cases.toOwnedSlice();
     }
-    return try cases.toOwnedSlice();
-}
+};
 
 fn initRefTestsDir(alloc: std.mem.Allocator) !void {
     var arena = std.heap.ArenaAllocator.init(alloc);
@@ -303,7 +309,7 @@ fn initRefTestsDir(alloc: std.mem.Allocator) !void {
     std.debug.print("Files extracted: {d}\n", .{tests_count});
 }
 
-fn getRefTestCases(alloc: std.mem.Allocator, filter: ?[]const u8) ![]CaseFile {
+fn getRefTestCases(alloc: std.mem.Allocator, filter: ?[]const u8) ![]TestRunner.CaseFile {
     var arena = std.heap.ArenaAllocator.init(alloc);
     defer arena.deinit();
 
@@ -319,7 +325,7 @@ fn getRefTestCases(alloc: std.mem.Allocator, filter: ?[]const u8) ![]CaseFile {
         }
     };
 
-    var result = std.ArrayList(CaseFile).init(allocator);
+    var result = std.ArrayList(TestRunner.CaseFile).init(allocator);
     const cases_dir_path = try path.join(allocator, &[_][]const u8{ REF_TESTS_DIR, "tests", "cases" });
     const expects_dir = try path.join(allocator, &[_][]const u8{ REF_TESTS_DIR, "tests", "baselines", "reference" });
 
