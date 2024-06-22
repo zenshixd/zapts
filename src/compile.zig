@@ -11,6 +11,7 @@ pub const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
 pub const CompileResult = struct {
     file_name: []const u8,
+    source: []const u8,
     output: []const u8,
 };
 
@@ -29,10 +30,8 @@ pub fn compile(allocator: std.mem.Allocator, filename: []const u8) !CompileResul
 }
 
 pub fn compileBuffer(allocator: std.mem.Allocator, filename: []const u8, buffer: []const u8) !CompileResult {
-    var arena = std.heap.ArenaAllocator.init(allocator);
-    defer arena.deinit();
-
-    var parser = try Parser.init(arena.allocator(), buffer);
+    var parser = try Parser.init(allocator, buffer);
+    defer parser.deinit();
 
     const nodes = parser.parse() catch |err| {
         std.log.info("Parse error: {}", .{err});
@@ -56,6 +55,7 @@ pub fn compileBuffer(allocator: std.mem.Allocator, filename: []const u8, buffer:
 
     return .{
         .file_name = try getOutputFile(allocator, filename),
+        .source = buffer,
         .output = output,
     };
 }

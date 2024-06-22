@@ -13,6 +13,10 @@ function foo(𝑚, 𝑀) {
     console.log(𝑀 + 𝑚);
 }
 
+function baz(x: string, y: number): void {
+    console.log(x + y);
+}
+
 
 //// [functions.js]
 async function foo() {
@@ -23,4 +27,7 @@ function bar() {
 }
 function foo(𝑚, 𝑀) {
     console.log(𝑀 + 𝑚);
+}
+function baz(x, y) {
+    console.log(x + y);
 }

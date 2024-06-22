@@ -4,19 +4,18 @@ const Symbol = @import("symbols.zig").Symbol;
 const SymbolTable = @import("symbols.zig").SymbolTable;
 
 pub const Closure = struct {
-    mempool: MemoryPool(Symbol, .{ .step = 32 }),
+    allocator: std.mem.Allocator,
     symbols: SymbolTable,
     index: u8 = 0,
 
     pub fn init(allocator: std.mem.Allocator) !Closure {
         return Closure{
-            .mempool = try MemoryPool(Symbol, .{ .step = 32 }).init(allocator),
+            .allocator = allocator,
             .symbols = SymbolTable.init(allocator),
         };
     }
 
     pub fn deinit(self: *Closure) void {
-        self.mempool.deinit();
         self.symbols.deinit();
     }
 
@@ -29,7 +28,7 @@ pub const Closure = struct {
     }
 
     pub fn addSymbol(self: *Closure, name: []const u8, symbol: Symbol) !*Symbol {
-        const new_symbol = try self.mempool.create();
+        const new_symbol = try self.allocator.create(Symbol);
         new_symbol.* = symbol;
         try self.symbols.put(
             .{

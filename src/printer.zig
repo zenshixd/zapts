@@ -139,6 +139,49 @@ fn printNode(allocator: std.mem.Allocator, writer: anytype, first_node: *ASTNode
             .import_path => {
                 try writer.writeAll(node.data.literal);
             },
+            .@"export" => {
+                try writer.writeAll("export ");
+                try local_queue.append(.{ .node = node.data.node });
+            },
+            .export_from => {
+                try local_queue.append(.{ .node = node.data.binary.left });
+
+                if (node.data.binary.right.tag != .none) {
+                    try local_queue.append(.{ .node = node.data.binary.right });
+                }
+            },
+            .export_from_all => {
+                try writer.writeAll("*");
+            },
+            .export_from_all_as => {
+                try writer.writeAll("* as ");
+                try writer.writeAll(node.data.literal);
+            },
+            .export_named => {
+                try writer.writeAll("{ ");
+                try local_queue.append(.{ .node = node.data.nodes.popFirst().? });
+                while (node.data.nodes.popFirst()) |export_node| {
+                    try local_queue.append(.{ .text = ", " });
+                    try local_queue.append(.{ .node = export_node });
+                }
+                try local_queue.append(.{ .text = " }" });
+            },
+            .export_named_export, .export_named_alias => {
+                try writer.writeAll(node.data.literal);
+            },
+            .export_named_export_as => {
+                try local_queue.append(.{ .node = node.data.binary.left });
+                try local_queue.append(.{ .text = " as " });
+                try local_queue.append(.{ .node = node.data.binary.right });
+            },
+            .export_default => {
+                try writer.writeAll("export default ");
+                try local_queue.append(.{ .node = node.data.node });
+            },
+            .export_path => {
+                try writer.writeAll(" from ");
+                try writer.writeAll(node.data.literal);
+            },
             .var_decl => {
                 try printDecls("var ", &local_queue, node);
             },

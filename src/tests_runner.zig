@@ -20,6 +20,7 @@ const TS_VERSION = "5.4.5";
 var log_err_count: usize = 0;
 
 pub fn main() !void {
+    var timer = try std.time.Timer.start();
     var jdz = JdzAllocator.init();
     defer jdz.deinit();
 
@@ -84,10 +85,12 @@ pub fn main() !void {
         }
     }
     root_node.end();
+
+    const test_duration = timer.read() / std.time.ns_per_ms;
     if (ok_count == cases.len) {
-        std.debug.print("All {d} tests passed.\n", .{ok_count});
+        std.debug.print("All {d} tests passed, took {}ms\n", .{ ok_count, test_duration });
     } else {
-        std.debug.print("{d} passed; {d} skipped; {d} failed.\n", .{ ok_count, skip_count, fail_count });
+        std.debug.print("{d} passed; {d} skipped; {d} failed, took {}ms\n", .{ ok_count, skip_count, fail_count, test_duration });
     }
     if (log_err_count != 0) {
         std.debug.print("{d} errors were logged.\n", .{log_err_count});
@@ -153,11 +156,19 @@ fn runTest(alloc: std.mem.Allocator, root_dir: []const u8, case_filepath: []cons
     try std.fmt.format(combined_result.writer(), "//// [{s}]" ++ newline, .{result_rel_path});
     try combined_result.appendSlice(result.output);
 
-    const expect_file = try std.fs.cwd().openFile(expect_filepath, .{ .mode = .read_only });
-    const expect_content = try expect_file.readToEndAlloc(allocator, MAX_FILE_SIZE);
+    var expect_content: []u8 = "";
 
-    try expect(expect_content.len > 0);
-    try expect(combined_result.items.len > 0);
+    if (std.fs.cwd().openFile(expect_filepath, .{ .mode = .read_only })) |expect_file| {
+        expect_content = try expect_file.readToEndAlloc(allocator, MAX_FILE_SIZE);
+    } else |err| switch (err) {
+        error.FileNotFound => {
+            // std.debug.print("Error when opening file {s}: {}\n", .{ expect_filepath, err });
+        },
+        else => {
+            return err;
+        },
+    }
+
     try expectEqualStrings(expect_content, combined_result.items);
 }
 

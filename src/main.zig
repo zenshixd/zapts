@@ -1,11 +1,10 @@
 const std = @import("std");
 const compile = @import("compile.zig").compile;
-const JdzGlobalAllocator = @import("jdz_allocator").JdzGlobalAllocator;
+const JdzAllocator = @import("jdz_allocator").JdzAllocator;
 
 pub fn main() !void {
-    const jdz = JdzGlobalAllocator(.{});
+    const jdz = JdzAllocator(.{}).init();
     defer jdz.deinit();
-    defer jdz.deinitThread();
 
     const allocator = jdz.allocator();
 
