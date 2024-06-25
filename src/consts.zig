@@ -19,6 +19,8 @@ pub const keywords_map = std.StaticStringMap(TokenType).initComptime(.{
     .{ "do", TokenType.Do },
     .{ "if", TokenType.If },
     .{ "else", TokenType.Else },
+    .{ "get", TokenType.Get },
+    .{ "set", TokenType.Set },
     .{ "class", TokenType.Class },
     .{ "abstract", TokenType.Abstract },
     .{ "extends", TokenType.Extends },
@@ -129,6 +131,7 @@ pub const TokenType = enum(u8) {
     QuestionMarkQuestionMark,
     QuestionMarkQuestionMarkEqual,
     Tilde,
+    Hash,
 
     // Keywords
     Var,
@@ -145,6 +148,8 @@ pub const TokenType = enum(u8) {
     Do,
     If,
     Else,
+    Get,
+    Set,
     Abstract,
     Class,
     Extends,

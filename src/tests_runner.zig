@@ -37,6 +37,7 @@ pub fn main() !void {
         .allocator = allocator,
         .root_dir = root_dir,
         .update_baselines = options.update_baselines,
+        .filter = options.filter,
     };
     const cases = try test_runner.getTestCases();
     const root_node = std.Progress.start(.{
@@ -111,6 +112,7 @@ pub fn main() !void {
 const TestRunnerArgs = struct {
     run_reftests: bool = false,
     update_baselines: bool = false,
+    filter: ?[]const u8 = null,
 };
 
 fn parseArgs(allocator: std.mem.Allocator) !TestRunnerArgs {
@@ -119,13 +121,17 @@ fn parseArgs(allocator: std.mem.Allocator) !TestRunnerArgs {
 
     var result = TestRunnerArgs{};
 
-    for (args) |arg| {
+    for (args, 0..) |arg, i| {
         if (std.mem.eql(u8, arg, "--reference")) {
             result.run_reftests = true;
         }
 
         if (std.mem.eql(u8, arg, "--update") or std.mem.eql(u8, arg, "-u")) {
             result.update_baselines = true;
+        }
+
+        if (std.mem.eql(u8, arg, "--filter")) {
+            result.filter = try allocator.dupe(u8, args[i + 1]);
         }
     }
 
@@ -136,6 +142,7 @@ pub const TestRunner = struct {
     allocator: std.mem.Allocator,
     root_dir: []const u8,
     update_baselines: bool,
+    filter: ?[]const u8,
 
     const CaseFile = struct {
         filename: []const u8,
@@ -219,6 +226,12 @@ pub const TestRunner = struct {
         while (try walker.next()) |entry| {
             if (entry.kind != .file) {
                 continue;
+            }
+
+            if (self.filter) |filter| {
+                if (std.mem.indexOfPos(u8, entry.path, 0, filter) == null) {
+                    continue;
+                }
             }
 
             const expect_name = try std.mem.replaceOwned(u8, self.allocator, entry.path, ".ts", ".js");

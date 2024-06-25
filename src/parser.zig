@@ -71,6 +71,23 @@ pub const ASTNodeTag = enum {
     let_decl,
 
     // data: nodes
+    class_decl,
+    // data: nodes
+    class_expr,
+    // data: literal
+    class_name,
+    // data: node
+    class_super,
+    // data: nodes
+    class_body,
+    // data: binary
+    class_field,
+    // data: node
+    class_static_member,
+    // data: nodes
+    class_static_block,
+
+    // data: nodes
     @"if",
     // data: nodes
     @"else",
@@ -111,8 +128,11 @@ pub const ASTNodeTag = enum {
     func_decl,
     // data: literal
     func_decl_name,
+
+    // data: nodes
+    callable_arguments,
     // data: literal
-    func_decl_argument,
+    callable_argument,
 
     // data: nodes
     call_expr,
@@ -228,6 +248,16 @@ pub const ASTNodeTag = enum {
     object_literal_field,
     // data: node
     object_literal_field_shorthand,
+    // data: binary
+    object_method,
+    // data: node
+    object_async_method,
+    // data: node
+    object_generator_method,
+    // data: binary
+    object_getter,
+    // data: nodes
+    object_setter,
     // data: nodes
     property_access,
     // data: nodes
@@ -246,6 +276,7 @@ pub const ASTNodeTag = enum {
     bigint,
     string,
     identifier,
+    private_identifier,
     none,
 };
 
@@ -369,7 +400,7 @@ pub const ASTNode = struct {
         try writer.writeAll("ASTNode(.");
         try writer.writeAll(@tagName(self.tag));
         try writer.writeAll(", .type = ");
-        try writer.writeAll(@tagName(self.data_type));
+        try writer.writeAll(@tagName(self.data_type.*));
         try writer.writeAll(", .");
         try writer.writeAll(@tagName(self.data));
         switch (self.data) {
@@ -425,6 +456,7 @@ arena: std.heap.ArenaAllocator,
 closure: Closure,
 tokens: TokenList,
 current_token: *TokenListNode,
+checkpoint: ?*TokenListNode = null,
 errors: std.ArrayList([]const u8),
 
 fn create(self: *Self, T: type, default_value: T) !*T {
@@ -468,6 +500,18 @@ pub fn parse(self: *Self) ParserError!*ASTNodeList {
     return nodes;
 }
 
+fn checkpoint_node(self: *Self) void {
+    self.checkpoint = self.current_token;
+}
+
+fn rollback_node(self: *Self) void {
+    self.current_token = self.checkpoint orelse self.current_token;
+}
+
+fn reset_checkpoint(self: *Self) void {
+    self.checkpoint = null;
+}
+
 fn createNode(self: *Self, tag: ASTNodeTag, data: ASTNodeData) !*ASTNode {
     const node = try self.arena.allocator().create(ASTNode);
     node.* = .{
@@ -494,6 +538,7 @@ fn token(self: Self) Token {
 
 fn advance(self: *Self) Token {
     const t = self.token();
+    // std.debug.print("advancing from {}\n", .{t});
     if (self.current_token.next) |next| {
         self.current_token = next;
     }
@@ -565,7 +610,16 @@ fn getNodeType(self: *Self, tag: ASTNodeTag, data: ASTNodeData) !*TypeSymbol {
         .async_func_decl => .{ .any = {} },
         .func_decl => .{ .any = {} },
         .func_decl_name => .{ .none = {} },
-        .func_decl_argument => .{ .any = {} },
+        .callable_arguments => .{ .any = {} },
+        .callable_argument => .{ .any = {} },
+        .class_decl => .{ .none = {} },
+        .class_expr => .{ .none = {} },
+        .class_name => .{ .none = {} },
+        .class_super => .{ .none = {} },
+        .class_body => .{ .none = {} },
+        .class_field => .{ .none = {} },
+        .class_static_member => .{ .none = {} },
+        .class_static_block => .{ .none = {} },
         .@"if" => .{ .none = {} },
         .@"else" => .{ .none = {} },
         .@"switch" => .{ .none = {} },
@@ -590,6 +644,7 @@ fn getNodeType(self: *Self, tag: ASTNodeTag, data: ASTNodeData) !*TypeSymbol {
         .bigint => .{ .bigint = {} },
         .string => .{ .string = {} },
         .identifier => .{ .any = {} },
+        .private_identifier => .{ .any = {} },
         .none => .{ .none = {} },
         .grouping => return try self.getNodeType(data.node.tag, data.node.data),
         .assignment => return try self.getNodeType(data.binary.right.tag, data.binary.right.data),
@@ -636,6 +691,11 @@ fn getNodeType(self: *Self, tag: ASTNodeTag, data: ASTNodeData) !*TypeSymbol {
         .object_literal => .{ .unknown = {} },
         .object_literal_field => .{ .none = {} },
         .object_literal_field_shorthand => .{ .none = {} },
+        .object_method => .{ .none = {} },
+        .object_async_method => .{ .none = {} },
+        .object_generator_method => .{ .none = {} },
+        .object_getter => .{ .none = {} },
+        .object_setter => .{ .none = {} },
         .property_access => return try self.getNodeType(data.binary.right.tag, data.binary.right.data),
         .optional_property_access => return try self.getNodeType(data.binary.right.tag, data.binary.right.data),
         .array_literal => .{ .unknown = {} },
@@ -669,16 +729,15 @@ fn emitError(self: *Self, comptime error_msg: diagnostics.DiagnosticMessage, arg
 fn parseStatement(self: *Self) ParserError!*ASTNode {
     while (self.match(TokenType.NewLine)) {}
 
-    // zig fmt: off
-    const node = try self.parseBlock()
-        orelse try self.parseDeclaration()
-        orelse try self.parseImportStatement()
-        orelse try self.parseExportStatement()
-        orelse try self.parseEmptyStatement()
-        orelse try self.parseIfStatement()
-        orelse try self.parseBreakableStatement()
-        orelse try self.parseExpression();
-    // zig fmt: on
+    const node = try self.parseBlock() orelse
+        try self.parseDeclaration() orelse
+        try self.parseClassDecl() orelse
+        try self.parseImportStatement() orelse
+        try self.parseExportStatement() orelse
+        try self.parseEmptyStatement() orelse
+        try self.parseIfStatement() orelse
+        try self.parseBreakableStatement() orelse
+        try self.parseExpression();
 
     if (needsSemicolon(node)) {
         _ = try self.consume(TokenType.Semicolon, diagnostics.ARG_expected, .{";"});
@@ -757,6 +816,7 @@ fn parseImportClause(self: *Self) !?*ASTNode {
 
     return bindings;
 }
+
 fn parseImportDefaultBinding(self: *Self, default_as_type: bool) !?*ASTNode {
     if (self.consumeOrNull(TokenType.Identifier)) |identifier| {
         const tag: ASTNodeTag = if (default_as_type or self.match(TokenType.Type)) .import_type_binding_default else .import_binding_default;
@@ -768,6 +828,7 @@ fn parseImportDefaultBinding(self: *Self, default_as_type: bool) !?*ASTNode {
 
     return null;
 }
+
 fn parseImportNamespaceBinding(self: *Self, default_as_type: bool) !?*ASTNode {
     if (!self.match(TokenType.Star)) {
         return null;
@@ -782,6 +843,7 @@ fn parseImportNamespaceBinding(self: *Self, default_as_type: bool) !?*ASTNode {
         .{ .literal = identifier.value.? },
     );
 }
+
 fn parseImportNamedBindings(self: *Self, default_as_type: bool) !?*ASTNode {
     if (!self.match(TokenType.OpenCurlyBrace)) {
         return null;
@@ -818,6 +880,7 @@ fn parseExportStatement(self: *Self) ParserError!?*ASTNode {
 
     const node = try self.parseExportFromClause() orelse
         try self.parseDeclaration() orelse
+        try self.parseClassDecl() orelse
         try self.parseDefaultExport() orelse
         unreachable;
 
@@ -913,6 +976,209 @@ fn parseFromClause(self: *Self) ParserError!?Token {
     return try self.consume(TokenType.StringConstant, diagnostics.string_literal_expected, .{});
 }
 
+fn parseClassDecl(self: *Self) ParserError!?*ASTNode {
+    if (!self.match(TokenType.Class)) {
+        return null;
+    }
+    var nodes = ASTNodeList{};
+    const name = try self.consume(TokenType.Identifier, diagnostics.identifier_expected, .{});
+    nodes.append(try self.createNode(.class_name, .{ .literal = name.value.? }));
+    if (self.match(TokenType.Extends)) {
+        const super_class = try self.parseCallableExpression();
+        nodes.append(try self.createNode(.class_super, .{ .node = super_class }));
+    }
+    var body = ASTNodeList{};
+    _ = try self.consume(TokenType.OpenCurlyBrace, diagnostics.ARG_expected, .{"{"});
+    while (true) {
+        if (self.match(TokenType.CloseCurlyBrace)) {
+            break;
+        }
+
+        body.append(try self.parseClassMember());
+    }
+    nodes.append(try self.createNode(.class_body, .{ .nodes = body }));
+    return try self.createNode(
+        .class_decl,
+        .{ .nodes = nodes },
+    );
+}
+
+fn parseClassStaticMember(self: *Self) ParserError!*ASTNode {
+    if (self.match(TokenType.Static)) {
+        return try self.createNode(.class_static_member, .{ .node = try self.parseClassMember() });
+    }
+    return try self.parseClassMember();
+}
+
+fn parseClassMember(self: *Self) ParserError!*ASTNode {
+    if (self.match(TokenType.Get)) {
+        return try self.parseMethodGetter() orelse self.parseClassMemberAssignment();
+    } else if (self.match(TokenType.Set)) {
+        return try self.parseMethodSetter() orelse self.parseClassMemberAssignment();
+    }
+
+    return try self.parseAsyncGeneratorMethod() orelse self.parseClassMemberAssignment();
+}
+
+fn parseAsyncGeneratorMethod(self: *Self) ParserError!?*ASTNode {
+    self.checkpoint_node();
+    if (self.match(TokenType.Async)) {
+        return try self.createNode(.object_async_method, .{ .node = try self.parseMethodGenerator() orelse return null });
+    }
+
+    return try self.parseMethodGenerator();
+}
+
+fn parseMethodGenerator(self: *Self) ParserError!?*ASTNode {
+    const is_generator = self.match(TokenType.Star);
+
+    const elem_name = try self.parseObjectElementName();
+    if (elem_name == null) {
+        return null;
+    }
+
+    if (is_generator) {
+        return try self.createNode(.object_generator_method, .{ .node = try self.parseMethod(elem_name.?) orelse return null });
+    }
+
+    return try self.parseMethod(elem_name.?);
+}
+
+fn parseMethod(self: *Self, elem_name: *ASTNode) ParserError!?*ASTNode {
+    if (self.match(TokenType.OpenParen)) {
+        var nodes = ASTNodeList{};
+        nodes.append(elem_name);
+        nodes.append(try self.parseFunctionArguments());
+        const return_type = try self.parseOptionalDataType(.{ .any = {} });
+        var body = try self.parseBlock();
+        if (body == null) {
+            try self.emitError(diagnostics.ARG_expected, .{"{"});
+            body = try self.createNode(.none, .{ .none = {} });
+        }
+        nodes.append(body.?);
+        self.reset_checkpoint();
+        return try self.createTypedNode(.object_method, return_type, .{ .nodes = nodes });
+    }
+    self.rollback_node();
+    return null;
+}
+
+fn parseClassMemberAssignment(self: *Self) ParserError!*ASTNode {
+    var elem_name = try self.parseObjectElementName();
+    if (elem_name == null) {
+        try self.emitError(diagnostics.identifier_expected, .{});
+        elem_name = try self.createNode(.none, .{ .none = {} });
+    }
+
+    const data_type = try self.parseOptionalDataType(.{ .any = {} });
+    var right: *ASTNode = undefined;
+    if (self.match(TokenType.Equal)) {
+        right = try self.parseAssignment();
+    } else {
+        right = try self.createNode(.none, .{ .none = {} });
+    }
+
+    const node = try self.createTypedNode(
+        .class_field,
+        data_type,
+        .{
+            .binary = .{
+                .left = elem_name.?,
+                .right = right,
+            },
+        },
+    );
+    _ = try self.consume(TokenType.Semicolon, diagnostics.ARG_expected, .{";"});
+    return node;
+}
+
+fn parseMethodGetter(self: *Self) ParserError!?*ASTNode {
+    const elem_name = try self.parseObjectElementName();
+
+    if (elem_name == null) {
+        return try self.parseMethod(try self.createNode(.identifier, .{ .literal = "get" }));
+    }
+
+    var nodes = ASTNodeList{};
+    nodes.append(elem_name.?);
+    _ = try self.consume(TokenType.OpenParen, diagnostics.ARG_expected, .{"("});
+    nodes.append(try self.parseFunctionArguments());
+    const return_type = try self.parseOptionalDataType(.{ .any = {} });
+    var body = try self.parseBlock();
+    if (body == null) {
+        try self.emitError(diagnostics.ARG_expected, .{"{"});
+        body = try self.createNode(.none, .{ .none = {} });
+    }
+    nodes.append(body.?);
+
+    return try self.createTypedNode(
+        .object_getter,
+        return_type,
+        .{ .nodes = nodes },
+    );
+}
+
+fn parseMethodSetter(self: *Self) ParserError!?*ASTNode {
+    const elem_name = try self.parseObjectElementName();
+
+    if (elem_name == null) {
+        return try self.parseMethod(try self.createNode(.identifier, .{ .literal = "set" }));
+    }
+
+    var nodes = ASTNodeList{};
+    nodes.append(elem_name.?);
+    _ = try self.consume(TokenType.OpenParen, diagnostics.ARG_expected, .{"("});
+    nodes.append(try self.parseFunctionArguments());
+    const return_type = try self.parseOptionalDataType(.{ .any = {} });
+    var body = try self.parseBlock();
+    if (body == null) {
+        try self.emitError(diagnostics.ARG_expected, .{"{"});
+        body = try self.createNode(.none, .{ .none = {} });
+    }
+    nodes.append(body.?);
+
+    return try self.createTypedNode(
+        .object_setter,
+        return_type,
+        .{ .nodes = nodes },
+    );
+}
+
+fn parseObjectElementName(self: *Self) ParserError!?*ASTNode {
+    switch (self.token().type) {
+        .Identifier => {
+            const name = self.advance();
+            return try self.createNode(.identifier, .{ .literal = name.value.? });
+        },
+        .StringConstant => {
+            const name = self.advance();
+            return try self.createNode(.string, .{ .literal = name.value.? });
+        },
+        .NumberConstant => {
+            const name = self.advance();
+            return try self.createNode(.number, .{ .literal = name.value.? });
+        },
+        .BigIntConstant => {
+            const name = self.advance();
+            return try self.createNode(.bigint, .{ .literal = name.value.? });
+        },
+        .OpenSquareBracket => {
+            _ = self.advance();
+            const node = try self.parseAssignment();
+            _ = try self.consume(TokenType.CloseSquareBracket, diagnostics.ARG_expected, .{"]"});
+            return node;
+        },
+        .Hash => {
+            _ = self.advance();
+            const name = try self.consume(TokenType.Identifier, diagnostics.identifier_expected, .{});
+            return try self.createNode(.private_identifier, .{ .literal = name.value.? });
+        },
+        else => {
+            return null;
+        },
+    }
+}
+
 fn parseFunctionDecl(self: *Self) ParserError!?*ASTNode {
     var is_async = false;
     if (self.match(TokenType.Async)) {
@@ -926,7 +1192,6 @@ fn parseFunctionDecl(self: *Self) ParserError!?*ASTNode {
         return null;
     }
     var name: []const u8 = "(anonymous)";
-    var function_type = TypeList{};
     var nodes = ASTNodeList{};
 
     if (self.consumeOrNull(TokenType.Identifier)) |identifier| {
@@ -940,28 +1205,10 @@ fn parseFunctionDecl(self: *Self) ParserError!?*ASTNode {
 
     _ = try self.consume(TokenType.OpenParen, diagnostics.ARG_expected, .{"("});
 
-    while (true) {
-        if (self.consumeOrNull(TokenType.Identifier)) |identifier| {
-            const identifier_data_type: *TypeSymbol = try self.parseOptionalDataType(.{ .any = {} });
-            function_type.append(try self.create(TypeList.Node, .{
-                .data = identifier_data_type,
-            }));
-            nodes.append(try self.createTypedNode(
-                .func_decl_argument,
-                identifier_data_type,
-                .{ .literal = identifier.value.? },
-            ));
-        }
+    nodes.append(try self.parseFunctionArguments());
 
-        if (self.match(TokenType.CloseParen)) {
-            break;
-        }
-
-        _ = try self.consume(TokenType.Comma, diagnostics.ARG_expected, .{","});
-    }
-
-    function_type.append(try self.create(TypeList.Node, .{ .data = try self.parseOptionalDataType(.{ .any = {} }) }));
     const tag: ASTNodeTag = if (is_async) .async_func_decl else .func_decl;
+    const return_type = try self.parseOptionalDataType(.{ .any = {} });
 
     if (try self.parseBlock()) |block| {
         nodes.append(block);
@@ -970,9 +1217,36 @@ fn parseFunctionDecl(self: *Self) ParserError!?*ASTNode {
     }
     return try self.createTypedNode(
         tag,
-        try self.create(TypeSymbol, .{ .function = function_type }),
+        return_type,
         .{ .nodes = nodes },
     );
+}
+
+fn parseFunctionArguments(self: *Self) ParserError!*ASTNode {
+    var args = ASTNodeList{};
+    var has_comma = true;
+    while (true) {
+        if (self.match(TokenType.CloseParen)) {
+            break;
+        }
+
+        if (self.consumeOrNull(TokenType.Identifier)) |identifier| {
+            if (!has_comma) {
+                try self.emitError(diagnostics.ARG_expected, .{","});
+            }
+            const identifier_data_type: *TypeSymbol = try self.parseOptionalDataType(.{ .any = {} });
+            args.append(try self.createTypedNode(
+                .callable_argument,
+                identifier_data_type,
+                .{ .literal = identifier.value.? },
+            ));
+        } else {
+            args.append(try self.createNode(.none, .{ .none = {} }));
+        }
+
+        has_comma = self.match(TokenType.Comma);
+    }
+    return try self.createNode(.callable_arguments, .{ .nodes = args });
 }
 
 fn parseBlock(self: *Self) ParserError!?*ASTNode {
@@ -1711,32 +1985,34 @@ fn parseObjectLiteral(self: *Self) ParserError!*ASTNode {
     }
     var nodes = ASTNodeList{};
 
+    var has_comma = true;
     while (true) {
-        while (self.match(TokenType.NewLine)) {}
-
-        const identifier = try self.parseLiteral();
-
-        var comma: ?Token = null;
-        if (self.match(TokenType.Colon)) {
-            nodes.append(try self.createNode(.object_literal_field, .{
-                .binary = .{
-                    .left = identifier,
-                    .right = try self.parseAssignment(),
-                },
-            }));
-            comma = self.consumeOrNull(TokenType.Comma);
+        if (!has_comma) {
+            try self.emitError(diagnostics.ARG_expected, .{","});
+        }
+        var node: ?*ASTNode = undefined;
+        if (self.match(TokenType.Get)) {
+            node = try self.parseMethodGetter() orelse try self.parseObjectField();
+        } else if (self.match(TokenType.Set)) {
+            node = try self.parseMethodSetter() orelse try self.parseObjectField();
         } else {
-            try self.emitError(diagnostics.ARG_expected, .{":"});
-            return error.SyntaxError;
+            node = try self.parseAsyncGeneratorMethod() orelse try self.parseObjectField();
         }
 
-        while (self.match(TokenType.NewLine)) {}
+        if (node) |n| {
+            nodes.append(n);
+        }
 
         if (self.match(TokenType.CloseCurlyBrace)) {
             break;
-        } else if (comma == null) {
-            try self.emitError(diagnostics.ARG_expected, .{","});
-            return error.SyntaxError;
+        } else {
+            if (node == null and self.peekMatch(TokenType.Comma)) {
+                try self.emitError(diagnostics.property_assignment_expected, .{});
+            } else if (node != null and !self.peekMatch(TokenType.Comma)) {
+                try self.emitError(diagnostics.ARG_expected, .{","});
+            }
+
+            has_comma = self.match(TokenType.Comma);
         }
     }
 
@@ -1744,6 +2020,27 @@ fn parseObjectLiteral(self: *Self) ParserError!*ASTNode {
         .object_literal,
         .{ .nodes = nodes },
     );
+}
+
+fn parseObjectField(self: *Self) ParserError!?*ASTNode {
+    const identifier = try self.parseObjectElementName();
+
+    if (identifier == null) {
+        return null;
+    }
+
+    if (self.match(TokenType.Colon)) {
+        return try self.createNode(.object_literal_field, .{
+            .binary = .{
+                .left = identifier.?,
+                .right = try self.parseAssignment(),
+            },
+        });
+    } else if (self.peekMatch(TokenType.Comma) or self.peekMatch(TokenType.CloseCurlyBrace)) {
+        return try self.createNode(.object_literal_field_shorthand, .{ .node = identifier.? });
+    }
+
+    return null;
 }
 
 fn parseLiteral(self: *Self) ParserError!*ASTNode {
@@ -1874,8 +2171,8 @@ pub fn needsSemicolon(node: *ASTNode) bool {
         tag = node.data.node.tag;
     }
 
-    return switch (node.tag) {
-        .block, .func_decl, .async_func_decl, .@"for", .@"while", .do_while, .@"if", .@"else" => false,
+    return switch (tag) {
+        .block, .func_decl, .async_func_decl, .@"for", .@"while", .do_while, .@"if", .@"else", .class_decl => false,
         else => true,
     };
 }

@@ -342,6 +342,9 @@ pub fn next(self: *Self, current_char: u8) !Token {
         '~' => {
             return self.newToken(TokenType.Tilde);
         },
+        '#' => {
+            return self.newToken(TokenType.Hash);
+        },
         '\'', '"' => {
             const start_pos = self.index;
             var end_pos = self.index + 1;
