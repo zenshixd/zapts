@@ -287,6 +287,16 @@ fn printNode(allocator: std.mem.Allocator, writer: anytype, first_node: *ASTNode
                 }
                 try local_queue.append(.{ .text = "}" });
             },
+            .ternary => {
+                try local_queue.append(.{ .node = node.data.binary.left });
+                try local_queue.append(.{ .text = " ? " });
+                try local_queue.append(.{ .node = node.data.binary.right });
+            },
+            .ternary_then => {
+                try local_queue.append(.{ .node = node.data.binary.left });
+                try local_queue.append(.{ .text = " : " });
+                try local_queue.append(.{ .node = node.data.binary.right });
+            },
             .@"if" => {
                 try writer.writeAll("if (");
                 try local_queue.append(.{ .node = node.data.binary.left });
@@ -427,6 +437,9 @@ fn printNode(allocator: std.mem.Allocator, writer: anytype, first_node: *ASTNode
                 try local_queue.append(.{ .text = ", " });
                 try local_queue.append(.{ .node = node.data.binary.right });
             },
+            .this => {
+                try writer.writeAll("this");
+            },
             .true => {
                 try writer.writeAll("true");
             },
@@ -442,11 +455,16 @@ fn printNode(allocator: std.mem.Allocator, writer: anytype, first_node: *ASTNode
             .number, .bigint, .identifier, .string => {
                 try writer.writeAll(node.data.literal);
             },
+            .computed_identifier => {
+                try local_queue.append(.{ .text = "[" });
+                try local_queue.append(.{ .node = node.data.node });
+                try local_queue.append(.{ .text = "]" });
+            },
             .private_identifier => {
                 try writer.writeAll("#");
                 try writer.writeAll(node.data.literal);
             },
-            .none => {},
+            .none, .unknown => {},
             .grouping => {
                 try writer.writeAll("(");
                 try local_queue.append(.{ .node = node.data.node });

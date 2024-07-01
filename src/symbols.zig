@@ -19,8 +19,7 @@ pub const TypeSymbol = union(enum) {
     reference: ReferenceSymbol,
     object: std.StringHashMap(TypeSymbol),
     tuple: TypeList,
-    // Last one is always return type
-    function: TypeList,
+    function: FunctionTypeSymbol,
 };
 
 pub const ReferenceSymbol = struct {
@@ -36,6 +35,11 @@ pub const DeclarationSymbol = struct {
 pub const LiteralSymbol = struct {
     type: *TypeSymbol,
     value: []const u8,
+};
+
+pub const FunctionTypeSymbol = struct {
+    args: TypeList,
+    return_type: *TypeSymbol,
 };
 
 pub const Symbol = union(enum) {

@@ -1,9 +1,12 @@
 const std = @import("std");
 const compile = @import("compile.zig").compile;
+const raw_allocator = @import("./raw_allocator.zig");
 const JdzAllocator = @import("jdz_allocator").JdzAllocator;
 
 pub fn main() !void {
-    const jdz = JdzAllocator(.{}).init();
+    var jdz = JdzAllocator(.{
+        .backing_allocator = raw_allocator.allocator(),
+    }).init();
     defer jdz.deinit();
 
     const allocator = jdz.allocator();

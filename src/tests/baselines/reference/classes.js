@@ -25,6 +25,24 @@ class A {
     }
 }
 
+class B {
+    foo() {
+        console.log(4);
+    }
+
+    async bar() {
+        console.log(5);
+    }
+
+    *baz() {
+        console.log(7);
+    }
+
+    async* qux() {
+        console.log(6);
+    }
+}
+
 //// [classes.js]
 class A {
     a;
@@ -37,6 +55,21 @@ class A {
     }
     test() {
         console.log(3);
+    }
+
+}
+class B {
+    foo() {
+        console.log(4);
+    }
+    async bar() {
+        console.log(5);
+    }
+    *baz() {
+        console.log(7);
+    }
+    async *qux() {
+        console.log(6);
     }
 
 }

@@ -216,3 +216,53 @@ pub const Token = struct {
         try writer.writeAll(")");
     }
 };
+
+pub const RESERVED_WORDS = [_][]const u8{
+    "await",
+    "break",
+    "case",
+    "catch",
+    "class",
+    "const",
+    "continue",
+    "debugger",
+    "default",
+    "delete",
+    "do",
+    "else",
+    "enum",
+    "export",
+    "extends",
+    "false",
+    "finally",
+    "for",
+    "function",
+    "if",
+    "import",
+    "in",
+    "instanceof",
+    "new",
+    "null",
+    "return",
+    "super",
+    "switch",
+    "this",
+    "throw",
+    "true",
+    "try",
+    "typeof",
+    "var",
+    "void",
+    "while",
+    "with",
+    "yield",
+};
+
+pub fn isReservedWord(word: []const u8) bool {
+    for (RESERVED_WORDS) |reserved_word| {
+        if (std.mem.eql(u8, reserved_word, word)) {
+            return true;
+        }
+    }
+    return false;
+}

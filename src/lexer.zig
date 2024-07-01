@@ -378,7 +378,7 @@ pub fn next(self: *Self, current_char: u8) !Token {
             }
 
             if (keywords_map.get(self.buffer[start_pos..end_pos])) |keyword_type| {
-                return self.newToken(keyword_type);
+                return self.newTokenWithValue(keyword_type, try self.allocator.dupe(u8, self.buffer[start_pos..end_pos]));
             }
 
             return self.newTokenWithValue(TokenType.Identifier, try self.allocator.dupe(u8, self.buffer[start_pos..end_pos]));
@@ -528,16 +528,6 @@ fn is_punctuation(s: u8) bool {
 
 fn is_operator(s: u8) bool {
     return std.mem.indexOfScalar(u8, OPERATOR_CHARS, s) != null;
-}
-
-fn is_keyword(s: []u8) bool {
-    for (KEYWORDS) |keyword| {
-        if (std.mem.eql(u8, s, keyword)) {
-            return true;
-        }
-    }
-
-    return false;
 }
 
 test "is_whitespace" {
