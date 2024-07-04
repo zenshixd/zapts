@@ -13,3 +13,13 @@ function foo(𝑚, 𝑀) {
 function baz(x: string, y: number): void {
     console.log(x + y);
 }
+
+const x = () => console.log("x");
+const y = (a: number, b: string) => console.log(a + b);
+const z = name => console.log(name);
+const xx = function (a: number, b: string) {
+    console.log(a + b);
+};
+
+let any = 1;
+let unknown = 2;

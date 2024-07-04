@@ -21,10 +21,12 @@ var log_err_count: usize = 0;
 
 pub fn main() !void {
     var timer = try std.time.Timer.start();
-    var jdz = JdzAllocator.init();
-    defer jdz.deinit();
-
-    const allocator = jdz.allocator();
+    // :) fuckign dogshit doesnt work imma cry
+    // var jdz = JdzAllocator.init();
+    // defer jdz.deinit();
+    //
+    // const allocator = jdz.allocator();
+    const allocator = std.testing.allocator;
 
     const options = try parseArgs(allocator);
 

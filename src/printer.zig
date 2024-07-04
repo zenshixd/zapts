@@ -10,9 +10,11 @@ const new_line_char = if (builtin.target.os.tag == .windows) "\r\n" else "\n";
 pub fn print(allocator: std.mem.Allocator, statements: *ASTNodeList) ![]const u8 {
     var output = try std.ArrayList(u8).initCapacity(allocator, 1024);
     defer output.deinit();
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
 
     while (statements.popFirst()) |statement| {
-        try printNode(allocator, output.writer(), statement);
+        try printNode(arena.allocator(), output.writer(), statement);
         if (needsSemicolon(statement)) {
             try output.appendSlice(";");
         }
@@ -106,7 +108,6 @@ fn printNode(allocator: std.mem.Allocator, writer: anytype, first_node: *ASTNode
     var indent: usize = 0;
 
     while (queue.popFirst()) |item| {
-        defer allocator.destroy(item);
         if (item.data == .text) {
             try writer.writeAll(item.data.text);
             continue;
@@ -180,10 +181,12 @@ fn printNode(allocator: std.mem.Allocator, writer: anytype, first_node: *ASTNode
             },
             .export_named => {
                 try writer.writeAll("{ ");
-                try local_queue.append(.{ .node = node.data.nodes.popFirst().? });
-                while (node.data.nodes.popFirst()) |export_node| {
-                    try local_queue.append(.{ .text = ", " });
-                    try local_queue.append(.{ .node = export_node });
+                if (node.data.nodes.len > 0) {
+                    try local_queue.append(.{ .node = node.data.nodes.popFirst().? });
+                    while (node.data.nodes.popFirst()) |export_node| {
+                        try local_queue.append(.{ .text = ", " });
+                        try local_queue.append(.{ .node = export_node });
+                    }
                 }
                 try local_queue.append(.{ .text = " }" });
             },
@@ -215,17 +218,44 @@ fn printNode(allocator: std.mem.Allocator, writer: anytype, first_node: *ASTNode
                 try local_queue.append(.{ .indent = {} });
                 try printDecls("let ", &local_queue, node);
             },
-            .async_func_decl, .func_decl => {
+            .async_func_statement, .func_statement => {
                 try local_queue.append(.{ .indent = {} });
-                if (node.tag == .async_func_decl) {
-                    try writer.writeAll("async ");
+                if (node.tag == .async_func_statement) {
+                    try local_queue.append(.{ .text = "async " });
                 }
-                try writer.writeAll("function ");
+                try local_queue.append(.{ .text = "function " });
                 try local_queue.append(.{ .node = node.data.nodes.popFirst().? });
                 try local_queue.append(.{ .text = "(" });
                 try local_queue.append(.{ .node = node.data.nodes.popFirst().? });
                 try local_queue.append(.{ .text = ") " });
                 try local_queue.append(.{ .node = node.data.nodes.popFirst().? });
+            },
+            .async_func_expr, .func_expr => {
+                if (node.tag == .async_func_expr) {
+                    try local_queue.append(.{ .text = "async " });
+                }
+                try local_queue.append(.{ .text = "function " });
+                if (node.data.nodes.len >= 3) {
+                    try local_queue.append(.{ .node = node.data.nodes.popFirst().? });
+                }
+                try local_queue.append(.{ .text = "(" });
+                try local_queue.append(.{ .node = node.data.nodes.popFirst().? });
+                try local_queue.append(.{ .text = ") " });
+                try local_queue.append(.{ .node = node.data.nodes.popFirst().? });
+            },
+            .arrow_function, .async_arrow_function => {
+                if (node.tag == .async_arrow_function) {
+                    try writer.writeAll("async ");
+                }
+                if (node.data.binary.left.tag == .callable_arguments) {
+                    try local_queue.append(.{ .text = "(" });
+                    try local_queue.append(.{ .node = node.data.binary.left });
+                    try local_queue.append(.{ .text = ")" });
+                } else {
+                    try local_queue.append(.{ .node = node.data.binary.left });
+                }
+                try local_queue.append(.{ .text = " => " });
+                try local_queue.append(.{ .node = node.data.binary.right });
             },
             .callable_arguments => {
                 if (node.data.nodes.len > 0) {
@@ -236,12 +266,14 @@ fn printNode(allocator: std.mem.Allocator, writer: anytype, first_node: *ASTNode
                     }
                 }
             },
-            .func_decl_name, .callable_argument => {
+            .function_name, .callable_argument => {
                 try writer.writeAll(node.data.literal);
             },
+            .abstract_class => {
+                try local_queue.append(.{ .node = node.data.node });
+            },
             .class_decl, .class_expr => {
-                try local_queue.append(.{ .indent = {} });
-                try writer.writeAll("class ");
+                try local_queue.append(.{ .text = "class " });
                 while (node.data.nodes.popFirst()) |inner| {
                     try local_queue.append(.{ .node = inner });
                 }
@@ -253,6 +285,7 @@ fn printNode(allocator: std.mem.Allocator, writer: anytype, first_node: *ASTNode
             .class_super => {
                 try writer.writeAll("extends ");
                 try local_queue.append(.{ .node = node.data.node });
+                try local_queue.append(.{ .text = " " });
             },
             .class_body => {
                 try writer.writeAll("{");
@@ -278,6 +311,18 @@ fn printNode(allocator: std.mem.Allocator, writer: anytype, first_node: *ASTNode
             },
             .class_static_member => {
                 try writer.writeAll("static ");
+                try local_queue.append(.{ .node = node.data.node });
+            },
+            .class_private_member => {
+                try writer.writeAll("private ");
+                try local_queue.append(.{ .node = node.data.node });
+            },
+            .class_protected_member => {
+                try writer.writeAll("protected ");
+                try local_queue.append(.{ .node = node.data.node });
+            },
+            .class_public_member => {
+                try writer.writeAll("public ");
                 try local_queue.append(.{ .node = node.data.node });
             },
             .class_static_block => {
@@ -390,6 +435,13 @@ fn printNode(allocator: std.mem.Allocator, writer: anytype, first_node: *ASTNode
                 try local_queue.append(.{ .text = " of " });
                 try local_queue.append(.{ .node = node.data.binary.right });
             },
+            .@"return" => {
+                try writer.writeAll("return");
+                if (node.data == .node) {
+                    try local_queue.append(.{ .text = " " });
+                    try local_queue.append(.{ .node = node.data.node });
+                }
+            },
             .@"while" => {
                 try writer.writeAll("while (");
                 try local_queue.append(.{ .node = node.data.binary.left });
@@ -419,6 +471,10 @@ fn printNode(allocator: std.mem.Allocator, writer: anytype, first_node: *ASTNode
                 try local_queue.append(.{ .indent_down = {} });
                 try local_queue.append(.{ .indent = {} });
                 try local_queue.append(.{ .text = "}" });
+            },
+            .new_expr => {
+                try local_queue.append(.{ .text = "new " });
+                try local_queue.append(.{ .node = node.data.node });
             },
             .call_expr => {
                 try local_queue.append(.{ .node = node.data.nodes.popFirst().? });

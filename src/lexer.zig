@@ -273,6 +273,8 @@ pub fn next(self: *Self, current_char: u8) !Token {
                     try self.rewind(-1);
                     return self.newToken(TokenType.EqualEqual);
                 }
+            } else if (next_char == '>') {
+                return self.newToken(TokenType.Arrow);
             } else {
                 try self.rewind(-1);
                 return self.newToken(TokenType.Equal);

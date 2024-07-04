@@ -75,6 +75,7 @@ pub const TokenType = enum(u8) {
     StringConstant,
     NumberConstant,
     BigIntConstant,
+    Arrow,
     Ampersand,
     AmpersandAmpersand,
     Caret,
@@ -217,52 +218,87 @@ pub const Token = struct {
     }
 };
 
-pub const RESERVED_WORDS = [_][]const u8{
-    "await",
-    "break",
-    "case",
-    "catch",
-    "class",
-    "const",
-    "continue",
-    "debugger",
-    "default",
-    "delete",
-    "do",
-    "else",
-    "enum",
-    "export",
-    "extends",
-    "false",
-    "finally",
-    "for",
-    "function",
-    "if",
-    "import",
-    "in",
-    "instanceof",
-    "new",
-    "null",
-    "return",
-    "super",
-    "switch",
-    "this",
-    "throw",
-    "true",
-    "try",
-    "typeof",
-    "var",
-    "void",
-    "while",
-    "with",
-    "yield",
+pub const ALLOWED_KEYWORDS_AS_IDENTIFIERS = [_]TokenType{
+    .Async,
+    .Get,
+    .Set,
+    .Abstract,
+    .Interface,
+    .Type,
+    .Of,
+    .Undefined,
+    .As,
+    .Implements,
+    .Package,
+    .Private,
+    .Protected,
+    .Public,
+    .Static,
+    .From,
+    .Any,
+    .Unknown,
 };
 
-pub fn isReservedWord(word: []const u8) bool {
-    for (RESERVED_WORDS) |reserved_word| {
-        if (std.mem.eql(u8, reserved_word, word)) {
-            return true;
-        }
-    }
-    return false;
+pub fn isAllowedIdentifier(token_type: TokenType) bool {
+    return std.mem.indexOfScalar(TokenType, &ALLOWED_KEYWORDS_AS_IDENTIFIERS, token_type) != null;
+}
+
+test "isAllowedIdentifier" {
+    try std.testing.expect(!isAllowedIdentifier(.Var));
+    try std.testing.expect(!isAllowedIdentifier(.Let));
+    try std.testing.expect(!isAllowedIdentifier(.Const));
+    try std.testing.expect(isAllowedIdentifier(.Async));
+    try std.testing.expect(!isAllowedIdentifier(.Await));
+    try std.testing.expect(!isAllowedIdentifier(.Function));
+    try std.testing.expect(!isAllowedIdentifier(.Return));
+    try std.testing.expect(!isAllowedIdentifier(.For));
+    try std.testing.expect(!isAllowedIdentifier(.While));
+    try std.testing.expect(!isAllowedIdentifier(.Break));
+    try std.testing.expect(!isAllowedIdentifier(.Continue));
+    try std.testing.expect(!isAllowedIdentifier(.Do));
+    try std.testing.expect(!isAllowedIdentifier(.If));
+    try std.testing.expect(!isAllowedIdentifier(.Else));
+    try std.testing.expect(isAllowedIdentifier(.Get));
+    try std.testing.expect(isAllowedIdentifier(.Set));
+    try std.testing.expect(!isAllowedIdentifier(.Class));
+    try std.testing.expect(isAllowedIdentifier(.Abstract));
+    try std.testing.expect(!isAllowedIdentifier(.Extends));
+    try std.testing.expect(isAllowedIdentifier(.Interface));
+    try std.testing.expect(isAllowedIdentifier(.Type));
+    try std.testing.expect(!isAllowedIdentifier(.Case));
+    try std.testing.expect(!isAllowedIdentifier(.Debugger));
+    try std.testing.expect(!isAllowedIdentifier(.Default));
+    try std.testing.expect(!isAllowedIdentifier(.Delete));
+    try std.testing.expect(!isAllowedIdentifier(.Enum));
+    try std.testing.expect(!isAllowedIdentifier(.Import));
+    try std.testing.expect(!isAllowedIdentifier(.Export));
+    try std.testing.expect(!isAllowedIdentifier(.False));
+    try std.testing.expect(!isAllowedIdentifier(.True));
+    try std.testing.expect(!isAllowedIdentifier(.Finally));
+    try std.testing.expect(!isAllowedIdentifier(.Try));
+    try std.testing.expect(!isAllowedIdentifier(.Catch));
+    try std.testing.expect(!isAllowedIdentifier(.In));
+    try std.testing.expect(isAllowedIdentifier(.Of));
+    try std.testing.expect(!isAllowedIdentifier(.Instanceof));
+    try std.testing.expect(!isAllowedIdentifier(.Typeof));
+    try std.testing.expect(!isAllowedIdentifier(.New));
+    try std.testing.expect(!isAllowedIdentifier(.Null));
+    try std.testing.expect(isAllowedIdentifier(.Undefined));
+    try std.testing.expect(!isAllowedIdentifier(.Super));
+    try std.testing.expect(!isAllowedIdentifier(.Switch));
+    try std.testing.expect(!isAllowedIdentifier(.This));
+    try std.testing.expect(!isAllowedIdentifier(.Throw));
+    try std.testing.expect(!isAllowedIdentifier(.Void));
+    try std.testing.expect(!isAllowedIdentifier(.With));
+    try std.testing.expect(isAllowedIdentifier(.As));
+    try std.testing.expect(isAllowedIdentifier(.Implements));
+    try std.testing.expect(isAllowedIdentifier(.Package));
+    try std.testing.expect(isAllowedIdentifier(.Private));
+    try std.testing.expect(isAllowedIdentifier(.Protected));
+    try std.testing.expect(isAllowedIdentifier(.Public));
+    try std.testing.expect(isAllowedIdentifier(.Static));
+    try std.testing.expect(!isAllowedIdentifier(.Yield));
+    try std.testing.expect(isAllowedIdentifier(.From));
+    try std.testing.expect(isAllowedIdentifier(.Any));
+    try std.testing.expect(isAllowedIdentifier(.Unknown));
 }

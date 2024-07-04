@@ -34,9 +34,10 @@ pub fn compileBuffer(allocator: std.mem.Allocator, filename: []const u8, buffer:
     defer parser.deinit();
 
     const nodes = parser.parse() catch |err| {
-        std.log.info("Parse error: {}", .{err});
+        std.log.info("Error: {}", .{err});
+        std.log.info("Current token: {}", .{parser.current_token.data});
         for (parser.errors.items) |parser_error| {
-            std.log.info("Error: {s}", .{parser_error});
+            std.log.info("{s}", .{parser_error});
         }
         return err;
     };

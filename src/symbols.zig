@@ -1,8 +1,9 @@
 const std = @import("std");
 
-pub const TypeList = std.DoublyLinkedList(*TypeSymbol);
+pub const TypeList = std.DoublyLinkedList(TypeSymbolData);
+pub const TypeSymbol = TypeList.Node;
 
-pub const TypeSymbol = union(enum) {
+pub const TypeSymbolData = union(enum) {
     none: void,
     void: void,
     any: void,
@@ -17,9 +18,14 @@ pub const TypeSymbol = union(enum) {
     bigint: void,
     literal: LiteralSymbol,
     reference: ReferenceSymbol,
-    object: std.StringHashMap(TypeSymbol),
+    object: TypeList,
+    array: *TypeSymbol,
     tuple: TypeList,
     function: FunctionTypeSymbol,
+    typeof: *Symbol,
+    keyof: *Symbol,
+    @"union": TypeList,
+    intersection: TypeList,
 };
 
 pub const ReferenceSymbol = struct {
