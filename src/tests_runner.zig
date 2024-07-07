@@ -85,9 +85,9 @@ pub fn main() !void {
                 } else {
                     std.debug.print("FAIL ({s})\n", .{@errorName(err)});
                 }
-                // if (@errorReturnTrace()) |trace| {
-                //     std.debug.dumpStackTrace(trace.*);
-                // }
+                if (@errorReturnTrace()) |trace| {
+                    std.debug.dumpStackTrace(trace.*);
+                }
                 test_node.end();
             },
         }

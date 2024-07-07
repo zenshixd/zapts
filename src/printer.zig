@@ -853,6 +853,10 @@ fn printNode(allocator: std.mem.Allocator, writer: anytype, first_node: *ASTNode
                 try local_queue.append(.{ .text = " <= " });
                 try local_queue.append(.{ .node = node.data.binary.right });
             },
+            .declare => {
+                try local_queue.append(.{ .node = node.data.node });
+            },
+            .type_decl, .interface_decl => {},
         }
 
         queue.prependMany(&local_queue);

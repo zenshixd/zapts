@@ -1,12 +1,12 @@
 const std = @import("std");
-const MemoryPool = @import("memory_pool.zig").MemoryPool;
 const Symbol = @import("symbols.zig").Symbol;
+const SymbolType = @import("symbols.zig").SymbolType;
 const SymbolTable = @import("symbols.zig").SymbolTable;
 
 pub const Closure = struct {
     allocator: std.mem.Allocator,
     symbols: SymbolTable,
-    index: u8 = 0,
+    block_index: u8 = 0,
 
     pub fn init(allocator: std.mem.Allocator) !Closure {
         return Closure{
@@ -20,11 +20,11 @@ pub const Closure = struct {
     }
 
     pub fn new_closure(self: *Closure) void {
-        self.index += 1;
+        self.block_index += 1;
     }
 
     pub fn close_closure(self: *Closure) void {
-        self.index -= 1;
+        self.block_index -= 1;
     }
 
     pub fn addSymbol(self: *Closure, name: []const u8, symbol: Symbol) !*Symbol {
@@ -33,7 +33,7 @@ pub const Closure = struct {
         try self.symbols.put(
             .{
                 .name = name,
-                .closure = self.index,
+                .block_index = self.block_index,
             },
             new_symbol,
         );
@@ -43,11 +43,20 @@ pub const Closure = struct {
     pub fn getSymbol(self: *Closure, name: []const u8) ?*Symbol {
         return self.symbols.get(.{
             .name = name,
-            .closure = self.index,
+            .block_index = self.block_index,
         });
     }
 
+    pub fn getOrPutSymbol(self: *Closure, name: []const u8) !*Symbol {
+        const symbol = self.getSymbol(name);
+        if (symbol) |s| {
+            return s;
+        }
+
+        return self.addSymbol(name, .{ .name = name, .type = .{ .identifier = null } });
+    }
+
     pub fn symbolExists(self: *Closure, name: []const u8) bool {
-        return self.symbols.contains(.{ .name = name, .closure = self.index });
+        return self.symbols.contains(.{ .name = name, .closure = self.block_index });
     }
 };

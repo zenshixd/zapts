@@ -1,14 +1,16 @@
 const std = @import("std");
 const ArrayList = std.ArrayList;
 
-const MemoryPool = @import("memory_pool.zig").MemoryPool;
 const Lexer = @import("lexer.zig");
 const Closure = @import("closure.zig").Closure;
 const Symbol = @import("symbols.zig").Symbol;
-const TypeList = @import("symbols.zig").TypeList;
-const TypeSymbol = @import("symbols.zig").TypeSymbol;
-const TypeSymbolData = @import("symbols.zig").TypeSymbolData;
-const ReferenceSymbol = @import("symbols.zig").ReferenceSymbol;
+const ATTList = @import("types.zig").ATTList;
+const ATTNode = @import("types.zig").ATTNode;
+const ATTData = @import("types.zig").ATTData;
+const DeclarationSymbol = @import("symbols.zig").DeclarationSymbol;
+const IdentifierSymbol = @import("symbols.zig").IdentifierSymbol;
+const LiteralSymbol = @import("symbols.zig").LiteralSymbol;
+
 const diagnostics = @import("diagnostics.zig");
 
 const consts = @import("consts.zig");
@@ -291,6 +293,13 @@ pub const ASTNodeTag = enum {
     // data: nodes
     index_access,
 
+    // data: symbol
+    type_decl,
+    // data: symbol
+    interface_decl,
+    // data: node
+    declare,
+
     // data: literal
     this,
     true,
@@ -309,6 +318,7 @@ pub const ASTNodeTag = enum {
 
 pub const ASTNodeData = union(enum) {
     literal: []const u8,
+    symbol: *Symbol,
     node: *ASTNode,
     binary: struct {
         left: *ASTNode,
@@ -490,8 +500,8 @@ fn create(self: *Self, T: type, default_value: T) !*T {
     return item;
 }
 
-fn createTypeSymbol(self: *Self, data: TypeSymbolData) !*TypeSymbol {
-    return try self.create(TypeSymbol, .{ .data = data });
+fn createTypeNode(self: *Self, data: ATTData) !*ATTNode {
+    return try self.create(ATTNode, .{ .data = data });
 }
 
 pub fn init(allocator: std.mem.Allocator, buffer: []const u8) !Self {
@@ -587,6 +597,11 @@ fn rewind(self: *Self) void {
     }
 }
 
+fn fail(self: *Self, comptime error_msg: diagnostics.DiagnosticMessage, args: anytype) !void {
+    try self.emitError(error_msg, args);
+    return error.SyntaxError;
+}
+
 fn emitError(self: *Self, comptime error_msg: diagnostics.DiagnosticMessage, args: anytype) !void {
     // std.debug.print("TS" ++ error_msg.code ++ ": " ++ error_msg.message ++ "\n", args);
     // std.debug.print("Token {}\n", .{self.token()});
@@ -611,6 +626,9 @@ fn parseStatement(self: *Self) ParserError!*ASTNode {
         try self.parseIfStatement() orelse
         try self.parseBreakableStatement() orelse
         try self.parseReturnStatement() orelse
+        try self.parseTypeDeclaration() orelse
+        try self.parseInterfaceDeclaration() orelse
+        try self.parseDeclareStatement() orelse
         try self.parseExpression();
 
     if (needsSemicolon(node)) {
@@ -1230,10 +1248,8 @@ fn parseDeclaration(self: *Self) ParserError!?*ASTNode {
 
         nodes.append(node);
         _ = try self.closure.addSymbol(identifier.data.literal, .{
-            .declaration = .{
-                .type = identifier_data_type,
-                .name = identifier.data.literal,
-            },
+            .name = identifier.data.literal,
+            .type = .{ .declaration = identifier_data_type },
         });
 
         if (!self.match(TokenType.Comma)) {
@@ -1244,6 +1260,76 @@ fn parseDeclaration(self: *Self) ParserError!?*ASTNode {
     return try self.createNode(
         tag,
         .{ .nodes = nodes },
+    );
+}
+
+fn parseDeclareStatement(self: *Self) ParserError!?*ASTNode {
+    if (!self.match(TokenType.Declare)) {
+        return null;
+    }
+
+    const node = try self.parseDeclaration() orelse return error.SyntaxError;
+    return try self.createNode(
+        .declare,
+        .{ .node = node },
+    );
+}
+
+fn parseTypeDeclaration(self: *Self) ParserError!?*ASTNode {
+    if (!self.match(TokenType.Type)) {
+        return null;
+    }
+
+    const identifier = self.consumeOrNull(TokenType.Identifier) orelse
+        try self.parseKeywordAsIdentifier() orelse
+        return error.SyntaxError;
+
+    _ = try self.consume(TokenType.Equal, diagnostics.ARG_expected, .{"="});
+
+    const identifier_data_type = try self.parseSymbolType();
+
+    const symbol = try self.closure.addSymbol(identifier.value.?, .{
+        .name = identifier.value.?,
+        .type = .{ .declaration = identifier_data_type },
+    });
+    return try self.createNode(
+        .type_decl,
+        .{ .symbol = symbol },
+    );
+}
+
+fn parseInterfaceDeclaration(self: *Self) ParserError!?*ASTNode {
+    if (!self.match(TokenType.Interface)) {
+        return null;
+    }
+
+    const identifier = self.consumeOrNull(TokenType.Identifier) orelse try self.parseKeywordAsIdentifier() orelse return error.SyntaxError;
+    _ = try self.consume(TokenType.OpenCurlyBrace, diagnostics.ARG_expected, .{"{"});
+
+    var list = ATTList{};
+    var has_comma = true;
+    while (true) {
+        if (self.match(TokenType.CloseCurlyBrace)) {
+            break;
+        }
+        if (!has_comma) {
+            try self.emitError(diagnostics.ARG_expected, .{";"});
+        }
+        const node = try self.parseObjectMethodType() orelse
+            try self.parseObjectPropertyType() orelse
+            return error.SyntaxError;
+        list.append(node);
+        has_comma = self.match(TokenType.Comma) or self.match(TokenType.Semicolon);
+    }
+    const interface_type = try self.createTypeNode(.{ .object = list });
+    const symbol = try self.closure.addSymbol(identifier.value.?, .{
+        .name = identifier.value.?,
+        .type = .{ .declaration = interface_type },
+    });
+
+    return try self.createNode(
+        .interface_decl,
+        .{ .symbol = symbol },
     );
 }
 
@@ -1465,9 +1551,9 @@ fn parseExpression(self: *Self) ParserError!*ASTNode {
 }
 
 fn parseAssignment(self: *Self) ParserError!*ASTNode {
-    var casting_type: ?*TypeSymbol = null;
+    var casting_type: ?*ATTNode = null;
     if (self.match(TokenType.LessThan)) {
-        casting_type = try self.parseDataType();
+        casting_type = try self.parseSymbolType();
         _ = try self.consume(TokenType.GreaterThan, diagnostics.ARG_expected, .{">"});
     }
     const node = try self.parseAsyncArrowFunction() orelse try self.parseArrowFunction() orelse try self.parseConditionalExpression();
@@ -2205,102 +2291,235 @@ fn parseGroupingExpression(self: *Self) ParserError!?*ASTNode {
     return null;
 }
 
-fn parseOptionalDataType(self: *Self, default: TypeSymbolData) ParserError!*TypeSymbol {
+fn parseOptionalDataType(self: *Self, default: ATTData) ParserError!*ATTNode {
     if (self.match(TokenType.Colon)) {
-        return try self.parseDataType();
+        return try self.parseSymbolType();
     }
 
-    return try self.createTypeSymbol(default);
+    return try self.createTypeNode(default);
 }
 
-fn createFunctionType(self: *Self, args: TypeList, return_type: *TypeSymbol) ParserError!*TypeSymbol {
-    return try self.createTypeSymbol(.{
-        .function = .{
-            .args = args,
-            .return_type = return_type,
-        },
-    });
+fn parseSymbolType(self: *Self) ParserError!*ATTNode {
+    return try self.parseSymbolUnionType() orelse
+        return self.failType(diagnostics.type_expected, .{});
 }
 
-fn parseDataType(self: *Self) ParserError!*TypeSymbol {
-    var maybe_node: ?*TypeSymbol = null;
-    if (self.match(TokenType.NumberConstant)) {
-        maybe_node = try self.createTypeSymbol(.{ .number = {} });
-    } else if (self.match(TokenType.BigIntConstant)) {
-        maybe_node = try self.createTypeSymbol(.{ .bigint = {} });
-    } else if (self.match(TokenType.StringConstant)) {
-        maybe_node = try self.createTypeSymbol(.{ .string = {} });
-    } else if (self.match(TokenType.True) or self.match(TokenType.False)) {
-        maybe_node = try self.createTypeSymbol(.{ .boolean = {} });
-    } else if (self.match(TokenType.Null)) {
-        maybe_node = try self.createTypeSymbol(.{ .null = {} });
-    } else if (self.match(TokenType.Undefined)) {
-        maybe_node = try self.createTypeSymbol(.{ .undefined = {} });
-    } else if (self.match(TokenType.Void)) {
-        maybe_node = try self.createTypeSymbol(.{ .void = {} });
-    } else if (self.match(TokenType.Any)) {
-        maybe_node = try self.createTypeSymbol(.{ .any = {} });
-    } else if (self.match(TokenType.Unknown)) {
-        maybe_node = try self.createTypeSymbol(.{ .unknown = {} });
-    } else if (self.consumeOrNull(TokenType.Identifier)) |identifier| {
-        const value = identifier.value.?;
-        if (std.mem.eql(u8, value, "number")) {
-            maybe_node = try self.createTypeSymbol(.{ .number = {} });
-        } else if (std.mem.eql(u8, value, "bigint")) {
-            maybe_node = try self.createTypeSymbol(.{ .bigint = {} });
-        } else if (std.mem.eql(u8, value, "string")) {
-            maybe_node = try self.createTypeSymbol(.{ .string = {} });
-        } else if (std.mem.eql(u8, value, "boolean")) {
-            maybe_node = try self.createTypeSymbol(.{ .boolean = {} });
+fn parseSymbolUnionType(self: *Self) ParserError!?*ATTNode {
+    var node = try self.parseSymbolIntersectionType() orelse return null;
+
+    if (self.match(TokenType.Bar)) {
+        node = try self.createTypeNode(.{
+            .@"union" = .{
+                .left = node,
+                .right = try self.parseSymbolUnionType() orelse return self.failType(diagnostics.type_expected, .{}),
+            },
+        });
+    }
+
+    return node;
+}
+
+fn parseSymbolIntersectionType(self: *Self) ParserError!?*ATTNode {
+    var node = try self.parseSymbolTypeUnary() orelse return null;
+
+    if (self.match(TokenType.Ampersand)) {
+        node = try self.createTypeNode(.{
+            .intersection = .{
+                .left = node,
+                .right = try self.parseSymbolIntersectionType() orelse return self.failType(diagnostics.type_expected, .{}),
+            },
+        });
+    }
+
+    return node;
+}
+
+fn parseSymbolTypeUnary(self: *Self) ParserError!?*ATTNode {
+    if (self.match(TokenType.Typeof)) {
+        return try self.createTypeNode(.{
+            .typeof = try self.parseSymbolType(),
+        });
+    } else if (self.match(TokenType.Keyof)) {
+        return try self.createTypeNode(.{
+            .keyof = try self.parseSymbolType(),
+        });
+    }
+
+    return try self.parseSymbolArrayType();
+}
+
+fn parseSymbolArrayType(self: *Self) ParserError!?*ATTNode {
+    const node = try self.parsePrimarySymbolType() orelse return null;
+
+    if (self.match(TokenType.OpenSquareBracket)) {
+        if (self.match(TokenType.CloseSquareBracket)) {
+            return try self.createTypeNode(.{ .array = node });
+        } else {
+            return self.failType(diagnostics.unexpected_token, .{});
         }
-        maybe_node = try self.parseIdentifierType(identifier);
     }
 
-    if (maybe_node) |node| {
-        if (self.match(TokenType.OpenSquareBracket)) {
-            if (self.match(TokenType.CloseSquareBracket)) {
-                return try self.createTypeSymbol(.{ .array = node });
-            } else {
-                try self.emitError(diagnostics.unexpected_token, .{});
-                return error.SyntaxError;
+    return node;
+}
+
+fn parsePrimarySymbolType(self: *Self) ParserError!?*ATTNode {
+    return try self.parseObjectType() orelse
+        try self.parseTupleType() orelse
+        try self.parsePrimitiveType() orelse
+        try self.parseGenericType();
+}
+
+fn parseObjectType(self: *Self) ParserError!?*ATTNode {
+    if (!self.match(TokenType.OpenCurlyBrace)) {
+        return null;
+    }
+
+    var list = ATTList{};
+    var has_comma = true;
+    while (true) {
+        if (self.match(TokenType.CloseCurlyBrace)) {
+            break;
+        }
+
+        if (!has_comma) {
+            try self.emitError(diagnostics.ARG_expected, .{";"});
+        }
+
+        const node = try self.parseObjectMethodType() orelse
+            try self.parseObjectPropertyType() orelse
+            return self.failType(diagnostics.identifier_expected, .{});
+        list.append(node);
+
+        has_comma = self.match(TokenType.Comma) or self.match(TokenType.Semicolon);
+    }
+    return try self.createTypeNode(.{ .object = list });
+}
+
+fn parseObjectPropertyType(self: *Self) ParserError!?*ATTNode {
+    const cp = self.current_token;
+    const identifier = self.consumeOrNull(TokenType.Identifier) orelse try self.parseKeywordAsIdentifier() orelse {
+        self.current_token = cp;
+        return null;
+    };
+
+    var right: *ATTNode = undefined;
+
+    if (self.match(TokenType.Colon)) {
+        right = try self.parseSymbolType();
+    } else {
+        right = try self.createTypeNode(.{ .any = {} });
+    }
+
+    // _ = self.consumeOrNull(TokenType.Comma) orelse
+    //     self.consumeOrNull(TokenType.Semicolon) orelse
+    //     return self.failType(diagnostics.ARG_expected, .{";"});
+
+    return try self.createTypeNode(.{ .object_property = .{
+        .left = try self.createTypeNode(.{ .identifier = identifier.value.? }),
+        .right = right,
+    } });
+}
+
+fn parseObjectMethodType(self: *Self) ParserError!?*ATTNode {
+    const cp = self.current_token;
+    const identifier = self.consumeOrNull(TokenType.Identifier) orelse
+        try self.parseKeywordAsIdentifier() orelse
+        self.consumeOrNull(TokenType.New) orelse {
+        self.current_token = cp;
+        return null;
+    };
+
+    if (!self.match(TokenType.OpenParen)) {
+        self.current_token = cp;
+        return null;
+    }
+    var list = ATTList{};
+    list.append(try self.createTypeNode(.{ .identifier = identifier.value.? }));
+    list.append(try self.parseFunctionArgumentsType());
+    list.append(try self.parseOptionalDataType(.{ .any = {} }));
+    // _ = self.consumeOrNull(TokenType.Comma) orelse
+    //     self.consumeOrNull(TokenType.Semicolon) orelse
+    //     return self.failType(diagnostics.ARG_expected, .{";"});
+    return try self.createTypeNode(.{ .object_method = list });
+}
+
+fn parseFunctionArgumentsType(self: *Self) ParserError!*ATTNode {
+    var args = ATTList{};
+    var has_comma = true;
+    while (true) {
+        if (self.match(TokenType.CloseParen)) {
+            break;
+        }
+
+        if (self.consumeOrNull(TokenType.Identifier)) |identifier| {
+            if (!has_comma) {
+                try self.emitError(diagnostics.ARG_expected, .{","});
             }
+            const arg_type = try self.parseOptionalDataType(.{ .any = {} });
+            args.append(try self.createTypeNode(
+                .{ .function_arg = .{
+                    .left = try self.createTypeNode(.{ .identifier = identifier.value.? }),
+                    .right = arg_type,
+                } },
+            ));
+        } else {
+            return self.failType(diagnostics.identifier_expected, .{});
         }
 
-        return node;
+        has_comma = self.match(TokenType.Comma);
     }
-
-    try self.emitError(diagnostics.unexpected_token, .{});
-    return error.SyntaxError;
+    return try self.createTypeNode(.{ .function_args = args });
 }
 
-fn getReferenceSymbol(self: *Self, identifier: Token) ParserError!*TypeSymbol {
-    const referenceSymbol = self.closure.getSymbol(identifier.value.?);
-
-    if (referenceSymbol == null) {
-        try self.emitError(diagnostics.cannot_find_parameter_ARG, .{identifier.value.?});
-        return try self.createTypeSymbol(.{ .any = {} });
-    } else if (referenceSymbol.?.* != .type) {
-        try self.emitError(diagnostics.ARG_refers_to_a_value_but_is_being_used_as_a_type_here_did_you_mean_typeof_ARG, .{referenceSymbol.?.declaration.name});
-        return try self.createTypeSymbol(.{ .any = {} });
+fn parseTupleType(self: *Self) ParserError!?*ATTNode {
+    if (!self.match(TokenType.OpenSquareBracket)) {
+        return null;
     }
 
-    return &referenceSymbol.?.type;
+    var list = ATTList{};
+    while (true) {
+        if (list.len > 0) {
+            _ = try self.consume(TokenType.Comma, diagnostics.ARG_expected, .{","});
+        }
+        if (self.match(TokenType.CloseSquareBracket)) {
+            break;
+        }
+        const node = try self.parseSymbolType();
+        list.append(node);
+    }
+    return try self.createTypeNode(.{ .tuple = list });
 }
 
-fn parseIdentifierType(self: *Self, identifier: Token) ParserError!*TypeSymbol {
-    const refTypeSymbol: *TypeSymbol = try self.getReferenceSymbol(identifier);
+const primitive_types = .{
+    .{ TokenType.NumberConstant, .{ .number = {} } },
+    .{ TokenType.BigIntConstant, .{ .bigint = {} } },
+    .{ TokenType.StringConstant, .{ .string = {} } },
+    .{ TokenType.True, .{ .boolean = {} } },
+    .{ TokenType.False, .{ .boolean = {} } },
+    .{ TokenType.Null, .{ .null = {} } },
+    .{ TokenType.Undefined, .{ .undefined = {} } },
+    .{ TokenType.Void, .{ .void = {} } },
+    .{ TokenType.Any, .{ .any = {} } },
+    .{ TokenType.Unknown, .{ .unknown = {} } },
+};
 
-    var typeSymbol = try self.createTypeSymbol(.{
-        .reference = ReferenceSymbol{
-            .data_type = refTypeSymbol,
-            .params = null,
-        },
-    });
+fn parsePrimitiveType(self: *Self) ParserError!?*ATTNode {
+    inline for (primitive_types) |primitive_type| {
+        if (self.match(primitive_type[0])) {
+            return try self.createTypeNode(primitive_type[1]);
+        }
+    }
+
+    return null;
+}
+fn parseGenericType(self: *Self) ParserError!?*ATTNode {
+    var node = try self.parseTypeIdentifier() orelse return null;
+
     if (self.match(TokenType.LessThan)) {
-        var params = TypeList{};
+        var params = ATTList{};
 
         while (true) {
-            params.append(try self.parseDataType());
+            params.append(try self.parseSymbolType());
 
             if (!self.match(TokenType.Comma)) {
                 break;
@@ -2308,9 +2527,40 @@ fn parseIdentifierType(self: *Self, identifier: Token) ParserError!*TypeSymbol {
         }
 
         _ = try self.consume(TokenType.GreaterThan, diagnostics.ARG_expected, .{">"});
-        typeSymbol.data.reference.params = params;
+
+        node = try self.createTypeNode(.{ .generic = params });
     }
-    return typeSymbol;
+
+    return node;
+}
+
+fn parseTypeIdentifier(self: *Self) ParserError!?*ATTNode {
+    const identifier = self.consumeOrNull(TokenType.Identifier) orelse try self.parseKeywordAsIdentifier() orelse return null;
+
+    const value = identifier.value.?;
+    if (std.mem.eql(u8, value, "number")) {
+        return try self.createTypeNode(.{ .number = {} });
+    } else if (std.mem.eql(u8, value, "bigint")) {
+        return try self.createTypeNode(.{ .bigint = {} });
+    } else if (std.mem.eql(u8, value, "string")) {
+        return try self.createTypeNode(.{ .string = {} });
+    } else if (std.mem.eql(u8, value, "boolean")) {
+        return try self.createTypeNode(.{ .boolean = {} });
+    }
+
+    return try self.createTypeNode(.{ .identifier = identifier.value.? });
+}
+
+fn parseKeywordAsIdentifier(self: *Self) ParserError!?Token {
+    if (consts.isAllowedIdentifier(self.token().type)) {
+        return self.advance();
+    }
+    return null;
+}
+
+fn failType(self: *Self, comptime error_msg: diagnostics.DiagnosticMessage, args: anytype) !*ATTNode {
+    try self.emitError(error_msg, args);
+    return error.SyntaxError;
 }
 
 pub fn needsSemicolon(node: *ASTNode) bool {
@@ -2320,7 +2570,7 @@ pub fn needsSemicolon(node: *ASTNode) bool {
     }
 
     return switch (tag) {
-        .block, .func_statement, .async_func_statement, .@"for", .@"while", .do_while, .@"if", .@"else", .class_decl, .abstract_class => false,
+        .block, .func_statement, .async_func_statement, .@"for", .@"while", .do_while, .@"if", .@"else", .class_decl, .abstract_class, .interface_decl => false,
         else => true,
     };
 }
