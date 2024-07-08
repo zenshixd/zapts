@@ -100,6 +100,29 @@ const WorkerQueue = struct {
     }
 };
 
+const IteratorError = error{NoItems};
+
+const Iterator = struct {
+    list: *ASTNodeList,
+    current: ?*ASTNode,
+
+    pub fn init(list: *ASTNodeList) Iterator {
+        return .{
+            .list = list,
+            .current = list.first,
+        };
+    }
+
+    pub fn next(self: *Iterator) ?*ASTNode {
+        if (self.current) |current| {
+            self.current = current.next;
+            return current;
+        }
+
+        return null;
+    }
+};
+
 fn printNode(allocator: std.mem.Allocator, writer: anytype, first_node: *ASTNode) anyerror!void {
     var queue = WorkerQueue{
         .allocator = allocator,
@@ -746,11 +769,12 @@ fn printNode(allocator: std.mem.Allocator, writer: anytype, first_node: *ASTNode
                 try local_queue.append(.{ .node = node.data.node });
             },
             .object_method => {
-                try local_queue.append(.{ .node = node.data.nodes.popFirst().? });
+                var it = try Iterator.init(&node.data.nodes);
+                if (it.next()) |next| try local_queue.append(.{ .node = next });
                 try local_queue.append(.{ .text = "(" });
-                try local_queue.append(.{ .node = node.data.nodes.popFirst().? });
+                if (it.next()) |next| try local_queue.append(.{ .node = next });
                 try local_queue.append(.{ .text = ") " });
-                try local_queue.append(.{ .node = node.data.nodes.popFirst().? });
+                if (it.next()) |next| try local_queue.append(.{ .node = next });
             },
             .object_async_method => {
                 try writer.writeAll("async ");
@@ -761,12 +785,13 @@ fn printNode(allocator: std.mem.Allocator, writer: anytype, first_node: *ASTNode
                 try local_queue.append(.{ .node = node.data.node });
             },
             .object_getter => {
+                var it = try Iterator.init(&node.data.nodes);
                 try writer.writeAll("get ");
-                try local_queue.append(.{ .node = node.data.nodes.popFirst().? });
+                if (it.next()) |next| try local_queue.append(.{ .node = next });
                 try local_queue.append(.{ .text = "(" });
-                try local_queue.append(.{ .node = node.data.nodes.popFirst().? });
+                if (it.next()) |next| try local_queue.append(.{ .node = next });
                 try local_queue.append(.{ .text = ") " });
-                try local_queue.append(.{ .node = node.data.nodes.popFirst().? });
+                if (it.next()) |next| try local_queue.append(.{ .node = next });
             },
             .object_setter => {
                 try writer.writeAll("set ");
@@ -856,7 +881,7 @@ fn printNode(allocator: std.mem.Allocator, writer: anytype, first_node: *ASTNode
             .declare => {
                 try local_queue.append(.{ .node = node.data.node });
             },
-            .type_decl, .interface_decl => {},
+            .type_decl, .interface_decl, .class_implements, .class_abstract_member, .class_readonly_member => {},
         }
 
         queue.prependMany(&local_queue);

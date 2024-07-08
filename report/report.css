@@ -1,0 +1,22 @@
+* {
+    box-sizing: border-box;
+}
+
+.test-case-result.hide {
+    display: none;
+
+    .hide-icon {
+        display: none;
+    }
+}
+
+.test-case-result:not(.hide) {
+    .show-icon {
+        display: none;
+    }
+}
+
+.show-hidden .test-case-result.hide {
+    display: block;
+    color: #777777;
+}

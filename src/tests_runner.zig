@@ -3,6 +3,7 @@ const io = std.io;
 const path = std.fs.path;
 const Client = std.http.Client;
 const builtin = @import("builtin");
+const HtmlReporter = @import("./html_reporter.zig");
 const raw_allocator = @import("./raw_allocator.zig");
 const JdzAllocator = @import("jdz_allocator").JdzAllocator(.{ .backing_allocator = raw_allocator.allocator() });
 
@@ -35,18 +36,21 @@ pub fn main() !void {
     var fail_count: usize = 0;
 
     const root_dir = if (options.run_reftests) ".reftests" else "src";
+    const have_tty = std.io.getStdErr().isTty();
+    const html_reporter = if (options.html) try HtmlReporter.init(allocator) else null;
     var test_runner = TestRunner{
         .allocator = allocator,
+        .have_tty = have_tty,
         .root_dir = root_dir,
         .update_baselines = options.update_baselines,
         .filter = options.filter,
+        .html_reporter = html_reporter,
     };
     const cases = try test_runner.getTestCases();
     const root_node = std.Progress.start(.{
         .root_name = "Test",
         .estimated_total_items = cases.len,
     });
-    const have_tty = std.io.getStdErr().isTty();
 
     var leaks: usize = 0;
     for (cases, 0..) |case_file, i| {
@@ -59,40 +63,32 @@ pub fn main() !void {
         std.testing.log_level = .warn;
 
         var test_node = root_node.start(case_file.filename, 0);
-        if (!have_tty) {
-            std.debug.print("{d}/{d} {s}... ", .{ i + 1, cases.len, case_file.filename });
+        try test_runner.reportStart(i, cases, case_file);
+        if (test_runner.runTest(case_file.filename, case_file.expect_filename)) |result| {
+            switch (result) {
+                .success => {
+                    ok_count += 1;
+                    try test_runner.reportSuccess(i, cases, case_file);
+                },
+                .skip => {
+                    skip_count += 1;
+                    try test_runner.reportSkip(i, cases, case_file);
+                },
+                .not_equal => {
+                    fail_count += 1;
+                    // try test_runner.reportFail(i, cases, case_file, err, null);
+                },
+            }
+        } else |err| {
+            fail_count += 1;
+            try test_runner.reportFail(i, cases, case_file, err, @errorReturnTrace());
         }
-        if (test_runner.runTest(case_file.filename, case_file.expect_filename)) |_| {
-            ok_count += 1;
-            test_node.end();
-            if (!have_tty) std.debug.print("OK\n", .{});
-        } else |err| switch (err) {
-            error.SkipZigTest => {
-                skip_count += 1;
-                if (have_tty) {
-                    std.debug.print("{d}/{d} {s}...SKIP\n", .{ i + 1, cases.len, case_file.filename });
-                } else {
-                    std.debug.print("SKIP\n", .{});
-                }
-                test_node.end();
-            },
-            else => {
-                fail_count += 1;
-                if (have_tty) {
-                    std.debug.print("{d}/{d} {s}...FAIL ({s})\n", .{
-                        i + 1, cases.len, case_file.filename, @errorName(err),
-                    });
-                } else {
-                    std.debug.print("FAIL ({s})\n", .{@errorName(err)});
-                }
-                if (@errorReturnTrace()) |trace| {
-                    std.debug.dumpStackTrace(trace.*);
-                }
-                test_node.end();
-            },
-        }
+        test_node.end();
     }
     root_node.end();
+    if (html_reporter) |reporter| {
+        reporter.end();
+    }
 
     const test_duration = timer.read() / std.time.ns_per_ms;
     if (ok_count == cases.len) {
@@ -114,6 +110,7 @@ pub fn main() !void {
 const TestRunnerArgs = struct {
     run_reftests: bool = false,
     update_baselines: bool = false,
+    html: bool = false,
     filter: ?[]const u8 = null,
 };
 
@@ -135,23 +132,38 @@ fn parseArgs(allocator: std.mem.Allocator) !TestRunnerArgs {
         if (std.mem.eql(u8, arg, "--filter")) {
             result.filter = try allocator.dupe(u8, args[i + 1]);
         }
+
+        if (std.mem.eql(u8, arg, "--html")) {
+            result.html = true;
+        }
     }
 
     return result;
 }
+
+pub const CaseFile = struct {
+    filename: []const u8,
+    expect_filename: []const u8,
+};
+
+pub const TestResult = union(enum) {
+    success: void,
+    skip: void,
+    not_equal: struct {
+        expect: []const u8,
+        actual: []const u8,
+    },
+};
 
 pub const TestRunner = struct {
     allocator: std.mem.Allocator,
     root_dir: []const u8,
     update_baselines: bool,
     filter: ?[]const u8,
+    have_tty: bool,
+    html_reporter: ?HtmlReporter,
 
-    const CaseFile = struct {
-        filename: []const u8,
-        expect_filename: []const u8,
-    };
-
-    fn runTest(self: *TestRunner, case_filepath: []const u8, expect_filepath: []const u8) anyerror!void {
+    fn runTest(self: *TestRunner, case_filepath: []const u8, expect_filepath: []const u8) !TestResult {
         var arena = std.heap.ArenaAllocator.init(self.allocator);
         defer arena.deinit();
 
@@ -203,6 +215,7 @@ pub const TestRunner = struct {
             },
         }
         try expectEqualStrings(expect_content, combined_result.items);
+        return .success;
     }
 
     fn getTestCases(self: *TestRunner) ![]CaseFile {
@@ -252,6 +265,39 @@ pub const TestRunner = struct {
             try cases.append(casefile);
         }
         return try cases.toOwnedSlice();
+    }
+
+    pub fn reportStart(self: *TestRunner, test_num: usize, cases: []CaseFile, case_file: CaseFile) !void {
+        if (self.html_reporter == null) {
+            std.debug.print("{d}/{d} {s}... ", .{ test_num + 1, cases.len, case_file.filename });
+        }
+    }
+
+    pub fn reportSuccess(self: *TestRunner, test_num: usize, cases: []CaseFile, case_file: CaseFile) !void {
+        if (self.html_reporter) |reporter| {
+            try reporter.reportSuccess(test_num, cases, case_file);
+        } else {
+            std.debug.print("OK\n", .{});
+        }
+    }
+
+    pub fn reportSkip(self: *TestRunner, test_num: usize, cases: []CaseFile, case_file: CaseFile) !void {
+        if (self.html_reporter) |reporter| {
+            try reporter.reportSkip(test_num, cases, case_file);
+        } else {
+            std.debug.print("SKIP\n", .{});
+        }
+    }
+
+    pub fn reportFail(self: *TestRunner, test_num: usize, cases: []CaseFile, case_file: CaseFile, err: anyerror, trace: ?*std.builtin.StackTrace) !void {
+        if (self.html_reporter) |reporter| {
+            try reporter.reportFail(test_num, cases, case_file, err, trace);
+        } else {
+            std.debug.print("FAIL ({s})\n", .{@errorName(err)});
+            if (trace) |t| {
+                std.debug.dumpStackTrace(t.*);
+            }
+        }
     }
 };
 

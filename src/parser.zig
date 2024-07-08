@@ -83,6 +83,8 @@ pub const ASTNodeTag = enum {
     class_name,
     // data: node
     class_super,
+    // data: node
+    class_implements,
     // data: nodes
     class_body,
     // data: binary
@@ -95,6 +97,10 @@ pub const ASTNodeTag = enum {
     class_protected_member,
     // data: node
     class_public_member,
+    // data: node
+    class_abstract_member,
+    // data: node
+    class_readonly_member,
     // data: nodes
     class_static_block,
 
@@ -896,6 +902,10 @@ fn parseClassStatement(self: *Self) ParserError!?*ASTNode {
         const super_class = try self.parseCallableExpression() orelse return error.SyntaxError;
         nodes.append(try self.createNode(.class_super, .{ .node = super_class }));
     }
+    if (self.match(TokenType.Implements)) {
+        const interfaces = try self.parseInterfaceList();
+        nodes.append(try self.createNode(.class_implements, .{ .nodes = interfaces }));
+    }
     var body = ASTNodeList{};
     _ = try self.consume(TokenType.OpenCurlyBrace, diagnostics.ARG_expected, .{"{"});
     while (true) {
@@ -903,7 +913,11 @@ fn parseClassStatement(self: *Self) ParserError!?*ASTNode {
             break;
         }
 
-        body.append(try self.parseClassMember());
+        if (self.match(TokenType.Semicolon)) {
+            continue;
+        }
+
+        body.append(try self.parseClassStaticMember());
     }
     nodes.append(try self.createNode(.class_body, .{ .nodes = body }));
     return try self.createNode(
@@ -912,14 +926,19 @@ fn parseClassStatement(self: *Self) ParserError!?*ASTNode {
     );
 }
 
-fn parseClassStaticMember(self: *Self) ParserError!*ASTNode {
-    if (self.match(TokenType.Static)) {
-        return try self.createNode(.class_static_member, .{ .node = try self.parseClassMember() });
+fn parseInterfaceList(self: *Self) ParserError!ASTNodeList {
+    var list = ASTNodeList{};
+    while (true) {
+        const identifier = self.consumeOrNull(TokenType.Identifier) orelse try self.parseKeywordAsIdentifier() orelse return error.SyntaxError;
+        list.append(try self.createNode(.identifier, .{ .literal = identifier.value.? }));
+        if (!self.match(TokenType.Comma)) {
+            break;
+        }
     }
-    return try self.parseClassMember();
+    return list;
 }
 
-fn parseClassMember(self: *Self) ParserError!*ASTNode {
+fn parseClassStaticMember(self: *Self) ParserError!*ASTNode {
     if (self.match(TokenType.Static)) {
         if (self.match(TokenType.OpenCurlyBrace)) {
             var block = ASTNodeList{};
@@ -934,17 +953,28 @@ fn parseClassMember(self: *Self) ParserError!*ASTNode {
             return try self.createNode(.class_static_member, .{ .node = try self.parseClassMember() });
         }
     }
+    return try self.parseClassMember();
+}
 
-    if (self.match(TokenType.Private)) {
-        return try self.createNode(.class_private_member, .{ .node = try self.parseClassMember() });
+fn parseClassMember(self: *Self) ParserError!*ASTNode {
+    if (self.match(TokenType.Abstract)) {
+        return try self.createNode(.class_abstract_member, .{ .node = try self.parseClassMember() });
+    }
+
+    if (self.match(TokenType.Readonly)) {
+        return try self.createNode(.class_readonly_member, .{ .node = try self.parseClassMember() });
+    }
+
+    if (self.match(TokenType.Public)) {
+        return try self.createNode(.class_public_member, .{ .node = try self.parseClassMember() });
     }
 
     if (self.match(TokenType.Protected)) {
         return try self.createNode(.class_protected_member, .{ .node = try self.parseClassMember() });
     }
 
-    if (self.match(TokenType.Public)) {
-        return try self.createNode(.class_public_member, .{ .node = try self.parseClassMember() });
+    if (self.match(TokenType.Private)) {
+        return try self.createNode(.class_private_member, .{ .node = try self.parseClassMember() });
     }
 
     return try self.parseMethodGetter() orelse
@@ -953,8 +983,6 @@ fn parseClassMember(self: *Self) ParserError!*ASTNode {
         try self.parseAsyncGeneratorMethod() orelse
         try self.parseMethod() orelse
         error.SyntaxError;
-    // try self.panicUntil(&[_]TokenType{.Semicolon});
-    // try self.parseClassMemberAssignment();
 }
 
 fn parseAsyncGeneratorMethod(self: *Self) ParserError!?*ASTNode {
@@ -988,12 +1016,11 @@ fn parseMethod(self: *Self) ParserError!?*ASTNode {
         nodes.append(elem_name.?);
         nodes.append(try self.parseFunctionArguments() orelse return error.SyntaxError);
         _ = try self.parseOptionalDataType(.{ .any = {} });
-        var body = try self.parseBlock();
-        if (body == null) {
-            try self.emitError(diagnostics.ARG_expected, .{"{"});
-            body = try self.createNode(.none, .{ .none = {} });
+        if (try self.parseBlock()) |body| {
+            nodes.append(body);
+        } else {
+            _ = try self.consume(TokenType.Semicolon, diagnostics.ARG_expected, .{";"});
         }
-        nodes.append(body.?);
         return try self.createNode(.object_method, .{ .nodes = nodes });
     }
 
@@ -1038,12 +1065,11 @@ fn parseMethodGetter(self: *Self) ParserError!?*ASTNode {
     _ = try self.consume(TokenType.OpenParen, diagnostics.ARG_expected, .{"("});
     nodes.append(try self.parseFunctionArguments() orelse return error.SyntaxError);
     _ = try self.parseOptionalDataType(.{ .any = {} });
-    var body = try self.parseBlock();
-    if (body == null) {
-        try self.emitError(diagnostics.ARG_expected, .{"{"});
-        body = try self.createNode(.none, .{ .none = {} });
+    if (try self.parseBlock()) |body| {
+        nodes.append(body);
+    } else {
+        _ = try self.consume(TokenType.Semicolon, diagnostics.ARG_expected, .{";"});
     }
-    nodes.append(body.?);
 
     return try self.createNode(
         .object_getter,
@@ -1067,12 +1093,11 @@ fn parseMethodSetter(self: *Self) ParserError!?*ASTNode {
     _ = try self.consume(TokenType.OpenParen, diagnostics.ARG_expected, .{"("});
     nodes.append(try self.parseFunctionArguments() orelse return error.SyntaxError);
     _ = try self.parseOptionalDataType(.{ .any = {} });
-    var body = try self.parseBlock();
-    if (body == null) {
-        try self.emitError(diagnostics.ARG_expected, .{"{"});
-        body = try self.createNode(.none, .{ .none = {} });
+    if (try self.parseBlock()) |body| {
+        nodes.append(body);
+    } else {
+        _ = try self.consume(TokenType.Semicolon, diagnostics.ARG_expected, .{";"});
     }
-    nodes.append(body.?);
 
     return try self.createNode(
         .object_setter,
