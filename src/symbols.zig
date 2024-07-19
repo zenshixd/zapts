@@ -1,14 +1,17 @@
 const std = @import("std");
-const ATTNode = @import("types.zig").ATTNode;
+const ATTNode = @import("att.zig").ATTNode;
 
 pub const Symbol = struct {
     name: []const u8,
-    type: union(enum) {
-        literal: *ATTNode,
-        declaration: *ATTNode,
-        identifier: ?*Symbol,
-        unknown: void,
-    },
+    kind: Kind,
+    type: ATTNode,
+
+    pub const Kind = enum {
+        literal,
+        declaration,
+        identifier,
+        unknown,
+    };
 };
 
 pub const SymbolKey = struct {

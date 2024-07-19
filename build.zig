@@ -15,6 +15,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+
     exe.root_module.addImport("jdz_allocator", jdz_dep.module("jdz_allocator"));
     b.installArtifact(exe);
 
