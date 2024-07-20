@@ -1,30 +1,13 @@
 const std = @import("std");
 const Symbol = @import("symbols.zig").Symbol;
+const ATTNode = @import("att.zig").ATTNode;
 
 pub const ASTNodeTag = enum {
     // data: import
     import,
 
-    // data: node
+    // data: export
     @"export",
-    //// data: binary
-    //export_from,
-    //// data: none
-    //export_from_all,
-    //// data: literal
-    //export_from_all_as,
-    //// data: literal
-    //export_path,
-    //// data: nodes
-    //export_named,
-    //// data: literal
-    //export_named_export,
-    //// data: literal
-    //export_named_alias,
-    //// data: binary
-    //export_named_export_as,
-    //// data: node
-    //export_default,
 
     // data: nodes
     var_decl,
@@ -34,35 +17,9 @@ pub const ASTNodeTag = enum {
     let_decl,
 
     // data: node
-    abstract_class,
+    abstract_class_decl,
     // data: nodes
     class_decl,
-    // data: nodes
-    class_expr,
-    // data: literal
-    class_name,
-    // data: node
-    class_super,
-    // data: node
-    class_implements,
-    // data: nodes
-    class_body,
-    // data: binary
-    class_field,
-    // data: node
-    class_static_member,
-    // data: node
-    class_private_member,
-    // data: node
-    class_protected_member,
-    // data: node
-    class_public_member,
-    // data: node
-    class_abstract_member,
-    // data: node
-    class_readonly_member,
-    // data: nodes
-    class_static_block,
 
     // data: nodes
     @"if",
@@ -102,23 +59,15 @@ pub const ASTNodeTag = enum {
     // data: nodes
     assignment,
 
-    // data: nodes
-    async_func_statement,
-    func_statement,
-    async_func_expr,
-    func_expr,
-
-    // data: literal
-    function_name,
+    // data: function
+    async_func_decl,
+    func_decl,
+    async_generator_func_decl,
+    generator_func_decl,
 
     // data: binary
     async_arrow_function,
     arrow_function,
-
-    // data: nodes
-    callable_arguments,
-    // data: literal
-    callable_argument,
 
     // data: nodes
     call_expr,
@@ -240,12 +189,14 @@ pub const ASTNodeTag = enum {
     object_literal_field,
     // data: node
     object_literal_field_shorthand,
-    // data: binary
+    // data: function
     object_method,
-    // data: node
+    // data: function
     object_async_method,
-    // data: node
+    // data: function
     object_generator_method,
+    // data: function
+    object_async_generator_method,
     // data: binary
     object_getter,
     // data: nodes
@@ -330,15 +281,37 @@ pub const ASTNode = struct {
     };
 
     pub const Function = struct {
-        name: ?[]const u8,
+        name: ?ASTNode,
         params: []ASTNode,
         body: ASTNode,
+    };
+
+    pub const Class = struct {
+        name: ?[]const u8,
+        super_class: ?ASTNode,
+        implements: ?[]ASTNode,
+        body: []ClassField,
+    };
+
+    pub const ClassField = struct {
+        node: ASTNode,
+        flags: std.EnumSet(ClassFieldFlag),
+    };
+
+    pub const ClassFieldFlag = enum {
+        static,
+        public,
+        protected,
+        private,
+        abstract,
+        readonly,
     };
 
     pub const Data = union(enum) {
         function: *Function,
         import: *Import,
         @"export": *Export,
+        class: *Class,
         symbol: *Symbol,
         literal: []const u8,
         node: *ASTNode,

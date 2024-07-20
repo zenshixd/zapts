@@ -196,123 +196,82 @@ fn printNode(allocator: std.mem.Allocator, writer: anytype, first_node: *const A
                 try local_queue.append(.{ .indent = {} });
                 try printDecls("let ", &local_queue, node);
             },
-            .async_func_statement, .func_statement => {
-                try local_queue.append(.{ .indent = {} });
-                if (node.tag == .async_func_statement) {
-                    try local_queue.append(.{ .text = "async " });
+            .async_func_decl, .func_decl, .async_generator_func_decl, .generator_func_decl => {
+                switch (node.tag) {
+                    .async_func_decl => {
+                        try local_queue.append(.{ .text = "async function " });
+                    },
+                    .async_generator_func_decl => {
+                        try local_queue.append(.{ .text = "async function* " });
+                    },
+                    .generator_func_decl => {
+                        try local_queue.append(.{ .text = "function* " });
+                    },
+                    .func_decl => {
+                        try local_queue.append(.{ .text = "function " });
+                    },
+                    else => unreachable,
                 }
-                try local_queue.append(.{ .text = "function " });
-                try local_queue.append(.{ .node = &node.data.nodes[0] });
+                if (node.data.function.name) |name| {
+                    try local_queue.append(.{ .node = &name });
+                    try local_queue.append(.{ .text = " " });
+                }
                 try local_queue.append(.{ .text = "(" });
-                try local_queue.append(.{ .node = &node.data.nodes[1] });
+                if (node.data.function.params.len > 0) {
+                    try local_queue.append(.{ .node = &node.data.function.params[0] });
+                    for (1..node.data.function.params.len) |i| {
+                        try local_queue.append(.{ .text = ", " });
+                        try local_queue.append(.{ .node = &node.data.function.params[i] });
+                    }
+                }
                 try local_queue.append(.{ .text = ") " });
-                try local_queue.append(.{ .node = &node.data.nodes[2] });
-            },
-            .async_func_expr, .func_expr => {
-                if (node.tag == .async_func_expr) {
-                    try local_queue.append(.{ .text = "async " });
-                }
-                try local_queue.append(.{ .text = "function " });
-                if (node.data.nodes.len >= 3) {
-                    try local_queue.append(.{ .node = &node.data.nodes[0] });
-                    try local_queue.append(.{ .text = "(" });
-                    try local_queue.append(.{ .node = &node.data.nodes[1] });
-                    try local_queue.append(.{ .text = ") " });
-                    try local_queue.append(.{ .node = &node.data.nodes[2] });
-                } else {
-                    try local_queue.append(.{ .text = "(" });
-                    try local_queue.append(.{ .node = &node.data.nodes[0] });
-                    try local_queue.append(.{ .text = ") " });
-                    try local_queue.append(.{ .node = &node.data.nodes[1] });
-                }
+                try local_queue.append(.{ .node = &node.data.function.body });
             },
             .arrow_function, .async_arrow_function => {
                 if (node.tag == .async_arrow_function) {
                     try writer.writeAll("async ");
                 }
-                if (node.data.binary.left.tag == .callable_arguments) {
+
+                if (node.data.function.params.len == 1) {
+                    try local_queue.append(.{ .node = &node.data.function.params[0] });
+                } else if (node.data.function.params.len > 1) {
                     try local_queue.append(.{ .text = "(" });
-                    try local_queue.append(.{ .node = &node.data.binary.left });
+                    try local_queue.append(.{ .node = &node.data.function.params[0] });
+                    for (1..node.data.function.params.len) |i| {
+                        try local_queue.append(.{ .text = ", " });
+                        try local_queue.append(.{ .node = &node.data.function.params[i] });
+                    }
                     try local_queue.append(.{ .text = ")" });
-                } else {
-                    try local_queue.append(.{ .node = &node.data.binary.left });
                 }
                 try local_queue.append(.{ .text = " => " });
-                try local_queue.append(.{ .node = &node.data.binary.right });
+                try local_queue.append(.{ .node = &node.data.function.body });
             },
-            .callable_arguments => {
-                if (node.data.nodes.len > 0) {
-                    try local_queue.append(.{ .node = &node.data.nodes[0] });
-                    for (1..node.data.nodes.len) |i| {
-                        try local_queue.append(.{ .text = ", " });
-                        try local_queue.append(.{ .node = &node.data.nodes[i] });
-                    }
-                }
-            },
-            .function_name, .callable_argument => {
-                try writer.writeAll(node.data.literal);
-            },
-            .abstract_class => {
-                try local_queue.append(.{ .node = node.data.node });
-            },
-            .class_decl, .class_expr => {
+            .abstract_class_decl, .class_decl => {
                 try local_queue.append(.{ .text = "class " });
-                for (node.data.nodes) |inner| {
-                    try local_queue.append(.{ .node = &inner });
+                if (node.data.class.name) |name| {
+                    try local_queue.append(.{ .text = name });
+                    try local_queue.append(.{ .text = " " });
                 }
-            },
-            .class_name => {
-                try writer.writeAll(node.data.literal);
-                try local_queue.append(.{ .text = " " });
-            },
-            .class_super => {
-                try writer.writeAll("extends ");
-                try local_queue.append(.{ .node = node.data.node });
-                try local_queue.append(.{ .text = " " });
-            },
-            .class_body => {
-                try writer.writeAll("{");
+                if (node.data.class.super_class) |super_class| {
+                    try local_queue.append(.{ .text = "extends " });
+                    try local_queue.append(.{ .node = &super_class });
+                    try local_queue.append(.{ .text = " " });
+                }
+
+                try local_queue.append(.{ .text = "{" ++ new_line_char });
                 try local_queue.append(.{ .indent_up = {} });
-                if (node.data.nodes.len > 0) {
-                    try local_queue.append(.{ .text = new_line_char });
-                    for (node.data.nodes) |member| {
-                        try local_queue.append(.{ .indent = {} });
-                        try local_queue.append(.{ .node = &member });
-                        try local_queue.append(.{ .text = new_line_char });
+                for (0..node.data.class.body.len) |i| {
+                    try local_queue.append(.{ .indent = {} });
+                    if (node.data.class.body[i].flags.contains(.static)) {
+                        try local_queue.append(.{ .text = "static " });
                     }
+                    try local_queue.append(.{ .node = &node.data.class.body[i].node });
+                    if (needsSemicolon(node.data.class.body[i].node)) {
+                        try local_queue.append(.{ .text = ";" });
+                    }
+                    try local_queue.append(.{ .text = new_line_char });
                 }
                 try local_queue.append(.{ .indent_down = {} });
-                try local_queue.append(.{ .text = new_line_char ++ "}" });
-            },
-            .class_field => {
-                try local_queue.append(.{ .node = &node.data.binary.left });
-                if (node.data.binary.right.tag != .none) {
-                    try local_queue.append(.{ .text = " = " });
-                    try local_queue.append(.{ .node = &node.data.binary.right });
-                }
-                try local_queue.append(.{ .text = ";" });
-            },
-            .class_static_member => {
-                try writer.writeAll("static ");
-                try local_queue.append(.{ .node = node.data.node });
-            },
-            .class_private_member => {
-                try writer.writeAll("private ");
-                try local_queue.append(.{ .node = node.data.node });
-            },
-            .class_protected_member => {
-                try writer.writeAll("protected ");
-                try local_queue.append(.{ .node = node.data.node });
-            },
-            .class_public_member => {
-                try writer.writeAll("public ");
-                try local_queue.append(.{ .node = node.data.node });
-            },
-            .class_static_block => {
-                try writer.writeAll("static {");
-                for (node.data.nodes) |stmt| {
-                    try local_queue.append(.{ .node = &stmt });
-                }
                 try local_queue.append(.{ .text = "}" });
             },
             .ternary => {
@@ -728,38 +687,53 @@ fn printNode(allocator: std.mem.Allocator, writer: anytype, first_node: *const A
             .object_literal_field_shorthand => {
                 try local_queue.append(.{ .node = node.data.node });
             },
-            .object_method => {
-                const nodes = node.data.nodes;
-                if (nodes.len > 0) try local_queue.append(.{ .node = &nodes[0] });
+            .object_method, .object_async_method, .object_generator_method, .object_async_generator_method => {
+                switch (node.tag) {
+                    .object_async_method => {
+                        try writer.writeAll("async ");
+                    },
+                    .object_async_generator_method => {
+                        try writer.writeAll("async *");
+                    },
+                    .object_generator_method => {
+                        try writer.writeAll("*");
+                    },
+                    .object_method => {},
+                    else => unreachable,
+                }
+                try local_queue.append(.{ .node = &node.data.function.name.? });
                 try local_queue.append(.{ .text = "(" });
-                if (nodes.len > 1) try local_queue.append(.{ .node = &nodes[1] });
+                if (node.data.function.params.len > 0) {
+                    try local_queue.append(.{ .node = &node.data.function.params[0] });
+                    for (1..node.data.function.params.len) |i| {
+                        try local_queue.append(.{ .text = ", " });
+                        try local_queue.append(.{ .node = &node.data.function.params[i] });
+                    }
+                }
                 try local_queue.append(.{ .text = ") " });
-                if (nodes.len > 2) try local_queue.append(.{ .node = &nodes[2] });
-            },
-            .object_async_method => {
-                try writer.writeAll("async ");
-                try local_queue.append(.{ .node = node.data.node });
-            },
-            .object_generator_method => {
-                try writer.writeAll("*");
-                try local_queue.append(.{ .node = node.data.node });
+                try local_queue.append(.{ .node = &node.data.function.body });
             },
             .object_getter => {
-                const nodes = node.data.nodes;
                 try writer.writeAll("get ");
-                if (nodes.len > 0) try local_queue.append(.{ .node = &nodes[0] });
+                try local_queue.append(.{ .node = &node.data.function.name.? });
                 try local_queue.append(.{ .text = "(" });
-                if (nodes.len > 1) try local_queue.append(.{ .node = &nodes[1] });
+                if (node.data.function.params.len > 0) {
+                    try local_queue.append(.{ .node = &node.data.function.params[0] });
+                    for (1..node.data.function.params.len) |i| {
+                        try local_queue.append(.{ .text = ", " });
+                        try local_queue.append(.{ .node = &node.data.function.params[i] });
+                    }
+                }
                 try local_queue.append(.{ .text = ") " });
-                if (nodes.len > 2) try local_queue.append(.{ .node = &nodes[2] });
+                try local_queue.append(.{ .node = &node.data.function.body });
             },
             .object_setter => {
                 try writer.writeAll("set ");
-                try local_queue.append(.{ .node = &node.data.nodes[0] });
+                try local_queue.append(.{ .node = &node.data.function.name.? });
                 try local_queue.append(.{ .text = "(" });
-                try local_queue.append(.{ .node = &node.data.nodes[1] });
+                try local_queue.append(.{ .node = &node.data.function.params[0] });
                 try local_queue.append(.{ .text = ") " });
-                try local_queue.append(.{ .node = &node.data.nodes[2] });
+                try local_queue.append(.{ .node = &node.data.function.body });
             },
             .property_access => {
                 try local_queue.append(.{ .node = &node.data.binary.left });
@@ -841,7 +815,7 @@ fn printNode(allocator: std.mem.Allocator, writer: anytype, first_node: *const A
             .declare => {
                 try local_queue.append(.{ .node = node.data.node });
             },
-            .type_decl, .interface_decl, .class_implements, .class_abstract_member, .class_readonly_member => {},
+            .type_decl, .interface_decl => {},
         }
 
         queue.prependMany(&local_queue);
