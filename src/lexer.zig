@@ -16,18 +16,14 @@ const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
 const expectEqualStrings = std.testing.expectEqualStrings;
 
-pub const TokenList = std.DoublyLinkedList(Token);
-pub const TokenListNode = TokenList.Node;
-
 pub const LexerError = error{ SyntaxError, EndOfStream, OutOfMemory };
 
 const Self = @This();
 const Lexer = @This();
 
-current_line: usize = 1,
 allocator: Allocator,
 buffer: []const u8,
-index: usize = 0,
+index: u32 = 0,
 
 pub fn init(allocator: Allocator, buffer: []const u8) Self {
     return .{ .allocator = allocator, .buffer = buffer };
@@ -37,8 +33,6 @@ fn newToken(self: *Self, token_type: TokenType) Token {
     return Token{
         .type = token_type,
         .pos = self.index,
-        .end = self.index,
-        .line = self.current_line,
         .value = null,
     };
 }
@@ -47,8 +41,6 @@ fn newTokenWithValue(self: *Self, token_type: TokenType, value: []const u8) Toke
     return Token{
         .type = token_type,
         .pos = self.index,
-        .end = self.index + value.len,
-        .line = self.current_line,
         .value = value,
     };
 }
@@ -56,7 +48,6 @@ fn newTokenWithValue(self: *Self, token_type: TokenType, value: []const u8) Toke
 pub fn next(self: *Self, current_char: u8) !Token {
     switch (current_char) {
         '\n' => {
-            self.current_line += 1;
             return self.newToken(TokenType.Whitespace);
         },
         '\r', ' ', '\t' => {
@@ -390,17 +381,11 @@ pub fn next(self: *Self, current_char: u8) !Token {
     unreachable;
 }
 
-fn newTokenNode(self: *Self, token: Token) !*TokenListNode {
-    const node = try self.allocator.create(TokenListNode);
-    node.* = .{ .data = token };
-    return node;
-}
-
-pub fn nextAll(self: *Self) !TokenList {
-    var tokens = TokenList{};
+pub fn nextAll(self: *Self) !std.ArrayList(Token) {
+    var tokens = std.ArrayList(Token).init(self.allocator);
 
     if (self.buffer.len == 0) {
-        tokens.append(try self.newTokenNode(self.newToken(TokenType.Eof)));
+        try tokens.append(self.newToken(TokenType.Eof));
         return tokens;
     }
 
@@ -410,12 +395,12 @@ pub fn nextAll(self: *Self) !TokenList {
         const token = try self.next(current_char);
 
         if (token.type != TokenType.Whitespace and token.type != TokenType.LineComment and token.type != TokenType.MultilineComment) {
-            tokens.append(try self.newTokenNode(token));
+            try tokens.append(token);
         }
 
         current_char = self.advance() catch |err| {
             if (err == error.EndOfStream) {
-                tokens.append(try self.newTokenNode(self.newToken(TokenType.Eof)));
+                try tokens.append(self.newToken(TokenType.Eof));
                 break;
             }
 
@@ -510,13 +495,13 @@ fn match(self: *Self, expected_char: u8) !bool {
     return false;
 }
 
-fn rewind(self: *Self, offset: i64) !void {
+fn rewind(self: *Self, offset: i32) !void {
     if (offset < 0) {
         if (self.index > 0) {
-            self.index -= @as(usize, @intCast(-offset));
+            self.index -= @as(u32, @intCast(-offset));
         }
     } else {
-        self.index += @as(usize, @intCast(offset));
+        self.index += @as(u32, @intCast(offset));
     }
 }
 
@@ -680,12 +665,12 @@ test "should tokenize keywords" {
     };
 
     var lexer = Lexer.init(arena.allocator(), try std.mem.join(arena.allocator(), " ", &keywords));
-    var tokens = try lexer.nextAll();
+    const tokens = try lexer.nextAll();
 
-    try expectEqual(expected_tokens.len, tokens.len - 1);
-    for (expected_tokens) |expected_token| {
-        const token = tokens.popFirst() orelse unreachable;
-        try expectEqual(expected_token, token.data.type);
+    try expectEqual(expected_tokens.len, tokens.items.len - 1);
+    for (expected_tokens, 0..) |expected_token, i| {
+        const token = tokens.items[i];
+        try expectEqual(expected_token, token.type);
     }
 }
 
@@ -751,15 +736,72 @@ test "should tokenize operators" {
         "??=",
         "~",
     };
-    const expected_tokens = [_]TokenType{ TokenType.Ampersand, TokenType.AmpersandAmpersand, TokenType.Caret, TokenType.Bar, TokenType.BarBar, TokenType.Plus, TokenType.PlusPlus, TokenType.Minus, TokenType.MinusMinus, TokenType.Star, TokenType.StarStar, TokenType.Slash, TokenType.Percent, TokenType.ExclamationMark, TokenType.ExclamationMarkEqual, TokenType.ExclamationMarkEqualEqual, TokenType.Equal, TokenType.EqualEqual, TokenType.EqualEqualEqual, TokenType.GreaterThan, TokenType.GreaterThanEqual, TokenType.GreaterThanGreaterThan, TokenType.GreaterThanGreaterThanEqual, TokenType.GreaterThanGreaterThanGreaterThan, TokenType.GreaterThanGreaterThanGreaterThanEqual, TokenType.LessThan, TokenType.LessThanEqual, TokenType.LessThanLessThan, TokenType.LessThanLessThanEqual, TokenType.AmpersandEqual, TokenType.AmpersandAmpersandEqual, TokenType.BarEqual, TokenType.BarBarEqual, TokenType.CaretEqual, TokenType.PlusEqual, TokenType.MinusEqual, TokenType.StarEqual, TokenType.StarStarEqual, TokenType.SlashEqual, TokenType.PercentEqual, TokenType.OpenCurlyBrace, TokenType.CloseCurlyBrace, TokenType.OpenSquareBracket, TokenType.CloseSquareBracket, TokenType.OpenParen, TokenType.CloseParen, TokenType.Dot, TokenType.DotDotDot, TokenType.Comma, TokenType.Semicolon, TokenType.Colon, TokenType.QuestionMark, TokenType.QuestionMarkDot, TokenType.QuestionMarkQuestionMark, TokenType.QuestionMarkQuestionMarkEqual, TokenType.Tilde };
+    const expected_tokens = [_]TokenType{
+        TokenType.Ampersand,
+        TokenType.AmpersandAmpersand,
+        TokenType.Caret,
+        TokenType.Bar,
+        TokenType.BarBar,
+        TokenType.Plus,
+        TokenType.PlusPlus,
+        TokenType.Minus,
+        TokenType.MinusMinus,
+        TokenType.Star,
+        TokenType.StarStar,
+        TokenType.Slash,
+        TokenType.Percent,
+        TokenType.ExclamationMark,
+        TokenType.ExclamationMarkEqual,
+        TokenType.ExclamationMarkEqualEqual,
+        TokenType.Equal,
+        TokenType.EqualEqual,
+        TokenType.EqualEqualEqual,
+        TokenType.GreaterThan,
+        TokenType.GreaterThanEqual,
+        TokenType.GreaterThanGreaterThan,
+        TokenType.GreaterThanGreaterThanEqual,
+        TokenType.GreaterThanGreaterThanGreaterThan,
+        TokenType.GreaterThanGreaterThanGreaterThanEqual,
+        TokenType.LessThan,
+        TokenType.LessThanEqual,
+        TokenType.LessThanLessThan,
+        TokenType.LessThanLessThanEqual,
+        TokenType.AmpersandEqual,
+        TokenType.AmpersandAmpersandEqual,
+        TokenType.BarEqual,
+        TokenType.BarBarEqual,
+        TokenType.CaretEqual,
+        TokenType.PlusEqual,
+        TokenType.MinusEqual,
+        TokenType.StarEqual,
+        TokenType.StarStarEqual,
+        TokenType.SlashEqual,
+        TokenType.PercentEqual,
+        TokenType.OpenCurlyBrace,
+        TokenType.CloseCurlyBrace,
+        TokenType.OpenSquareBracket,
+        TokenType.CloseSquareBracket,
+        TokenType.OpenParen,
+        TokenType.CloseParen,
+        TokenType.Dot,
+        TokenType.DotDotDot,
+        TokenType.Comma,
+        TokenType.Semicolon,
+        TokenType.Colon,
+        TokenType.QuestionMark,
+        TokenType.QuestionMarkDot,
+        TokenType.QuestionMarkQuestionMark,
+        TokenType.QuestionMarkQuestionMarkEqual,
+        TokenType.Tilde,
+    };
     var lexer = Lexer.init(arena.allocator(), try std.mem.join(arena.allocator(), " ", &operators));
-    var tokens = try lexer.nextAll();
+    const tokens = try lexer.nextAll();
 
     // we remove one because of Eof token
-    try expectEqual(expected_tokens.len, tokens.len - 1);
-    for (expected_tokens) |expected_token| {
-        const token = tokens.popFirst() orelse unreachable;
-        try expectEqual(expected_token, token.data.type);
+    try expectEqual(expected_tokens.len, tokens.items.len - 1);
+    for (expected_tokens, 0..) |expected_token, i| {
+        const token = tokens.items[i];
+        try expectEqual(expected_token, token.type);
     }
 }
 
@@ -791,19 +833,19 @@ test "should tokenize strings" {
 
     const buffer = "'hello' \"hello\" \"hello''world\"";
     var lexer = Lexer.init(arena.allocator(), buffer);
-    var tokens = try lexer.nextAll();
+    const tokens = try lexer.nextAll();
 
-    var token = tokens.popFirst() orelse unreachable;
-    try expectEqual(TokenType.StringConstant, token.data.type);
-    try expectEqualStrings("'hello'", token.data.value.?);
+    var token = tokens.items[0];
+    try expectEqual(TokenType.StringConstant, token.type);
+    try expectEqualStrings("'hello'", token.value.?);
 
-    token = tokens.popFirst() orelse unreachable;
-    try expectEqual(TokenType.StringConstant, token.data.type);
-    try expectEqualStrings("\"hello\"", token.data.value.?);
+    token = tokens.items[0];
+    try expectEqual(TokenType.StringConstant, token.type);
+    try expectEqualStrings("\"hello\"", token.value.?);
 
-    token = tokens.popFirst() orelse unreachable;
-    try expectEqual(TokenType.StringConstant, token.data.type);
-    try expectEqualStrings("\"hello''world\"", token.data.value.?);
+    token = tokens.items[0];
+    try expectEqual(TokenType.StringConstant, token.type);
+    try expectEqualStrings("\"hello''world\"", token.value.?);
 }
 
 test "should tokenize decimal numbers" {
@@ -836,11 +878,11 @@ test "should tokenize decimal numbers" {
 
     const buffer = "123 123.456 123e456 123.456e456 123n 123_456 123_456n .123 .123e456 +123 -123 +123.456 -123.456 +123n -123n +123_456 -123_456 +.123 -.123 +.123e456 -.123e456";
     var lexer = Lexer.init(arena.allocator(), buffer);
-    var tokens = try lexer.nextAll();
+    const tokens = try lexer.nextAll();
 
-    inline for (expected_tokens) |expected_token| {
-        const token = tokens.popFirst() orelse unreachable;
-        try expectEqual(expected_token.@"0", token.data.type);
-        try expectEqualStrings(expected_token.@"1", token.data.value.?);
+    inline for (expected_tokens, 0..) |expected_token, i| {
+        const token = tokens.items[i];
+        try expectEqual(expected_token.@"0", token.type);
+        try expectEqualStrings(expected_token.@"1", token.value.?);
     }
 }

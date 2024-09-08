@@ -1,7 +1,7 @@
 const std = @import("std");
 const Lexer = @import("lexer.zig");
 const Parser = @import("parser.zig");
-const print = @import("printer.zig").print;
+const Printer = @import("printer.zig");
 
 const fs = std.fs;
 const ArrayList = std.ArrayList;
@@ -33,9 +33,9 @@ pub fn compileBuffer(allocator: std.mem.Allocator, filename: []const u8, buffer:
     var parser = try Parser.init(allocator, buffer);
     defer parser.deinit();
 
-    const nodes = parser.parse() catch |err| {
+    _ = parser.parse() catch |err| {
         std.log.info("Error: {}", .{err});
-        std.log.info("Current token: {}", .{parser.current_token.data});
+        std.log.info("Current token: {}", .{parser.tokens.items[parser.cur_token]});
         for (parser.errors.items) |parser_error| {
             std.log.info("{s}", .{parser_error});
         }
@@ -52,7 +52,8 @@ pub fn compileBuffer(allocator: std.mem.Allocator, filename: []const u8, buffer:
         std.debug.print("Error: {s}\n", .{parser_error});
     }
 
-    const output = try print(allocator, nodes);
+    var printer = Printer.init(allocator, &parser.tokens, &parser.pool);
+    const output = try printer.print();
 
     return .{
         .file_name = try getOutputFile(allocator, filename),
