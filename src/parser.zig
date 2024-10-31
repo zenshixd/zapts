@@ -1,4 +1,5 @@
 const std = @import("std");
+const assert = std.debug.assert;
 const ArrayList = std.ArrayList;
 
 const Lexer = @import("lexer.zig");
@@ -53,8 +54,8 @@ pub fn parse(self: *Self) ParserError!AST.Node.Index {
 
     const subrange = try self.pool.listToSubrange(nodes.items);
 
-    var root_node = self.pool.nodes.items[0];
-    root_node.data = .{ .lhs = subrange.start, .rhs = subrange.end };
+    assert(self.pool.nodes.items[0].tag == .root);
+    self.pool.nodes.items[0].data = .{ .lhs = subrange.start, .rhs = subrange.end };
     return 0;
 }
 
@@ -63,7 +64,7 @@ fn token(self: Self) Token {
 }
 
 fn advance(self: *Self) Token.Index {
-    // std.debug.print("advancing from {}\n", .{t});
+    //std.debug.print("advancing from {}\n", .{self.tokens.items[self.cur_token]});
     if (self.cur_token + 1 < self.tokens.items.len) {
         self.cur_token += 1;
     }
@@ -83,18 +84,19 @@ fn peekMatch(self: Self, token_type: TokenType) bool {
 }
 
 fn consume(self: *Self, token_type: TokenType, comptime error_msg: diagnostics.DiagnosticMessage, args: anytype) ParserError!Token.Index {
-    if (self.token().type == token_type) {
-        return self.advance();
+    if (self.consumeOrNull(token_type)) |tok| {
+        return tok;
     }
 
     try self.emitError(error_msg, args);
-    // try self.emitError("Current token: {}", .{self.token()});
     return error.SyntaxError;
 }
 
 fn consumeOrNull(self: *Self, token_type: TokenType) ?Token.Index {
     if (self.token().type == token_type) {
-        return self.advance();
+        const tok = self.cur_token;
+        _ = self.advance();
+        return tok;
     }
 
     return null;
@@ -679,7 +681,7 @@ fn parseDeclaration(self: *Self) ParserError!?AST.Node.Index {
     var nodes = std.ArrayList(AST.Node.Index).init(self.arena.allocator());
 
     while (true) {
-        const identifier = try self.parseIdentifier() orelse return self.fail(diagnostics.identifier_expected, .{});
+        const identifier = try self.consume(TokenType.Identifier, diagnostics.identifier_expected, .{});
         const identifier_data_type = try self.parseOptionalDataType();
         var value: AST.Node.Index = AST.Node.Empty;
 
@@ -1630,7 +1632,7 @@ fn parseGenericType(self: *Self) ParserError!?AST.Node.Index {
 }
 
 fn parseTypeIdentifier(self: *Self) ParserError!?AST.Node.Index {
-    const identifier = self.consumeOrNull(TokenType.Identifier) orelse try self.parseKeywordAsIdentifier() orelse return null;
+    const identifier = self.consumeOrNull(TokenType.Identifier) orelse return null;
 
     const type_map = .{
         .{ "number", .number },
@@ -1667,10 +1669,13 @@ pub fn needsSemicolon(pool: *AST.Pool, node: AST.Node.Index) bool {
         .block,
         .func_decl,
         .@"for",
+        .for_in,
+        .for_of,
         .@"while",
         .do_while,
         .@"if",
         .class_decl,
+        .class_method,
         .interface_decl,
         .object_method,
         => false,

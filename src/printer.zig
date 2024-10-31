@@ -2,10 +2,15 @@ const std = @import("std");
 const builtin = @import("builtin");
 const AST = @import("ast.zig");
 const Token = @import("consts.zig").Token;
+const newline = @import("consts.zig").newline;
 const needsSemicolon = @import("parser.zig").needsSemicolon;
 
 const assert = std.debug.assert;
-const sep_str = std.fs.path.sep_str;
+
+pub const OutputFiles = struct {
+    filename: []const u8,
+    buffer: []const u8,
+};
 
 const Printer = @This();
 
@@ -18,24 +23,25 @@ const WorkerItem = union(enum) {
     indent: void,
 
     pub fn format(self: WorkerItem, comptime _: []const u8, _: anytype, writer: anytype) !void {
-        try self.queueText("WorkerItem{");
+        try writer.writeAll("WorkerItem{");
         switch (self) {
             .text => {
-                try self.queueText("text: ");
-                try self.queueText(self.text);
+                try writer.writeAll("text: ");
+                try writer.writeAll(self.text);
+            },
+            .token => {
+                try writer.writeAll("token: ");
+                try std.fmt.format(writer, "{d}", .{self.token});
             },
             .node => {
-                try self.queueText("node: ");
-                try self.node.format("", .{}, writer);
+                try writer.writeAll("node: ");
+                try std.fmt.format(writer, "{d}", .{self.node});
             },
-            .indent_up => {
-                try self.queueText("indent_up");
-            },
-            .indent_down => {
-                try self.queueText("indent_down");
-            },
+            .indent => try writer.writeAll("indent"),
+            .indent_up => try writer.writeAll("indent_up"),
+            .indent_down => try writer.writeAll("indent_down"),
         }
-        try self.queueText("}\n");
+        try writer.writeAll("}\n");
     }
 };
 
@@ -86,6 +92,7 @@ const WorkerQueue = struct {
     }
 };
 
+filename: []const u8,
 tokens: *std.ArrayList(Token),
 pool: *AST.Pool,
 gpa: std.mem.Allocator,
@@ -95,8 +102,9 @@ queue: WorkerQueue,
 local_queue: WorkerQueue,
 indent: usize = 0,
 
-pub fn init(allocator: std.mem.Allocator, tokens: *std.ArrayList(Token), pool: *AST.Pool) Printer {
+pub fn init(allocator: std.mem.Allocator, filename: []const u8, tokens: *std.ArrayList(Token), pool: *AST.Pool) Printer {
     return .{
+        .filename = filename,
         .pool = pool,
         .gpa = allocator,
         .tokens = tokens,
@@ -112,24 +120,30 @@ pub fn deinit(self: *Printer) void {
     self.output.deinit();
 }
 
-pub fn print(self: *Printer) ![]const u8 {
-    const root_node = self.pool.nodes.items[0];
-    const root_items = self.pool.extra.items[root_node.data.lhs..root_node.data.rhs];
-    for (root_items) |node| {
-        try self.queue.append(.{ .node = node });
+pub fn print(self: *Printer) !OutputFiles {
+    const root_stmts = self.pool.getNode(0);
+    for (root_stmts.root) |stmt| {
+        try self.queue.append(.{ .node = stmt });
+        if (needsSemicolon(self.pool, stmt)) {
+            try self.queue.append(.{ .text = ";" });
+        }
+        try self.queue.append(.{ .text = newline });
     }
 
     while (self.queue.popFirst()) |item| {
         try self.processWorkerItem(item.data);
     }
 
-    return self.output.items;
+    return OutputFiles{
+        .filename = try getOutputFile(self.gpa, self.filename),
+        .buffer = self.output.items,
+    };
 }
 
 fn processWorkerItem(self: *Printer, item: WorkerItem) !void {
     switch (item) {
         .text => |text| try self.output.appendSlice(text),
-        .token => |token| try self.output.appendSlice(self.tokens.items[token].value.?),
+        .token => |token| try self.output.appendSlice(self.getTokenValue(token)),
         .node => |node| try self.printNode(node),
         .indent_up => self.indent += 1,
         .indent_down => self.indent -= 1,
@@ -139,6 +153,15 @@ fn processWorkerItem(self: *Printer, item: WorkerItem) !void {
             }
         },
     }
+}
+
+inline fn getTokenValue(self: *Printer, token: Token.Index) []const u8 {
+    if (self.tokens.items[token].value) |value| {
+        return value;
+    }
+
+    std.debug.print("failed to retrieve value: {}, token idx: {d}\n", .{ self.tokens.items[token], token });
+    unreachable;
 }
 
 inline fn queueText(self: *Printer, text: []const u8) !void {
@@ -156,10 +179,8 @@ inline fn queueToken(self: *Printer, token: Token.Index) !void {
 fn printNode(self: *Printer, node: AST.Node.Index) anyerror!void {
     const full_node = self.pool.getNode(node);
     switch (full_node) {
-        .root => |stmts| {
-            for (stmts) |stmt| {
-                try self.printStatementNL(stmt);
-            }
+        .root => {
+            unreachable;
         },
         .import => |import| {
             try self.queueText("import ");
@@ -217,10 +238,10 @@ fn printNode(self: *Printer, node: AST.Node.Index) anyerror!void {
                 .from => |from| {
                     try self.queueText("{");
                     if (from.bindings.len > 0) {
-                        try self.queueNode(from.bindings[0]);
+                        try self.queueToken(from.bindings[0]);
                         for (1..from.bindings.len) |i| {
                             try self.queueText(", ");
-                            try self.queueNode(from.bindings[i]);
+                            try self.queueToken(from.bindings[i]);
                         }
                     }
                     try self.queueText("}");
@@ -256,8 +277,10 @@ fn printNode(self: *Printer, node: AST.Node.Index) anyerror!void {
         },
         .decl_binding => |decl| {
             try self.queueToken(decl.name);
-            try self.queueText(" = ");
-            try self.queueNode(decl.value);
+            if (decl.value != AST.Node.Empty) {
+                try self.queueText(" = ");
+                try self.queueNode(decl.value);
+            }
         },
 
         .function_decl, .function_expr => |func_decl| {
@@ -291,7 +314,9 @@ fn printNode(self: *Printer, node: AST.Node.Index) anyerror!void {
                 try self.queueText("async ");
             }
 
-            if (arrow_func.params.len == 1) {
+            if (arrow_func.params.len == 0) {
+                try self.queueText("()");
+            } else if (arrow_func.params.len == 1) {
                 try self.queueNode(arrow_func.params[0]);
             } else if (arrow_func.params.len > 1) {
                 try self.queueText("(");
@@ -306,13 +331,13 @@ fn printNode(self: *Printer, node: AST.Node.Index) anyerror!void {
             try self.queueNode(arrow_func.body);
         },
         .function_param => |param| {
-            try self.queueNode(param.node);
+            try self.queueToken(param.node);
         },
 
         .class => |class_decl| {
             try self.queueText("class ");
             if (class_decl.name != Token.Empty) {
-                try self.queueNode(class_decl.name);
+                try self.queueToken(class_decl.name);
                 try self.queueText(" ");
             }
             if (class_decl.super_class != Token.Empty) {
@@ -321,7 +346,7 @@ fn printNode(self: *Printer, node: AST.Node.Index) anyerror!void {
                 try self.queueText(" ");
             }
 
-            try self.queueText("{" ++ sep_str);
+            try self.queueText("{" ++ newline);
             try self.local_queue.append(.{ .indent_up = {} });
             for (0..class_decl.body.len) |i| {
                 const field = class_decl.body[i];
@@ -330,7 +355,7 @@ fn printNode(self: *Printer, node: AST.Node.Index) anyerror!void {
                 if (needsSemicolon(self.pool, field)) {
                     try self.queueText(";");
                 }
-                try self.queueText(sep_str);
+                try self.queueText(newline);
             }
             try self.local_queue.append(.{ .indent_down = {} });
             try self.queueText("}");
@@ -343,7 +368,7 @@ fn printNode(self: *Printer, node: AST.Node.Index) anyerror!void {
                 return;
             }
 
-            try self.queueText(sep_str);
+            try self.queueText(newline);
             try self.local_queue.append(.{ .indent_up = {} });
             for (0..static_block.len) |i| {
                 try self.local_queue.append(.{ .indent = {} });
@@ -351,7 +376,7 @@ fn printNode(self: *Printer, node: AST.Node.Index) anyerror!void {
                 if (needsSemicolon(self.pool, static_block[i])) {
                     try self.queueText(";");
                 }
-                try self.queueText(sep_str);
+                try self.queueText(newline);
             }
             try self.local_queue.append(.{ .indent_down = {} });
             try self.queueText("}");
@@ -410,7 +435,7 @@ fn printNode(self: *Printer, node: AST.Node.Index) anyerror!void {
             try self.queueText(") ");
             try self.queueNode(if_node.body);
             if (if_node.@"else" != AST.Node.Empty) {
-                try self.queueText(sep_str ++ "else ");
+                try self.queueText(newline ++ "else ");
                 try self.queueNode(if_node.@"else");
             }
         },
@@ -422,7 +447,7 @@ fn printNode(self: *Printer, node: AST.Node.Index) anyerror!void {
             try self.local_queue.append(.{ .indent_up = {} });
 
             for (switch_node.cases) |case| {
-                try self.queueText(sep_str);
+                try self.queueText(newline);
                 try self.queueNode(case);
             }
 
@@ -443,7 +468,7 @@ fn printNode(self: *Printer, node: AST.Node.Index) anyerror!void {
                 .case => |case| {
                     try self.queueText("case ");
                     try self.queueNode(case.expr);
-                    try self.queueText(": {" ++ sep_str);
+                    try self.queueText(": {" ++ newline);
                     try self.local_queue.append(.{ .indent_up = {} });
                     for (case.body) |stmt| {
                         try self.printStatementNL(stmt);
@@ -517,7 +542,7 @@ fn printNode(self: *Printer, node: AST.Node.Index) anyerror!void {
             try self.queueText("{");
             try self.local_queue.append(.{ .indent_up = {} });
             if (block.len > 0) {
-                try self.queueText(sep_str);
+                try self.queueText(newline);
                 try self.printStatementNL(block[0]);
                 for (block[1..]) |stmt| {
                     try self.printStatementNL(stmt);
@@ -675,16 +700,16 @@ fn printNode(self: *Printer, node: AST.Node.Index) anyerror!void {
             try self.queueText("{");
             try self.local_queue.append(.{ .indent_up = {} });
             if (literal.len > 0) {
-                try self.queueText(sep_str);
+                try self.queueText(newline);
                 try self.local_queue.append(.{ .indent = {} });
                 try self.queueNode(literal[0]);
                 for (1..literal.len) |i| {
                     try self.queueText(",");
-                    try self.queueText(sep_str);
+                    try self.queueText(newline);
                     try self.local_queue.append(.{ .indent = {} });
                     try self.queueNode(literal[i]);
                 }
-                try self.queueText(sep_str);
+                try self.queueText(newline);
             }
             try self.local_queue.append(.{ .indent_down = {} });
             try self.queueText("}");
@@ -738,11 +763,12 @@ fn printStatement(self: *Printer, node: AST.Node.Index) !void {
 
 fn printStatementNL(self: *Printer, node: AST.Node.Index) !void {
     try self.printStatement(node);
-    try self.queueText(sep_str);
+    try self.queueText(newline);
 }
 
 fn printDecls(self: *Printer, keyword: []const u8, bindings: []AST.Node.Index) !void {
     try self.queueText(keyword);
+    try self.queueText(" ");
     assert(bindings.len > 0);
     try self.queueNode(bindings[0]);
     for (bindings[1..]) |binding| {
@@ -798,4 +824,27 @@ fn printBinaryOperator(node: AST.Node) []const u8 {
         .optional_property_access => "?.",
         else => unreachable,
     };
+}
+
+pub fn getOutputFile(allocator: std.mem.Allocator, filename: []const u8) ![]const u8 {
+    if (!std.mem.endsWith(u8, filename, ".ts")) {
+        return allocator.dupe(u8, filename);
+    }
+
+    const extPos = std.mem.lastIndexOf(u8, filename, ".ts") orelse return filename;
+    const buffer = try allocator.alloc(
+        u8,
+        std.mem.replacementSize(u8, filename, ".ts", ".js"),
+    );
+    @memcpy(buffer.ptr, filename[0..extPos]);
+    @memcpy(buffer.ptr + extPos, ".js");
+    return buffer;
+}
+
+test "getOutputFile" {
+    const allocator = std.testing.allocator;
+    const output_filename = try getOutputFile(allocator, "test.ts");
+    defer allocator.free(output_filename);
+
+    try std.testing.expectEqualStrings("test.js", output_filename);
 }

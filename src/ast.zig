@@ -178,68 +178,6 @@ pub const Raw = struct {
         lhs: Node.Index = 0,
         rhs: Node.Index = 0,
     };
-
-    fn repeatTab(writer: anytype, level: usize) !void {
-        for (0..level) |_| {
-            try writer.writeAll("\t");
-        }
-    }
-
-    pub fn format(self: *const Raw, comptime _: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        const level = options.width orelse 1;
-        try writer.writeAll("ASTNode(.");
-        try writer.writeAll(@tagName(self.tag));
-        //try writer.writeAll(", .type = ");
-        //try writer.writeAll(@tagName(self.data_type.*));
-        try writer.writeAll(", .");
-        try writer.writeAll(@tagName(self.data));
-        switch (self.data) {
-            .nodes => |nodes| {
-                try writer.writeAll(" = [\n");
-                for (nodes) |node| {
-                    try repeatTab(writer, level);
-                    try writer.writeAll(".node = ");
-                    try node.format("", .{ .width = level + 1 }, writer);
-                    try writer.writeAll(",\n");
-                }
-                try repeatTab(writer, level - 1);
-                try writer.writeAll("]");
-            },
-            .binary => |binary| {
-                try writer.writeAll(" = {\n");
-                try repeatTab(writer, level);
-                try writer.writeAll(".left = ");
-                try binary.left.format("", .{ .width = level + 1 }, writer);
-                try writer.writeAll(",\n");
-                try repeatTab(writer, level);
-                try writer.writeAll(".right = ");
-                try binary.right.format("", .{ .width = level + 1 }, writer);
-                try writer.writeAll("\n");
-                try repeatTab(writer, level - 1);
-                try writer.writeAll("}");
-            },
-            .node => |node| {
-                try writer.writeAll(" = {\n");
-                try repeatTab(writer, level);
-                try node.format("", .{ .width = level + 1 }, writer);
-                try writer.writeAll("\n");
-                try repeatTab(writer, level - 1);
-                try writer.writeAll("}");
-            },
-            .literal => |literal| {
-                try writer.writeAll(" = ");
-                try writer.writeAll(literal);
-            },
-            .symbol => |symbol| {
-                try writer.writeAll(" = ");
-                try writer.writeAll(symbol.name);
-            },
-            .none => {
-                try writer.writeAll(" = none");
-            },
-        }
-        try writer.writeAll(")");
-    }
 };
 
 pub const ClassMemberFlags = struct {
@@ -1836,6 +1774,24 @@ pub fn main() void {
     std.debug.print("Key: {d} {d}\n", .{ @sizeOf(Node), @sizeOf(Raw) });
     std.debug.print(".class: {d}\n", .{@intFromEnum(Node.class)});
     std.debug.print("typeInfo: {d}\n", .{slice_ptr});
+}
+
+test "Pool root" {
+    var pool = Pool.init(std.testing.allocator);
+    defer pool.deinit();
+
+    const root_node = 0;
+    var stmts = [_]Node.Index{ 1, 2, 3, 4, 5 };
+    const range = pool.listToSubrange(&stmts) catch unreachable;
+    pool.nodes.items[root_node].data = .{ .lhs = range.start, .rhs = range.end };
+
+    try expectEqual(Raw{
+        .tag = .root,
+        .main_token = 0,
+        .data = .{ .lhs = 0, .rhs = @intCast(stmts.len) },
+    }, pool.getRawNode(root_node));
+    try expectEqualDeep(Node{ .root = &stmts }, pool.getNode(root_node));
+    try expectEqual(5, pool.extra.items.len);
 }
 
 test "Pool imports" {

@@ -1,5 +1,11 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
+//pub const newline = switch (builtin.target.os.tag) {
+//    .windows => "\r\n",
+//    else => "\n",
+//};
+pub const newline = "\n";
 pub const PUNCTUATION_CHARS = ".,:;()[]'\"{}";
 pub const OPERATOR_CHARS = "<>?+-=*|&!%/\\";
 pub const WHITESPACE = " \t\r\n";

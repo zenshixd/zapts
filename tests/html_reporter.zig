@@ -1,5 +1,5 @@
 const std = @import("std");
-const CaseFile = @import("./tests_runner.zig").CaseFile;
+const CaseFile = @import("./runner.zig").CaseFile;
 
 const report_file_path = "report/report.html";
 const html_header =

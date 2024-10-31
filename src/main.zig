@@ -24,12 +24,15 @@ pub fn main() !void {
 
     const filename = args[1];
 
-    const result = try compile(allocator, filename);
+    const cwd = try std.process.getCwdAlloc(allocator);
+    const result = try compile(.{
+        .gpa = allocator,
+        .cwd = cwd,
+        .filenames = &[_][]const u8{filename},
+    });
 
-    defer allocator.free(result.file_name);
-    defer allocator.free(result.output);
-
-    std.log.info("Output:\n{s}", .{result.output});
+    std.log.info("Output file:\n{s}\n", .{result[0].outputFiles[0].filename});
+    std.log.info("Output:\n{s}", .{result[0].outputFiles[0].buffer});
 }
 test {
     _ = @import("compile.zig");

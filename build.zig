@@ -8,10 +8,19 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    const zapts_module = b.addModule("zapts", .{
+        .root_source_file = b.path("src/compile.zig"),
+        .imports = &.{
+            .{
+                .name = "jdz_allocator",
+                .module = jdz_dep.module("jdz_allocator"),
+            },
+        },
+    });
 
     const exe = b.addExecutable(.{
         .name = "zapts",
-        .root_source_file = b.path("src/main.zig"),
+        .root_source_file = zapts_module.root_source_file,
         .target = target,
         .optimize = optimize,
     });
@@ -42,12 +51,13 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_exe_unit_tests.step);
 
     const compile_tests = b.addTest(.{
-        .root_source_file = b.path("src/main.zig"),
+        .root_source_file = b.path("tests/runner.zig"),
         .target = target,
         .optimize = optimize,
-        .test_runner = b.path("src/tests_runner.zig"),
+        .test_runner = b.path("tests/runner.zig"),
     });
     compile_tests.root_module.addImport("jdz_allocator", jdz_dep.module("jdz_allocator"));
+    compile_tests.root_module.addImport("zapts", zapts_module);
 
     const run_compile_tests = b.addRunArtifact(compile_tests);
 

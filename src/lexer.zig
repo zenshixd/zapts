@@ -839,11 +839,11 @@ test "should tokenize strings" {
     try expectEqual(TokenType.StringConstant, token.type);
     try expectEqualStrings("'hello'", token.value.?);
 
-    token = tokens.items[0];
+    token = tokens.items[1];
     try expectEqual(TokenType.StringConstant, token.type);
     try expectEqualStrings("\"hello\"", token.value.?);
 
-    token = tokens.items[0];
+    token = tokens.items[2];
     try expectEqual(TokenType.StringConstant, token.type);
     try expectEqualStrings("\"hello''world\"", token.value.?);
 }

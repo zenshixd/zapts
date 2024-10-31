@@ -2,31 +2,48 @@ const std = @import("std");
 const Lexer = @import("lexer.zig");
 const Parser = @import("parser.zig");
 const Printer = @import("printer.zig");
+const OutputFiles = @import("printer.zig").OutputFiles;
 
 const fs = std.fs;
 const ArrayList = std.ArrayList;
 
-// 10 MB ?
-pub const MAX_FILE_SIZE = 10 * 1024 * 1024;
+// ~4 GB max file size
+pub const MAX_FILE_SIZE = std.math.maxInt(u32);
 
-pub const CompileResult = struct {
-    file_name: []const u8,
-    source: []const u8,
-    output: []const u8,
+pub const CompileOptions = struct {
+    gpa: std.mem.Allocator,
+    cwd: []const u8,
+    filenames: []const []const u8,
 };
 
-pub fn compile(allocator: std.mem.Allocator, filename: []const u8) !CompileResult {
-    fs.cwd().access(filename, .{ .mode = .read_only }) catch |err| {
-        std.log.info("Access error {}!", .{err});
-        return err;
-    };
+pub const CompileResult = struct {
+    source_filename: []const u8,
+    source_buffer: []const u8,
+    outputFiles: []OutputFiles,
+};
 
-    var file = try fs.cwd().openFile(filename, .{ .mode = .read_only });
-    defer file.close();
+pub fn compile(opts: CompileOptions) ![]CompileResult {
+    var cwd_dir = try fs.openDirAbsolute(opts.cwd, .{});
+    defer cwd_dir.close();
 
-    const buffer = try file.readToEndAlloc(allocator, MAX_FILE_SIZE);
+    var result = std.ArrayList(CompileResult).init(opts.gpa);
 
-    return try compileBuffer(allocator, filename, buffer);
+    for (opts.filenames) |filename| {
+        fs.cwd().access(filename, .{ .mode = .read_only }) catch |err| {
+            std.log.info("Access error {}!", .{err});
+            return err;
+        };
+
+        var file = try cwd_dir.openFile(filename, .{ .mode = .read_only });
+        defer file.close();
+
+        const buffer = try file.readToEndAlloc(opts.gpa, MAX_FILE_SIZE);
+        const output = try compileBuffer(opts.gpa, filename, buffer);
+
+        try result.append(output);
+    }
+
+    return result.items;
 }
 
 pub fn compileBuffer(allocator: std.mem.Allocator, filename: []const u8, buffer: []const u8) !CompileResult {
@@ -42,45 +59,17 @@ pub fn compileBuffer(allocator: std.mem.Allocator, filename: []const u8, buffer:
         return err;
     };
 
-    // var next = nodes.first;
-    // while (next) |node| {
-    //     std.debug.print("{}\n", .{node});
-    //     next = node.next;
-    // }
-
     for (parser.errors.items) |parser_error| {
         std.debug.print("Error: {s}\n", .{parser_error});
     }
 
-    var printer = Printer.init(allocator, &parser.tokens, &parser.pool);
+    var printer = Printer.init(allocator, filename, &parser.tokens, &parser.pool);
+
     const output = try printer.print();
 
-    return .{
-        .file_name = try getOutputFile(allocator, filename),
-        .source = buffer,
-        .output = output,
+    return CompileResult{
+        .source_filename = filename,
+        .source_buffer = buffer,
+        .outputFiles = try allocator.dupe(OutputFiles, &.{output}),
     };
-}
-
-fn getOutputFile(allocator: std.mem.Allocator, filename: []const u8) ![]const u8 {
-    if (!std.mem.endsWith(u8, filename, ".ts")) {
-        return allocator.dupe(u8, filename);
-    }
-
-    const extPos = std.mem.lastIndexOf(u8, filename, ".ts") orelse return filename;
-    const buffer = try allocator.alloc(
-        u8,
-        std.mem.replacementSize(u8, filename, ".ts", ".js"),
-    );
-    @memcpy(buffer.ptr, filename[0..extPos]);
-    @memcpy(buffer.ptr + extPos, ".js");
-    return buffer;
-}
-
-test "getOutputFile" {
-    const allocator = std.testing.allocator;
-    const output_filename = try getOutputFile(allocator, "test.ts");
-    defer allocator.free(output_filename);
-
-    try std.testing.expectEqualStrings("test.js", output_filename);
 }
