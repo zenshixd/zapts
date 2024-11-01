@@ -431,10 +431,6 @@ fn getRefTestCases(alloc: std.mem.Allocator, filter: ?[]const u8) ![]TestRunner.
     return result.toOwnedSlice();
 }
 
-fn fixSlashes(buffer: []const u8) []const u8 {
-    return std.mem.replaceScalar(u8, buffer, '\\', '/');
-}
-
 fn writeAndFixNewlines(writer: anytype, buffer: []const u8) !void {
     for (0..buffer.len) |i| {
         if (should_replace_newline(buffer, i)) {

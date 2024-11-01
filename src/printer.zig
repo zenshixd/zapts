@@ -3,7 +3,10 @@ const builtin = @import("builtin");
 const AST = @import("ast.zig");
 const Token = @import("consts.zig").Token;
 const newline = @import("consts.zig").newline;
-const needsSemicolon = @import("parser.zig").needsSemicolon;
+
+const Lexer = @import("lexer.zig");
+const Parser = @import("parser.zig");
+const needsSemicolon = Parser.needsSemicolon;
 
 const assert = std.debug.assert;
 
@@ -93,8 +96,8 @@ const WorkerQueue = struct {
 };
 
 filename: []const u8,
-tokens: *std.ArrayList(Token),
-pool: *AST.Pool,
+lexer: Lexer,
+pool: AST.Pool,
 gpa: std.mem.Allocator,
 arena: std.heap.ArenaAllocator,
 output: std.ArrayList(u8),
@@ -102,12 +105,12 @@ queue: WorkerQueue,
 local_queue: WorkerQueue,
 indent: usize = 0,
 
-pub fn init(allocator: std.mem.Allocator, filename: []const u8, tokens: *std.ArrayList(Token), pool: *AST.Pool) Printer {
+pub fn init(allocator: std.mem.Allocator, filename: []const u8, parser: *Parser) Printer {
     return .{
         .filename = filename,
-        .pool = pool,
         .gpa = allocator,
-        .tokens = tokens,
+        .pool = parser.pool,
+        .lexer = parser.lexer,
         .arena = std.heap.ArenaAllocator.init(allocator),
         .output = std.ArrayList(u8).init(allocator),
         .queue = .{ .allocator = allocator },
@@ -156,12 +159,11 @@ fn processWorkerItem(self: *Printer, item: WorkerItem) !void {
 }
 
 inline fn getTokenValue(self: *Printer, token: Token.Index) []const u8 {
-    if (self.tokens.items[token].value) |value| {
+    if (self.lexer.getTokenValue(token)) |value| {
         return value;
     }
 
-    std.debug.print("failed to retrieve value: {}, token idx: {d}\n", .{ self.tokens.items[token], token });
-    unreachable;
+    return self.lexer.getToken(token).lexeme();
 }
 
 inline fn queueText(self: *Printer, text: []const u8) !void {

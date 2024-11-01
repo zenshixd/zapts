@@ -42,6 +42,8 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
+        .test_runner = b.path("tests/unit_tests_runner.zig"),
+        .filter = b.option([]const u8, "filter", "Filter tests to run"),
     });
     exe_unit_tests.root_module.addImport("jdz_allocator", jdz_dep.module("jdz_allocator"));
 
@@ -51,10 +53,10 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_exe_unit_tests.step);
 
     const compile_tests = b.addTest(.{
-        .root_source_file = b.path("tests/runner.zig"),
+        .root_source_file = b.path("tests/e2e_tests_runner.zig"),
         .target = target,
         .optimize = optimize,
-        .test_runner = b.path("tests/runner.zig"),
+        .test_runner = b.path("tests/e2e_tests_runner.zig"),
     });
     compile_tests.root_module.addImport("jdz_allocator", jdz_dep.module("jdz_allocator"));
     compile_tests.root_module.addImport("zapts", zapts_module);

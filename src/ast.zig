@@ -178,6 +178,15 @@ pub const Raw = struct {
         lhs: Node.Index = 0,
         rhs: Node.Index = 0,
     };
+
+    pub fn format(self: Raw, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        try std.fmt.format(writer, "AST.Raw{{.tag = .{s}, .main_token = {d}, .data.lhs = {d}, .data.rhs = {d}}}", .{
+            @tagName(self.tag),
+            self.main_token,
+            self.data.lhs,
+            self.data.rhs,
+        });
+    }
 };
 
 pub const ClassMemberFlags = struct {
@@ -1209,7 +1218,7 @@ pub const Pool = struct {
         }
     }
 
-    pub fn getNode(self: *Pool, index: Node.Index) Node {
+    pub fn getNode(self: Pool, index: Node.Index) Node {
         const node = self.nodes.items[index];
 
         switch (node.tag) {
@@ -1721,7 +1730,7 @@ pub const Pool = struct {
         }
     }
 
-    pub fn getRawNode(self: *Pool, index: Node.Index) Raw {
+    pub fn getRawNode(self: Pool, index: Node.Index) Raw {
         return self.nodes.items[index];
     }
 
@@ -1731,7 +1740,7 @@ pub const Pool = struct {
         return @intCast(index);
     }
 
-    pub fn getExtra(self: *Pool, ty: type, index: Node.Index) ty {
+    pub fn getExtra(self: Pool, ty: type, index: Node.Index) ty {
         const fields = std.meta.fields(ty);
         var result: [fields.len]Node.Index = undefined;
         @memcpy(&result, self.extra.items[index .. index + fields.len]);

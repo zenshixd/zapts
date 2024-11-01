@@ -52,7 +52,7 @@ pub fn compileBuffer(allocator: std.mem.Allocator, filename: []const u8, buffer:
 
     _ = parser.parse() catch |err| {
         std.log.info("Error: {}", .{err});
-        std.log.info("Current token: {}", .{parser.tokens.items[parser.cur_token]});
+        std.log.info("Current token: {}", .{parser.token()});
         for (parser.errors.items) |parser_error| {
             std.log.info("{s}", .{parser_error});
         }
@@ -63,7 +63,7 @@ pub fn compileBuffer(allocator: std.mem.Allocator, filename: []const u8, buffer:
         std.debug.print("Error: {s}\n", .{parser_error});
     }
 
-    var printer = Printer.init(allocator, filename, &parser.tokens, &parser.pool);
+    var printer = Printer.init(allocator, filename, &parser);
 
     const output = try printer.print();
 

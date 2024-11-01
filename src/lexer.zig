@@ -24,446 +24,454 @@ const Lexer = @This();
 allocator: Allocator,
 buffer: []const u8,
 index: u32 = 0,
+toks: std.ArrayList(Token),
+strings: std.ArrayList([]const u8),
 
 pub fn init(allocator: Allocator, buffer: []const u8) Self {
-    return .{ .allocator = allocator, .buffer = buffer };
-}
-
-fn newToken(self: *Self, token_type: TokenType) Token {
-    return Token{
-        .type = token_type,
-        .pos = self.index,
-        .value = null,
+    return .{
+        .allocator = allocator,
+        .buffer = buffer,
+        .toks = std.ArrayList(Token).init(allocator),
+        .strings = std.ArrayList([]const u8).init(allocator),
     };
 }
 
-fn newTokenWithValue(self: *Self, token_type: TokenType, value: []const u8) Token {
-    return Token{
-        .type = token_type,
-        .pos = self.index,
-        .value = value,
-    };
+pub fn deinit(self: *Self) void {
+    self.toks.deinit();
+    self.strings.deinit();
 }
 
-pub fn next(self: *Self, current_char: u8) !Token {
-    switch (current_char) {
-        '\n' => {
-            return self.newToken(TokenType.Whitespace);
-        },
-        '\r', ' ', '\t' => {
-            return self.newToken(TokenType.Whitespace);
-        },
-        '<' => {
-            var next_char = try self.advance();
-            if (next_char == '=') {
-                return self.newToken(TokenType.LessThanEqual);
-            } else if (next_char == '<') {
-                next_char = try self.advance();
+pub fn tokens(self: Self) []Token {
+    return self.toks.items;
+}
 
+pub fn getToken(self: Self, tok_idx: usize) Token {
+    return self.toks.items[tok_idx];
+}
+
+pub fn getTokenValue(self: Self, tok_idx: usize) ?[]const u8 {
+    const tok = self.getToken(tok_idx);
+    if (tok.string_idx) |string_idx| {
+        return self.strings.items[string_idx];
+    }
+
+    return null;
+}
+
+fn newToken(self: *Self, token_type: TokenType) !void {
+    try self.toks.append(Token{
+        .type = token_type,
+        .pos = self.index,
+        .string_idx = null,
+    });
+}
+
+fn newTokenWithValue(self: *Self, token_type: TokenType, value: []const u8) !void {
+    if (token_type == .LineComment or token_type == .MultilineComment) {
+        return;
+    }
+
+    const string_idx = self.strings.items.len;
+    try self.strings.append(value);
+    try self.toks.append(Token{
+        .type = token_type,
+        .pos = self.index,
+        .string_idx = @intCast(string_idx),
+    });
+}
+
+pub fn tokenize(self: *Self) !void {
+    if (self.buffer.len == 0) {
+        try self.newToken(TokenType.Eof);
+        return;
+    }
+
+    while (true) : (self.index += 1) {
+        if (self.index >= self.buffer.len) {
+            try self.newToken(TokenType.Eof);
+            return;
+        }
+
+        const current_char = self.buffer[self.index];
+        switch (current_char) {
+            '\n', '\r', ' ', '\t' => {},
+            '<' => {
+                var next_char = try self.advance();
                 if (next_char == '=') {
-                    return self.newToken(TokenType.LessThanLessThanEqual);
-                } else {
-                    try self.rewind(-1);
-                    return self.newToken(TokenType.LessThanLessThan);
-                }
-            } else {
-                try self.rewind(-1);
-                return self.newToken(TokenType.LessThan);
-            }
-        },
-        '>' => {
-            var next_char = try self.advance();
-            if (next_char == '=') {
-                return self.newToken(TokenType.GreaterThanEqual);
-            } else if (next_char == '>') {
-                next_char = try self.advance();
-
-                if (next_char == '>') {
+                    try self.newToken(TokenType.LessThanEqual);
+                } else if (next_char == '<') {
                     next_char = try self.advance();
 
                     if (next_char == '=') {
-                        return self.newToken(TokenType.GreaterThanGreaterThanGreaterThanEqual);
+                        try self.newToken(TokenType.LessThanLessThanEqual);
                     } else {
                         try self.rewind(-1);
-                        return self.newToken(TokenType.GreaterThanGreaterThanGreaterThan);
+                        try self.newToken(TokenType.LessThanLessThan);
+                    }
+                } else {
+                    try self.rewind(-1);
+                    try self.newToken(TokenType.LessThan);
+                }
+            },
+            '>' => {
+                var next_char = try self.advance();
+                if (next_char == '=') {
+                    try self.newToken(TokenType.GreaterThanEqual);
+                } else if (next_char == '>') {
+                    next_char = try self.advance();
+
+                    if (next_char == '>') {
+                        next_char = try self.advance();
+
+                        if (next_char == '=') {
+                            try self.newToken(TokenType.GreaterThanGreaterThanGreaterThanEqual);
+                        } else {
+                            try self.rewind(-1);
+                            try self.newToken(TokenType.GreaterThanGreaterThanGreaterThan);
+                        }
+                    } else if (next_char == '=') {
+                        try self.newToken(TokenType.GreaterThanGreaterThanEqual);
+                    } else {
+                        try self.rewind(-1);
+                        try self.newToken(TokenType.GreaterThanGreaterThan);
+                    }
+                } else {
+                    try self.rewind(-1);
+                    try self.newToken(TokenType.GreaterThan);
+                }
+            },
+            '!' => {
+                var next_char = try self.advance();
+                if (next_char == '=') {
+                    next_char = try self.advance();
+
+                    if (next_char == '=') {
+                        try self.newToken(TokenType.ExclamationMarkEqualEqual);
+                    } else {
+                        try self.newToken(TokenType.ExclamationMarkEqual);
+                    }
+                } else {
+                    try self.rewind(-1);
+                    try self.newToken(TokenType.ExclamationMark);
+                }
+            },
+            '/' => {
+                var next_char = try self.advance();
+                if (next_char == '=') {
+                    try self.newToken(TokenType.SlashEqual);
+                } else if (next_char == '/') {
+                    const start_index = self.index - 1;
+                    var end_index: u32 = start_index;
+
+                    while (true) {
+                        next_char = try self.maybe_advance() orelse break;
+                        if (next_char == '\n' or next_char == '\r') {
+                            break;
+                        }
+                        end_index += 1;
+                    }
+
+                    try self.newTokenWithValue(TokenType.LineComment, self.buffer[start_index..end_index]);
+                } else if (next_char == '*') {
+                    const start_index = self.index - 1;
+                    var end_index: u32 = start_index;
+
+                    while (true) {
+                        next_char = try self.maybe_advance() orelse break;
+
+                        if (next_char == '*') {
+                            const one_more_char = try self.maybe_advance() orelse break;
+
+                            if (one_more_char == '/') {
+                                break;
+                            } else {
+                                end_index += 2;
+                            }
+                        } else {
+                            end_index += 1;
+                        }
+                    }
+
+                    try self.newTokenWithValue(TokenType.MultilineComment, self.buffer[start_index..end_index]);
+                } else {
+                    try self.rewind(-1);
+                    try self.newToken(TokenType.Slash);
+                }
+            },
+            '&' => {
+                var next_char = try self.advance();
+                if (next_char == '&') {
+                    next_char = try self.advance();
+                    if (next_char == '=') {
+                        try self.newToken(TokenType.AmpersandAmpersandEqual);
+                    } else {
+                        try self.rewind(-1);
+                        try self.newToken(TokenType.AmpersandAmpersand);
                     }
                 } else if (next_char == '=') {
-                    return self.newToken(TokenType.GreaterThanGreaterThanEqual);
+                    try self.newToken(TokenType.AmpersandEqual);
                 } else {
                     try self.rewind(-1);
-                    return self.newToken(TokenType.GreaterThanGreaterThan);
+                    try self.newToken(TokenType.Ampersand);
                 }
-            } else {
-                try self.rewind(-1);
-                return self.newToken(TokenType.GreaterThan);
-            }
-        },
-        '!' => {
-            var next_char = try self.advance();
-            if (next_char == '=') {
-                next_char = try self.advance();
-
+            },
+            '^' => {
+                const next_char = try self.advance();
                 if (next_char == '=') {
-                    return self.newToken(TokenType.ExclamationMarkEqualEqual);
+                    try self.newToken(TokenType.CaretEqual);
                 } else {
-                    return self.newToken(TokenType.ExclamationMarkEqual);
+                    try self.rewind(-1);
+                    try self.newToken(TokenType.Caret);
                 }
-            } else {
-                try self.rewind(-1);
-                return self.newToken(TokenType.ExclamationMark);
-            }
-        },
-        '/' => {
-            var next_char = try self.advance();
-            if (next_char == '=') {
-                return self.newToken(TokenType.SlashEqual);
-            } else if (next_char == '/') {
-                var str = ArrayList(u8).init(self.allocator);
-                defer str.deinit();
-                try str.ensureTotalCapacity(100);
+            },
+            '|' => {
+                var next_char = try self.advance();
+                if (next_char == '|') {
+                    next_char = try self.advance();
+                    if (next_char == '=') {
+                        try self.newToken(TokenType.BarBarEqual);
+                    } else {
+                        try self.rewind(-1);
+                        try self.newToken(TokenType.BarBar);
+                    }
+                } else if (next_char == '=') {
+                    try self.newToken(TokenType.BarEqual);
+                } else {
+                    try self.rewind(-1);
+                    try self.newToken(TokenType.Bar);
+                }
+            },
+            '+' => {
+                const next_char = try self.advance();
+                if (next_char == '=') {
+                    try self.newToken(TokenType.PlusEqual);
+                } else if (next_char == '+') {
+                    try self.newToken(TokenType.PlusPlus);
+                } else {
+                    try self.rewind(-1);
+                    try self.newToken(TokenType.Plus);
+                }
+            },
+            '-' => {
+                const next_char = try self.advance();
+                if (next_char == '=') {
+                    try self.newToken(TokenType.MinusEqual);
+                } else if (next_char == '-') {
+                    try self.newToken(TokenType.MinusMinus);
+                } else {
+                    try self.rewind(-1);
+                    try self.newToken(TokenType.Minus);
+                }
+            },
+            '*' => {
+                var next_char = try self.advance();
+                if (next_char == '*') {
+                    next_char = try self.advance();
+                    if (next_char == '=') {
+                        try self.newToken(TokenType.StarStarEqual);
+                    } else {
+                        try self.rewind(-1);
+                        try self.newToken(TokenType.StarStar);
+                    }
+                } else if (next_char == '=') {
+                    try self.newToken(TokenType.StarEqual);
+                } else {
+                    try self.rewind(-1);
+                    try self.newToken(TokenType.Star);
+                }
+            },
+            '%' => {
+                const next_char = try self.advance();
+                if (next_char == '=') {
+                    try self.newToken(TokenType.PercentEqual);
+                } else {
+                    try self.rewind(-1);
+                    try self.newToken(TokenType.Percent);
+                }
+            },
+            '=' => {
+                var next_char = try self.advance();
+                if (next_char == '=') {
+                    next_char = try self.advance();
+                    if (next_char == '=') {
+                        try self.newToken(TokenType.EqualEqualEqual);
+                    } else {
+                        try self.rewind(-1);
+                        try self.newToken(TokenType.EqualEqual);
+                    }
+                } else if (next_char == '>') {
+                    try self.newToken(TokenType.Arrow);
+                } else {
+                    try self.rewind(-1);
+                    try self.newToken(TokenType.Equal);
+                }
+            },
+            '{' => {
+                try self.newToken(TokenType.OpenCurlyBrace);
+            },
+            '}' => {
+                try self.newToken(TokenType.CloseCurlyBrace);
+            },
+            '[' => {
+                try self.newToken(TokenType.OpenSquareBracket);
+            },
+            ']' => {
+                try self.newToken(TokenType.CloseSquareBracket);
+            },
+            '(' => {
+                try self.newToken(TokenType.OpenParen);
+            },
+            ')' => {
+                try self.newToken(TokenType.CloseParen);
+            },
+            ',' => {
+                try self.newToken(TokenType.Comma);
+            },
+            ';' => {
+                try self.newToken(TokenType.Semicolon);
+            },
+            ':' => {
+                try self.newToken(TokenType.Colon);
+            },
+            '?' => {
+                var next_char = try self.advance();
+                if (next_char == '?') {
+                    next_char = try self.advance();
+                    if (next_char == '=') {
+                        try self.newToken(TokenType.QuestionMarkQuestionMarkEqual);
+                    } else {
+                        try self.rewind(-1);
+                        try self.newToken(TokenType.QuestionMarkQuestionMark);
+                    }
+                } else if (next_char == '.') {
+                    try self.newToken(TokenType.QuestionMarkDot);
+                } else {
+                    try self.rewind(-1);
+                    try self.newToken(TokenType.QuestionMark);
+                }
+            },
+            '.' => {
+                var next_char = try self.advance();
+                if (next_char == '.') {
+                    next_char = try self.advance();
+                    if (next_char == '.') {
+                        try self.newToken(TokenType.DotDotDot);
+                    } else {
+                        try self.rewind(-2);
+                        try self.newToken(TokenType.Dot);
+                    }
+                } else if (next_char > '0' and next_char < '9') {
+                    try self.readNumericLiteral(self.index - 1, true);
+                } else {
+                    try self.rewind(-1);
+                    try self.newToken(TokenType.Dot);
+                }
+            },
+            '~' => {
+                try self.newToken(TokenType.Tilde);
+            },
+            '#' => {
+                try self.newToken(TokenType.Hash);
+            },
+            '\'', '"' => {
+                const start_pos = self.index;
+                var end_pos = self.index + 1;
 
+                const starting_char = current_char;
                 while (true) {
-                    next_char = try self.maybe_advance() orelse break;
-                    if (next_char == '\n' or next_char == '\r') {
+                    const next_char = try self.maybe_advance() orelse break;
+                    end_pos += 1;
+
+                    if (next_char == '\n' or next_char == '\r' or next_char == starting_char) {
                         break;
                     }
-                    try str.append(next_char);
                 }
 
-                return self.newTokenWithValue(TokenType.LineComment, try str.toOwnedSlice());
-            } else if (next_char == '*') {
-                var str = ArrayList(u8).init(self.allocator);
-                defer str.deinit();
-                try str.ensureTotalCapacity(100);
-
+                try self.newTokenWithValue(TokenType.StringConstant, self.buffer[start_pos..end_pos]);
+            },
+            '0'...'9' => {
+                try self.readNumericLiteral(self.index, false);
+            },
+            else => {
+                const start_pos = self.index;
+                var end_pos = self.index + 1;
+                var next_char: u8 = undefined;
                 while (true) {
                     next_char = try self.maybe_advance() orelse break;
-
-                    if (next_char == '*') {
-                        const one_more_char = try self.maybe_advance() orelse break;
-
-                        if (one_more_char == '/') {
-                            break;
-                        } else {
-                            try str.append(next_char);
-                            try str.append(one_more_char);
-                        }
-                    } else {
-                        try str.append(next_char);
+                    if (is_whitespace(next_char) or is_punctuation(next_char) or is_operator(next_char)) {
+                        try self.rewind(-1);
+                        break;
                     }
+                    end_pos += 1;
                 }
 
-                return self.newTokenWithValue(TokenType.MultilineComment, try str.toOwnedSlice());
-            } else {
-                try self.rewind(-1);
-                return self.newToken(TokenType.Slash);
-            }
-        },
-        '&' => {
-            var next_char = try self.advance();
-            if (next_char == '&') {
-                next_char = try self.advance();
-                if (next_char == '=') {
-                    return self.newToken(TokenType.AmpersandAmpersandEqual);
+                if (keywords_map.get(self.buffer[start_pos..end_pos])) |keyword_type| {
+                    try self.newToken(keyword_type);
                 } else {
-                    try self.rewind(-1);
-                    return self.newToken(TokenType.AmpersandAmpersand);
+                    try self.newTokenWithValue(TokenType.Identifier, self.buffer[start_pos..end_pos]);
                 }
-            } else if (next_char == '=') {
-                return self.newToken(TokenType.AmpersandEqual);
-            } else {
-                try self.rewind(-1);
-                return self.newToken(TokenType.Ampersand);
-            }
-        },
-        '^' => {
-            const next_char = try self.advance();
-            if (next_char == '=') {
-                return self.newToken(TokenType.CaretEqual);
-            } else {
-                try self.rewind(-1);
-                return self.newToken(TokenType.Caret);
-            }
-        },
-        '|' => {
-            var next_char = try self.advance();
-            if (next_char == '|') {
-                next_char = try self.advance();
-                if (next_char == '=') {
-                    return self.newToken(TokenType.BarBarEqual);
-                } else {
-                    try self.rewind(-1);
-                    return self.newToken(TokenType.BarBar);
-                }
-            } else if (next_char == '=') {
-                return self.newToken(TokenType.BarEqual);
-            } else {
-                try self.rewind(-1);
-                return self.newToken(TokenType.Bar);
-            }
-        },
-        '+' => {
-            const next_char = try self.advance();
-            if (next_char == '=') {
-                return self.newToken(TokenType.PlusEqual);
-            } else if (next_char == '+') {
-                return self.newToken(TokenType.PlusPlus);
-            } else if ((next_char > '0' and next_char < '9') or next_char == '.') {
-                return self.read_numeric_literal(&[_]u8{ current_char, next_char }, next_char == '.');
-            } else {
-                try self.rewind(-1);
-                return self.newToken(TokenType.Plus);
-            }
-        },
-        '-' => {
-            const next_char = try self.advance();
-            if (next_char == '=') {
-                return self.newToken(TokenType.MinusEqual);
-            } else if (next_char == '-') {
-                return self.newToken(TokenType.MinusMinus);
-            } else if ((next_char > '0' and next_char < '9') or next_char == '.') {
-                return self.read_numeric_literal(&[_]u8{ current_char, next_char }, next_char == '.');
-            } else {
-                try self.rewind(-1);
-                return self.newToken(TokenType.Minus);
-            }
-        },
-        '*' => {
-            var next_char = try self.advance();
-            if (next_char == '*') {
-                next_char = try self.advance();
-                if (next_char == '=') {
-                    return self.newToken(TokenType.StarStarEqual);
-                } else {
-                    try self.rewind(-1);
-                    return self.newToken(TokenType.StarStar);
-                }
-            } else if (next_char == '=') {
-                return self.newToken(TokenType.StarEqual);
-            } else {
-                try self.rewind(-1);
-                return self.newToken(TokenType.Star);
-            }
-        },
-        '%' => {
-            const next_char = try self.advance();
-            if (next_char == '=') {
-                return self.newToken(TokenType.PercentEqual);
-            } else {
-                try self.rewind(-1);
-                return self.newToken(TokenType.Percent);
-            }
-        },
-        '=' => {
-            var next_char = try self.advance();
-            if (next_char == '=') {
-                next_char = try self.advance();
-                if (next_char == '=') {
-                    return self.newToken(TokenType.EqualEqualEqual);
-                } else {
-                    try self.rewind(-1);
-                    return self.newToken(TokenType.EqualEqual);
-                }
-            } else if (next_char == '>') {
-                return self.newToken(TokenType.Arrow);
-            } else {
-                try self.rewind(-1);
-                return self.newToken(TokenType.Equal);
-            }
-        },
-        '{' => {
-            return self.newToken(TokenType.OpenCurlyBrace);
-        },
-        '}' => {
-            return self.newToken(TokenType.CloseCurlyBrace);
-        },
-        '[' => {
-            return self.newToken(TokenType.OpenSquareBracket);
-        },
-        ']' => {
-            return self.newToken(TokenType.CloseSquareBracket);
-        },
-        '(' => {
-            return self.newToken(TokenType.OpenParen);
-        },
-        ')' => {
-            return self.newToken(TokenType.CloseParen);
-        },
-        ',' => {
-            return self.newToken(TokenType.Comma);
-        },
-        ';' => {
-            return self.newToken(TokenType.Semicolon);
-        },
-        ':' => {
-            return self.newToken(TokenType.Colon);
-        },
-        '?' => {
-            var next_char = try self.advance();
-            if (next_char == '?') {
-                next_char = try self.advance();
-                if (next_char == '=') {
-                    return self.newToken(TokenType.QuestionMarkQuestionMarkEqual);
-                } else {
-                    try self.rewind(-1);
-                    return self.newToken(TokenType.QuestionMarkQuestionMark);
-                }
-            } else if (next_char == '.') {
-                return self.newToken(TokenType.QuestionMarkDot);
-            } else {
-                try self.rewind(-1);
-                return self.newToken(TokenType.QuestionMark);
-            }
-        },
-        '.' => {
-            var next_char = try self.advance();
-            if (next_char == '.') {
-                next_char = try self.advance();
-                if (next_char == '.') {
-                    return self.newToken(TokenType.DotDotDot);
-                } else {
-                    try self.rewind(-2);
-                    return self.newToken(TokenType.Dot);
-                }
-            } else if (next_char > '0' and next_char < '9') {
-                return self.read_numeric_literal(&[_]u8{ current_char, next_char }, true);
-            } else {
-                try self.rewind(-1);
-                return self.newToken(TokenType.Dot);
-            }
-        },
-        '~' => {
-            return self.newToken(TokenType.Tilde);
-        },
-        '#' => {
-            return self.newToken(TokenType.Hash);
-        },
-        '\'', '"' => {
-            const start_pos = self.index;
-            var end_pos = self.index + 1;
 
-            const starting_char = current_char;
-            while (true) {
-                const next_char = try self.maybe_advance() orelse break;
-                end_pos += 1;
-
-                if (next_char == '\n' or next_char == '\r' or next_char == starting_char) {
-                    break;
-                }
-            }
-
-            return self.newTokenWithValue(TokenType.StringConstant, try self.allocator.dupe(u8, self.buffer[start_pos..end_pos]));
-        },
-        '0'...'9' => {
-            return self.read_numeric_literal(&[_]u8{current_char}, false);
-        },
-        else => {
-            const start_pos = self.index;
-            var end_pos = self.index + 1;
-            var next_char: u8 = undefined;
-            while (true) {
-                next_char = try self.maybe_advance() orelse break;
-                if (is_whitespace(next_char) or is_punctuation(next_char) or is_operator(next_char)) {
-                    try self.rewind(-1);
-                    break;
-                }
-                end_pos += 1;
-            }
-
-            if (keywords_map.get(self.buffer[start_pos..end_pos])) |keyword_type| {
-                return self.newTokenWithValue(keyword_type, try self.allocator.dupe(u8, self.buffer[start_pos..end_pos]));
-            }
-
-            return self.newTokenWithValue(TokenType.Identifier, try self.allocator.dupe(u8, self.buffer[start_pos..end_pos]));
-        },
-    }
-
-    unreachable;
-}
-
-pub fn nextAll(self: *Self) !std.ArrayList(Token) {
-    var tokens = std.ArrayList(Token).init(self.allocator);
-
-    if (self.buffer.len == 0) {
-        try tokens.append(self.newToken(TokenType.Eof));
-        return tokens;
-    }
-
-    var current_char: u8 = self.buffer[0];
-
-    while (true) {
-        const token = try self.next(current_char);
-
-        if (token.type != TokenType.Whitespace and token.type != TokenType.LineComment and token.type != TokenType.MultilineComment) {
-            try tokens.append(token);
+                self.index = end_pos - 1;
+            },
         }
-
-        current_char = self.advance() catch |err| {
-            if (err == error.EndOfStream) {
-                try tokens.append(self.newToken(TokenType.Eof));
-                break;
-            }
-
-            return err;
-        };
     }
-
-    return tokens;
 }
 
-fn read_numeric_literal(self: *Self, buffer: []const u8, default_has_dot: bool) !Token {
+fn readNumericLiteral(self: *Self, start_index: u32, default_has_dot: bool) !void {
     var token_type: TokenType = TokenType.NumberConstant;
-    var str = ArrayList(u8).init(self.allocator);
-    defer str.deinit();
-    try str.ensureTotalCapacity(100);
 
     var has_dot = default_has_dot;
     var has_exponent = false;
 
-    try str.appendSlice(buffer);
+    var end_index: u32 = start_index;
     while (true) {
         const next_char = try self.maybe_advance() orelse break;
 
         if (next_char == '.') {
-            if (has_exponent or has_dot or str.items[str.items.len - 1] == '_') {
+            if (has_exponent or has_dot or self.buffer[end_index - 1] == '_') {
                 return LexerError.SyntaxError;
             }
             has_dot = true;
-            try str.append(next_char);
+            end_index += 1;
             continue;
         }
 
         if (next_char == 'e' or next_char == 'E') {
-            if (has_exponent or str.items[str.items.len - 1] == '_') {
+            if (has_exponent or self.buffer[end_index - 1] == '_') {
                 return LexerError.SyntaxError;
             }
             has_exponent = true;
-            try str.append(next_char);
+            end_index += 1;
             continue;
         }
 
         if (next_char == '_') {
-            if (str.items[str.items.len - 1] == '_' or str.items[str.items.len - 1] == '.' or str.items[str.items.len - 1] == 'e' or str.items[str.items.len - 1] == 'E') {
+            if (self.buffer[end_index - 1] == '_' or self.buffer[end_index - 1] == '.' or self.buffer[end_index - 1] == 'e' or self.buffer[end_index - 1] == 'E') {
                 return LexerError.SyntaxError;
             }
 
-            try str.append(next_char);
+            end_index += 1;
             continue;
         }
 
         if ((next_char < '0' or next_char > '9')) {
             if (next_char == 'n') {
-                try str.append(next_char);
+                end_index += 1;
                 token_type = TokenType.BigIntConstant;
             } else {
                 try self.rewind(-1);
             }
             break;
         }
-        try str.append(next_char);
+        end_index += 1;
     }
 
-    return self.newTokenWithValue(token_type, try str.toOwnedSlice());
+    end_index += 1;
+    if (default_has_dot) {
+        end_index += 1;
+    }
+
+    try self.newTokenWithValue(token_type, self.buffer[start_index..end_index]);
 }
 
 fn advance(self: *Self) !u8 {
@@ -665,12 +673,64 @@ test "should tokenize keywords" {
     };
 
     var lexer = Lexer.init(arena.allocator(), try std.mem.join(arena.allocator(), " ", &keywords));
-    const tokens = try lexer.nextAll();
+    try lexer.tokenize();
 
-    try expectEqual(expected_tokens.len, tokens.items.len - 1);
+    try expectEqual(expected_tokens.len, lexer.tokens().len - 1);
     for (expected_tokens, 0..) |expected_token, i| {
-        const token = tokens.items[i];
+        const token = lexer.getToken(i);
         try expectEqual(expected_token, token.type);
+    }
+}
+
+test "should tokenize identifiers" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const expected_tokens = [_]TokenType{
+        TokenType.Identifier,
+        TokenType.Identifier,
+        TokenType.Identifier,
+    };
+    const expected_values = [_][]const u8{
+        "foo",
+        "bar",
+        "baz",
+    };
+    const buffer = "foo bar baz";
+    var lexer = Lexer.init(arena.allocator(), buffer);
+    try lexer.tokenize();
+
+    try expectEqual(expected_tokens.len, lexer.tokens().len - 1);
+    for (expected_tokens, 0..) |expected_token, i| {
+        const token = lexer.getToken(i);
+        try expectEqual(expected_token, token.type);
+        try expectEqualStrings(expected_values[i], lexer.getTokenValue(i).?);
+    }
+}
+
+test "should parse both identifiers and operators" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const buffer = "a + b a+b c;";
+    var lexer = Lexer.init(arena.allocator(), buffer);
+    try lexer.tokenize();
+
+    const expected_tokens = .{
+        .{ TokenType.Identifier, "a" },
+        .{ TokenType.Plus, "+" },
+        .{ TokenType.Identifier, "b" },
+        .{ TokenType.Identifier, "a" },
+        .{ TokenType.Plus, "+" },
+        .{ TokenType.Identifier, "b" },
+        .{ TokenType.Identifier, "c" },
+        .{ TokenType.Semicolon, ";" },
+    };
+
+    inline for (expected_tokens, 0..) |expected_token, i| {
+        const token = lexer.getToken(i);
+        try expectEqual(expected_token[0], token.type);
+        try expectEqualStrings(expected_token[1], lexer.getTokenValue(i) orelse token.lexeme());
     }
 }
 
@@ -795,12 +855,12 @@ test "should tokenize operators" {
         TokenType.Tilde,
     };
     var lexer = Lexer.init(arena.allocator(), try std.mem.join(arena.allocator(), " ", &operators));
-    const tokens = try lexer.nextAll();
+    try lexer.tokenize();
 
     // we remove one because of Eof token
-    try expectEqual(expected_tokens.len, tokens.items.len - 1);
+    try expectEqual(expected_tokens.len, lexer.tokens().len - 1);
     for (expected_tokens, 0..) |expected_token, i| {
-        const token = tokens.items[i];
+        const token = lexer.getToken(i);
         try expectEqual(expected_token, token.type);
     }
 }
@@ -833,19 +893,19 @@ test "should tokenize strings" {
 
     const buffer = "'hello' \"hello\" \"hello''world\"";
     var lexer = Lexer.init(arena.allocator(), buffer);
-    const tokens = try lexer.nextAll();
+    try lexer.tokenize();
 
-    var token = tokens.items[0];
+    var token = lexer.getToken(0);
     try expectEqual(TokenType.StringConstant, token.type);
-    try expectEqualStrings("'hello'", token.value.?);
+    try expectEqualStrings("'hello'", lexer.getTokenValue(0).?);
 
-    token = tokens.items[1];
+    token = lexer.getToken(1);
     try expectEqual(TokenType.StringConstant, token.type);
-    try expectEqualStrings("\"hello\"", token.value.?);
+    try expectEqualStrings("\"hello\"", lexer.getTokenValue(1).?);
 
-    token = tokens.items[2];
+    token = lexer.getToken(2);
     try expectEqual(TokenType.StringConstant, token.type);
-    try expectEqualStrings("\"hello''world\"", token.value.?);
+    try expectEqualStrings("\"hello''world\"", lexer.getTokenValue(2).?);
 }
 
 test "should tokenize decimal numbers" {
@@ -862,27 +922,15 @@ test "should tokenize decimal numbers" {
         .{ TokenType.BigIntConstant, "123_456n" },
         .{ TokenType.NumberConstant, ".123" },
         .{ TokenType.NumberConstant, ".123e456" },
-        .{ TokenType.NumberConstant, "+123" },
-        .{ TokenType.NumberConstant, "-123" },
-        .{ TokenType.NumberConstant, "+123.456" },
-        .{ TokenType.NumberConstant, "-123.456" },
-        .{ TokenType.BigIntConstant, "+123n" },
-        .{ TokenType.BigIntConstant, "-123n" },
-        .{ TokenType.NumberConstant, "+123_456" },
-        .{ TokenType.NumberConstant, "-123_456" },
-        .{ TokenType.NumberConstant, "+.123" },
-        .{ TokenType.NumberConstant, "-.123" },
-        .{ TokenType.NumberConstant, "+.123e456" },
-        .{ TokenType.NumberConstant, "-.123e456" },
     };
 
-    const buffer = "123 123.456 123e456 123.456e456 123n 123_456 123_456n .123 .123e456 +123 -123 +123.456 -123.456 +123n -123n +123_456 -123_456 +.123 -.123 +.123e456 -.123e456";
+    const buffer = "123 123.456 123e456 123.456e456 123n 123_456 123_456n .123 .123e456";
     var lexer = Lexer.init(arena.allocator(), buffer);
-    const tokens = try lexer.nextAll();
+    try lexer.tokenize();
 
     inline for (expected_tokens, 0..) |expected_token, i| {
-        const token = tokens.items[i];
+        const token = lexer.getToken(i);
         try expectEqual(expected_token.@"0", token.type);
-        try expectEqualStrings(expected_token.@"1", token.value.?);
+        try expectEqualStrings(expected_token.@"1", lexer.getTokenValue(i).?);
     }
 }
