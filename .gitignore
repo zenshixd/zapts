@@ -7,3 +7,4 @@ docgen_tmp/
 
 .reftests/
 test.log
+lcov-report/

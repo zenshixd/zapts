@@ -52,6 +52,17 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_exe_unit_tests.step);
 
+    const run_test_with_coverage = b.addSystemCommand(&.{
+        "kcov",
+        "--clean",
+        "--include-pattern=src",
+        b.pathJoin(&.{ b.build_root.path.?, "lcov-report" }),
+    });
+    run_test_with_coverage.addArtifactArg(exe_unit_tests);
+
+    const test_with_coverage = b.step("test:coverage", "Run unit tests with coverage");
+    test_with_coverage.dependOn(&run_test_with_coverage.step);
+
     const compile_tests = b.addTest(.{
         .root_source_file = b.path("tests/e2e_tests_runner.zig"),
         .target = target,

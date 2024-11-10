@@ -610,8 +610,8 @@ pub const Pool = struct {
     pub fn addNode(self: *Pool, main_token: Token.Index, key: Node) !Node.Index {
         switch (key) {
             .root => |root| {
-                const subrange = try self.listToSubrange(root);
-                return try self.addRawNode(.{
+                const subrange = self.listToSubrange(root);
+                return self.addRawNode(.{
                     .tag = .root,
                     .main_token = main_token,
                     .data = .{ .lhs = subrange.start, .rhs = subrange.end },
@@ -620,19 +620,19 @@ pub const Pool = struct {
             .import => |import| {
                 switch (import) {
                     .simple => |simple| {
-                        return try self.addRawNode(.{
+                        return self.addRawNode(.{
                             .tag = .import,
                             .main_token = main_token,
                             .data = .{ .rhs = simple },
                         });
                     },
                     .full => |full| {
-                        const span = try self.listToSubrange(full.bindings);
-                        return try self.addRawNode(.{
+                        const span = self.listToSubrange(full.bindings);
+                        return self.addRawNode(.{
                             .tag = .import,
                             .main_token = main_token,
                             .data = .{
-                                .lhs = try self.addExtra(span),
+                                .lhs = self.addExtra(span),
                                 .rhs = full.path,
                             },
                         });
@@ -642,8 +642,8 @@ pub const Pool = struct {
             .import_binding => |import_binding| {
                 switch (import_binding) {
                     .named => |named| {
-                        const span = try self.listToSubrange(named);
-                        return try self.addRawNode(.{
+                        const span = self.listToSubrange(named);
+                        return self.addRawNode(.{
                             .tag = .import_binding_named,
                             .main_token = main_token,
                             .data = .{
@@ -653,14 +653,14 @@ pub const Pool = struct {
                         });
                     },
                     .default => |default| {
-                        return try self.addRawNode(.{
+                        return self.addRawNode(.{
                             .tag = .import_binding_default,
                             .main_token = main_token,
                             .data = .{ .lhs = default },
                         });
                     },
                     .namespace => |namespace| {
-                        return try self.addRawNode(.{
+                        return self.addRawNode(.{
                             .tag = .import_binding_namespace,
                             .main_token = main_token,
                             .data = .{ .lhs = namespace },
@@ -671,8 +671,8 @@ pub const Pool = struct {
             .@"export" => |@"export"| {
                 switch (@"export") {
                     .named => |named| {
-                        const span = try self.listToSubrange(named);
-                        return try self.addRawNode(.{
+                        const span = self.listToSubrange(named);
+                        return self.addRawNode(.{
                             .tag = .export_named,
                             .main_token = main_token,
                             .data = .{
@@ -682,18 +682,18 @@ pub const Pool = struct {
                         });
                     },
                     .from => |from| {
-                        const span = try self.listToSubrange(from.bindings);
-                        return try self.addRawNode(.{
+                        const span = self.listToSubrange(from.bindings);
+                        return self.addRawNode(.{
                             .tag = .export_from,
                             .main_token = main_token,
                             .data = .{
-                                .lhs = try self.addExtra(span),
+                                .lhs = self.addExtra(span),
                                 .rhs = from.path,
                             },
                         });
                     },
                     .from_all => |from| {
-                        return try self.addRawNode(.{
+                        return self.addRawNode(.{
                             .tag = .export_from_all,
                             .main_token = main_token,
                             .data = .{
@@ -703,14 +703,14 @@ pub const Pool = struct {
                         });
                     },
                     .default => |default| {
-                        return try self.addRawNode(.{
+                        return self.addRawNode(.{
                             .tag = .export_default,
                             .main_token = main_token,
                             .data = .{ .lhs = default },
                         });
                     },
                     .node => |node| {
-                        return try self.addRawNode(.{
+                        return self.addRawNode(.{
                             .tag = .export_node,
                             .main_token = main_token,
                             .data = .{ .lhs = node },
@@ -719,14 +719,14 @@ pub const Pool = struct {
                 }
             },
             .class => |class| {
-                const implements_span = try self.listToSubrange(class.implements);
-                const subrange = try self.listToSubrange(class.body);
-                return try self.addRawNode(.{
+                const implements_span = self.listToSubrange(class.implements);
+                const subrange = self.listToSubrange(class.body);
+                return self.addRawNode(.{
                     .tag = if (class.abstract) .abstract_class_decl else .class_decl,
                     .main_token = main_token,
                     .data = .{
                         .lhs = class.name,
-                        .rhs = try self.addExtra(Extra.ClassDeclaration{
+                        .rhs = self.addExtra(Extra.ClassDeclaration{
                             .super_class = class.super_class,
                             .implements_start = implements_span.start,
                             .implements_end = implements_span.end,
@@ -737,8 +737,8 @@ pub const Pool = struct {
                 });
             },
             .class_static_block => |static_block| {
-                const subrange = try self.listToSubrange(static_block);
-                return try self.addRawNode(.{
+                const subrange = self.listToSubrange(static_block);
+                return self.addRawNode(.{
                     .tag = .class_static_block,
                     .main_token = main_token,
                     .data = .{
@@ -748,7 +748,7 @@ pub const Pool = struct {
                 });
             },
             .class_member => |member| {
-                return try self.addRawNode(.{
+                return self.addRawNode(.{
                     .tag = .class_member,
                     .main_token = main_token,
                     .data = .{
@@ -758,11 +758,11 @@ pub const Pool = struct {
                 });
             },
             .class_field => |field| {
-                const binding = try self.addExtra(Extra.Declaration{
+                const binding = self.addExtra(Extra.Declaration{
                     .decl_type = field.decl_type,
                     .value = field.value,
                 });
-                return try self.addRawNode(.{
+                return self.addRawNode(.{
                     .tag = .class_field,
                     .main_token = main_token,
                     .data = .{
@@ -777,8 +777,8 @@ pub const Pool = struct {
                     .@"var" => .var_decl,
                     .@"const" => .const_decl,
                 };
-                const subrange = try self.listToSubrange(declaration.list);
-                return try self.addRawNode(.{
+                const subrange = self.listToSubrange(declaration.list);
+                return self.addRawNode(.{
                     .tag = tag,
                     .main_token = main_token,
                     .data = .{
@@ -793,7 +793,7 @@ pub const Pool = struct {
                     .main_token = main_token,
                     .data = .{
                         .lhs = declaration.name,
-                        .rhs = try self.addExtra(Extra.Declaration{
+                        .rhs = self.addExtra(Extra.Declaration{
                             .decl_type = declaration.decl_type,
                             .value = declaration.value,
                         }),
@@ -801,11 +801,11 @@ pub const Pool = struct {
                 });
             },
             .@"if", .ternary_expr => |if_node| {
-                return try self.addRawNode(.{
+                return self.addRawNode(.{
                     .tag = if (key == .@"if") .@"if" else .ternary,
                     .main_token = main_token,
                     .data = .{
-                        .lhs = try self.addExtra(Extra.If{
+                        .lhs = self.addExtra(Extra.If{
                             .expr = if_node.expr,
                             .body = if_node.body,
                         }),
@@ -814,21 +814,21 @@ pub const Pool = struct {
                 });
             },
             .@"switch" => |switch_node| {
-                const cases = try self.listToSubrange(switch_node.cases);
-                return try self.addRawNode(.{
+                const cases = self.listToSubrange(switch_node.cases);
+                return self.addRawNode(.{
                     .tag = .@"switch",
                     .main_token = main_token,
                     .data = .{
                         .lhs = switch_node.expr,
-                        .rhs = try self.addExtra(cases),
+                        .rhs = self.addExtra(cases),
                     },
                 });
             },
             .case => |case_key| {
                 switch (case_key) {
                     .default => |default_node| {
-                        const stmts = try self.listToSubrange(default_node);
-                        return try self.addRawNode(.{
+                        const stmts = self.listToSubrange(default_node);
+                        return self.addRawNode(.{
                             .tag = .default,
                             .main_token = main_token,
                             .data = .{
@@ -838,13 +838,13 @@ pub const Pool = struct {
                         });
                     },
                     .case => |case_node| {
-                        const stmts = try self.listToSubrange(case_node.body);
-                        return try self.addRawNode(.{
+                        const stmts = self.listToSubrange(case_node.body);
+                        return self.addRawNode(.{
                             .tag = .case,
                             .main_token = main_token,
                             .data = .{
                                 .lhs = case_node.expr,
-                                .rhs = try self.addExtra(stmts),
+                                .rhs = self.addExtra(stmts),
                             },
                         });
                     },
@@ -853,11 +853,11 @@ pub const Pool = struct {
             .@"for" => |for_node| {
                 switch (for_node) {
                     .classic => |classic| {
-                        return try self.addRawNode(.{
+                        return self.addRawNode(.{
                             .tag = .@"for",
                             .main_token = main_token,
                             .data = .{
-                                .lhs = try self.addExtra(Extra.ForThree{
+                                .lhs = self.addExtra(Extra.ForThree{
                                     .init = classic.init,
                                     .cond = classic.cond,
                                     .post = classic.post,
@@ -867,11 +867,11 @@ pub const Pool = struct {
                         });
                     },
                     .in => |in| {
-                        return try self.addRawNode(.{
+                        return self.addRawNode(.{
                             .tag = .for_in,
                             .main_token = main_token,
                             .data = .{
-                                .lhs = try self.addExtra(Extra.ForTwo{
+                                .lhs = self.addExtra(Extra.ForTwo{
                                     .left = in.left,
                                     .right = in.right,
                                 }),
@@ -880,11 +880,11 @@ pub const Pool = struct {
                         });
                     },
                     .of => |of| {
-                        return try self.addRawNode(.{
+                        return self.addRawNode(.{
                             .tag = .for_of,
                             .main_token = main_token,
                             .data = .{
-                                .lhs = try self.addExtra(Extra.ForTwo{
+                                .lhs = self.addExtra(Extra.ForTwo{
                                     .left = of.left,
                                     .right = of.right,
                                 }),
@@ -895,7 +895,7 @@ pub const Pool = struct {
                 }
             },
             .@"while", .do_while => |while_node| {
-                return try self.addRawNode(.{
+                return self.addRawNode(.{
                     .tag = if (key == .@"while") .@"while" else .do_while,
                     .main_token = main_token,
                     .data = .{
@@ -905,8 +905,8 @@ pub const Pool = struct {
                 });
             },
             .block, .array_literal, .object_literal => |nodes| {
-                const subrange = try self.listToSubrange(nodes);
-                return try self.addRawNode(.{
+                const subrange = self.listToSubrange(nodes);
+                return self.addRawNode(.{
                     .tag = switch (key) {
                         .block => .block,
                         .array_literal => .array_literal,
@@ -918,7 +918,7 @@ pub const Pool = struct {
                 });
             },
             .function_param => |param| {
-                return try self.addRawNode(.{
+                return self.addRawNode(.{
                     .tag = .function_param,
                     .main_token = main_token,
                     .data = .{ .lhs = param.node, .rhs = param.type },
@@ -932,13 +932,13 @@ pub const Pool = struct {
                     .object_method => .object_method,
                     else => unreachable,
                 };
-                const subrange = try self.listToSubrange(func_decl.params);
-                return try self.addRawNode(.{
+                const subrange = self.listToSubrange(func_decl.params);
+                return self.addRawNode(.{
                     .tag = tag,
                     .main_token = main_token,
                     .data = .{
                         .lhs = func_decl.name,
-                        .rhs = try self.addExtra(Extra.Function{
+                        .rhs = self.addExtra(Extra.Function{
                             .flags = func_decl.flags,
                             .params_start = subrange.start,
                             .params_end = subrange.end,
@@ -949,12 +949,12 @@ pub const Pool = struct {
                 });
             },
             .arrow_function => |arrow_func| {
-                const subrange = try self.listToSubrange(arrow_func.params);
-                return try self.addRawNode(.{
+                const subrange = self.listToSubrange(arrow_func.params);
+                return self.addRawNode(.{
                     .tag = if (arrow_func.type == .async_arrow) .async_arrow_function else .arrow_function,
                     .main_token = main_token,
                     .data = .{
-                        .lhs = try self.addExtra(Extra.FunctionType{
+                        .lhs = self.addExtra(Extra.FunctionType{
                             .params_start = subrange.start,
                             .params_end = subrange.end,
                             .return_type = arrow_func.return_type,
@@ -964,18 +964,18 @@ pub const Pool = struct {
                 });
             },
             .call_expr => |expr| {
-                const subrange = try self.listToSubrange(expr.params);
-                return try self.addRawNode(.{
+                const subrange = self.listToSubrange(expr.params);
+                return self.addRawNode(.{
                     .tag = .call_expr,
                     .main_token = main_token,
                     .data = .{
                         .lhs = expr.node,
-                        .rhs = try self.addExtra(subrange),
+                        .rhs = self.addExtra(subrange),
                     },
                 });
             },
             .object_type, .tuple_type => |obj_type| {
-                const subrange = try self.listToSubrange(obj_type);
+                const subrange = self.listToSubrange(obj_type);
                 return self.addRawNode(.{
                     .tag = if (key == .object_type) .object_type else .tuple_type,
                     .main_token = main_token,
@@ -986,8 +986,8 @@ pub const Pool = struct {
                 });
             },
             .function_type => |func_type| {
-                const params_subrange = try self.listToSubrange(func_type.params);
-                const extra = try self.addExtra(Extra.FunctionType{
+                const params_subrange = self.listToSubrange(func_type.params);
+                const extra = self.addExtra(Extra.FunctionType{
                     .params_start = params_subrange.start,
                     .params_end = params_subrange.end,
                     .return_type = func_type.return_type,
@@ -1100,7 +1100,7 @@ pub const Pool = struct {
                     .type_decl => .type_decl,
                     else => unreachable,
                 };
-                return try self.addRawNode(.{
+                return self.addRawNode(.{
                     .tag = tag,
                     .main_token = main_token,
                     .data = .{
@@ -1152,7 +1152,7 @@ pub const Pool = struct {
                     .array_type => .array_type,
                     else => unreachable,
                 };
-                return try self.addRawNode(.{
+                return self.addRawNode(.{
                     .tag = tag,
                     .main_token = main_token,
                     .data = .{ .lhs = node },
@@ -1167,7 +1167,7 @@ pub const Pool = struct {
                     .@"continue" => .@"continue",
                     else => unreachable,
                 };
-                return try self.addRawNode(.{
+                return self.addRawNode(.{
                     .tag = tag,
                     .main_token = main_token,
                     .data = .{},
@@ -1188,25 +1188,25 @@ pub const Pool = struct {
                 });
             },
             .generic_type => |generic_type| {
-                const span = try self.listToSubrange(generic_type.params);
+                const span = self.listToSubrange(generic_type.params);
                 return self.addRawNode(.{
                     .tag = .generic_type,
                     .main_token = main_token,
                     .data = .{
                         .lhs = generic_type.name,
-                        .rhs = try self.addExtra(span),
+                        .rhs = self.addExtra(span),
                     },
                 });
             },
             .interface_decl => |interface_decl| {
-                const extends_span = try self.listToSubrange(interface_decl.extends);
-                const body_span = try self.listToSubrange(interface_decl.body);
+                const extends_span = self.listToSubrange(interface_decl.extends);
+                const body_span = self.listToSubrange(interface_decl.body);
                 return self.addRawNode(.{
                     .tag = .interface_decl,
                     .main_token = main_token,
                     .data = .{
                         .lhs = interface_decl.name,
-                        .rhs = try self.addExtra(Extra.Interface{
+                        .rhs = self.addExtra(Extra.Interface{
                             .extends_start = extends_span.start,
                             .extends_end = extends_span.end,
                             .body_start = body_span.start,
@@ -1734,9 +1734,9 @@ pub const Pool = struct {
         return self.nodes.items[index];
     }
 
-    pub fn addRawNode(self: *Pool, node: Raw) !Node.Index {
+    pub fn addRawNode(self: *Pool, node: Raw) Node.Index {
         const index = self.nodes.items.len;
-        try self.nodes.append(node);
+        self.nodes.append(node) catch @panic("Out of memory");
         return @intCast(index);
     }
 
@@ -1747,9 +1747,9 @@ pub const Pool = struct {
         return @as(*ty, @ptrCast(&result)).*;
     }
 
-    pub fn addExtra(self: *Pool, extra: anytype) !Node.Index {
+    pub fn addExtra(self: *Pool, extra: anytype) Node.Index {
         const fields = std.meta.fields(@TypeOf(extra));
-        try self.extra.ensureUnusedCapacity(fields.len);
+        self.extra.ensureUnusedCapacity(fields.len) catch @panic("Out of memory");
         const result = self.extra.items.len;
         inline for (fields) |field| {
             comptime assert(field.type == Node.Index);
@@ -1758,8 +1758,8 @@ pub const Pool = struct {
         return @intCast(result);
     }
 
-    pub fn listToSubrange(self: *Pool, list: []Node.Index) !Extra.Subrange {
-        try self.extra.appendSlice(list);
+    pub fn listToSubrange(self: *Pool, list: []Node.Index) Extra.Subrange {
+        self.extra.appendSlice(list) catch @panic("Out of memory");
         return .{
             .start = @intCast(self.extra.items.len - list.len),
             .end = @intCast(self.extra.items.len),
@@ -1791,7 +1791,7 @@ test "Pool root" {
 
     const root_node = 0;
     var stmts = [_]Node.Index{ 1, 2, 3, 4, 5 };
-    const range = pool.listToSubrange(&stmts) catch unreachable;
+    const range = pool.listToSubrange(&stmts);
     pool.nodes.items[root_node].data = .{ .lhs = range.start, .rhs = range.end };
 
     try expectEqual(Raw{

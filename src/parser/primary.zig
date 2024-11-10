@@ -8,13 +8,15 @@ const AST = @import("../ast.zig");
 const Parser = @import("../parser.zig");
 const diagnostics = @import("../diagnostics.zig");
 
+const parseAssignment = @import("binary.zig").parseAssignment;
+
 const ParserError = Parser.ParserError;
 
 const expectEqual = std.testing.expectEqual;
 const expectEqualDeep = std.testing.expectEqualDeep;
 const expectEqualStrings = std.testing.expectEqualStrings;
 const expectError = std.testing.expectError;
-const expectAST = Parser.expectAST;
+const expectMaybeAST = Parser.expectMaybeAST;
 const expectASTAndToken = Parser.expectASTAndToken;
 const expectSyntaxError = Parser.expectSyntaxError;
 
@@ -31,22 +33,24 @@ pub fn parsePrimaryExpression(parser: *Parser) ParserError!?AST.Node.Index {
 }
 
 pub fn parseIdentifier(parser: *Parser) ParserError!?AST.Node.Index {
-    if (parser.match(TokenType.Identifier) or try parseKeywordAsIdentifier(parser) != null) {
+    if (parser.match(TokenType.Identifier) or try parseKeywordAsIdentifier(parser)) {
         return try parser.pool.addNode(parser.cur_token - 1, AST.Node{ .simple_value = .{ .kind = .identifier } });
     }
 
     return null;
 }
 
-pub fn parseKeywordAsIdentifier(parser: *Parser) ParserError!?Token.Index {
+pub fn parseKeywordAsIdentifier(parser: *Parser) ParserError!bool {
     if (parser.peekMatchMany(.{ TokenType.Async, TokenType.Function })) {
-        return null;
+        return false;
     }
 
     if (isAllowedIdentifier(parser.token().type)) {
-        return parser.advance();
+        _ = parser.advance();
+        return true;
     }
-    return null;
+
+    return false;
 }
 
 const literal_map = .{
@@ -87,7 +91,7 @@ pub fn parseArrayLiteral(parser: *Parser) ParserError!?AST.Node.Index {
             break;
         }
 
-        try values.append(try parser.parseAssignment());
+        try values.append(try parseAssignment(parser));
         const comma = parser.consumeOrNull(TokenType.Comma);
 
         if (parser.match(TokenType.CloseSquareBracket)) {
@@ -151,7 +155,7 @@ pub fn parseObjectField(parser: *Parser) ParserError!?AST.Node.Index {
         return try parser.pool.addNode(parser.cur_token, AST.Node{
             .object_literal_field = .{
                 .left = identifier.?,
-                .right = try parser.parseAssignment(),
+                .right = try parseAssignment(parser),
             },
         });
     } else if (parser.peekMatch(TokenType.Comma) or parser.peekMatch(TokenType.CloseCurlyBrace)) {
@@ -220,12 +224,28 @@ test "should parse identifier" {
     try expectASTAndToken(parseIdentifier, AST.Node{ .simple_value = .{ .kind = .identifier } }, TokenType.Identifier, "identifier", text);
 }
 
+test "should parse allowed keyword as identifier" {
+    const text =
+        \\abstract
+    ;
+
+    try expectASTAndToken(parseIdentifier, AST.Node{ .simple_value = .{ .kind = .identifier } }, TokenType.Abstract, null, text);
+}
+
 test "should return null if no identifier" {
     const text =
         \\123
     ;
 
-    try expectAST(parseIdentifier, null, text);
+    try expectMaybeAST(parseIdentifier, null, text);
+}
+
+test "should return null if not allowed keyword" {
+    const text =
+        \\break
+    ;
+
+    try expectMaybeAST(parseIdentifier, null, text);
 }
 
 test "should parse literal" {
@@ -250,7 +270,7 @@ test "should return null if no literal" {
         \\identifier
     ;
 
-    try expectAST(parseLiteral, null, text);
+    try expectMaybeAST(parseLiteral, null, text);
 }
 
 test "should return null if not array literal" {
@@ -258,7 +278,7 @@ test "should return null if not array literal" {
         \\1
     ;
 
-    try expectAST(parseArrayLiteral, null, text);
+    try expectMaybeAST(parseArrayLiteral, null, text);
 }
 
 test "should parse array literal" {
@@ -269,7 +289,7 @@ test "should parse array literal" {
     };
 
     inline for (expects_map) |expected_items| {
-        try expectAST(parseArrayLiteral, AST.Node{ .array_literal = @constCast(expected_items[1]) }, expected_items[0]);
+        try expectMaybeAST(parseArrayLiteral, AST.Node{ .array_literal = @constCast(expected_items[1]) }, expected_items[0]);
     }
 }
 
@@ -278,7 +298,7 @@ test "should return null if not object literal" {
         \\1
     ;
 
-    try expectAST(parseObjectLiteral, null, text);
+    try expectMaybeAST(parseObjectLiteral, null, text);
 }
 
 test "should parse object literal" {
@@ -291,7 +311,7 @@ test "should parse object literal" {
     ;
     const expected_fields = &[_]AST.Node.Index{ 4, 8, 11 };
 
-    try expectAST(parseObjectLiteral, AST.Node{ .object_literal = @constCast(expected_fields) }, text);
+    try expectMaybeAST(parseObjectLiteral, AST.Node{ .object_literal = @constCast(expected_fields) }, text);
 }
 
 test "should parse methods on object literal" {
@@ -338,6 +358,14 @@ test "should fail parsing object literal if comma is missing between fields" {
     try expectSyntaxError(parseObjectLiteral, text, diagnostics.ARG_expected, .{","});
 }
 
+test "should fail parsing object literal if field name is invalid" {
+    const test_cases = .{ "{ - }", "{ a - b }" };
+
+    inline for (test_cases) |test_case| {
+        try expectSyntaxError(parseObjectLiteral, test_case, diagnostics.expression_expected, .{});
+    }
+}
+
 test "should fail parsing object literal if there is multiple closing commas" {
     const text =
         \\{
@@ -353,7 +381,7 @@ test "should parse grouping expression" {
         \\(a, b)
     ;
 
-    try expectAST(parseGroupingExpression, AST.Node{ .grouping = 5 }, text);
+    try expectMaybeAST(parseGroupingExpression, AST.Node{ .grouping = 5 }, text);
 }
 
 test "should return null if no grouping expression" {
@@ -361,5 +389,5 @@ test "should return null if no grouping expression" {
         \\1
     ;
 
-    try expectAST(parseGroupingExpression, null, text);
+    try expectMaybeAST(parseGroupingExpression, null, text);
 }
