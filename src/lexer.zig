@@ -1,6 +1,5 @@
 const std = @import("std");
 const consts = @import("consts.zig");
-const ArrayList = std.ArrayList;
 const Token = consts.Token;
 const TokenType = consts.TokenType;
 const keywords_map = consts.keywords_map;
@@ -16,501 +15,552 @@ const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
 const expectEqualStrings = std.testing.expectEqualStrings;
 
-pub const LexerError = error{ SyntaxError, EndOfStream, OutOfMemory };
-
 const Self = @This();
 const Lexer = @This();
 
 allocator: Allocator,
-buffer: []const u8,
+buffer: [:0]const u8,
 index: u32 = 0,
-toks: std.ArrayList(Token),
-strings: std.ArrayList([]const u8),
 
-pub fn init(allocator: Allocator, buffer: []const u8) Self {
+pub fn init(allocator: Allocator, buffer: [:0]const u8) Self {
     return .{
         .allocator = allocator,
         .buffer = buffer,
-        .toks = std.ArrayList(Token).init(allocator),
-        .strings = std.ArrayList([]const u8).init(allocator),
     };
 }
 
-pub fn deinit(self: *Self) void {
-    self.toks.deinit();
-    self.strings.deinit();
-}
+const State = enum {
+    start,
+    line_comment,
+    multiline_comment,
+    ampersand,
+    ampersand_ampersand,
+    bar,
+    bar_bar,
+    caret,
+    equal,
+    equal_equal,
+    plus,
+    minus,
+    asterisk,
+    asterisk_asterisk,
+    slash,
+    percent,
+    exclamation_mark,
+    exclamation_mark_equal,
+    less_than,
+    less_than_less_than,
+    greater_than,
+    greater_than_greater_than,
+    greater_than_greater_than_greater_than,
+    question_mark,
+    question_mark_question_mark,
+    hash,
+    shebang,
+    dot,
+    string_single_quote,
+    string_double_quote,
+    number,
+    number_dot,
+    number_exponent,
+    number_exponent_sign,
+    identifier,
+};
 
-pub fn tokens(self: Self) []Token {
-    return self.toks.items;
-}
+pub fn tokenize(self: *Self) []const Token {
+    var tokens = std.ArrayList(Token).init(self.allocator);
 
-pub fn getToken(self: Self, tok_idx: usize) Token {
-    return self.toks.items[tok_idx];
-}
-
-pub fn getTokenValue(self: Self, tok_idx: usize) ?[]const u8 {
-    const tok = self.getToken(tok_idx);
-    if (tok.string_idx) |string_idx| {
-        return self.strings.items[string_idx];
-    }
-
-    return null;
-}
-
-fn newToken(self: *Self, token_type: TokenType) !void {
-    try self.toks.append(Token{
-        .type = token_type,
-        .pos = self.index,
-        .string_idx = null,
-    });
-}
-
-fn newTokenWithValue(self: *Self, token_type: TokenType, value: []const u8) !void {
-    if (token_type == .LineComment or token_type == .MultilineComment) {
-        return;
-    }
-
-    const string_idx = self.strings.items.len;
-    try self.strings.append(value);
-    try self.toks.append(Token{
-        .type = token_type,
-        .pos = self.index,
-        .string_idx = @intCast(string_idx),
-    });
-}
-
-pub fn tokenize(self: *Self) !void {
-    if (self.buffer.len == 0) {
-        try self.newToken(TokenType.Eof);
-        return;
-    }
-
-    while (true) : (self.index += 1) {
-        if (self.index >= self.buffer.len) {
-            try self.newToken(TokenType.Eof);
-            return;
-        }
-
-        const current_char = self.buffer[self.index];
-        switch (current_char) {
-            '\n', '\r', ' ', '\t' => {},
-            '<' => {
-                var next_char = try self.advance();
-                if (next_char == '=') {
-                    try self.newToken(TokenType.LessThanEqual);
-                } else if (next_char == '<') {
-                    next_char = try self.advance();
-
-                    if (next_char == '=') {
-                        try self.newToken(TokenType.LessThanLessThanEqual);
-                    } else {
-                        try self.rewind(-1);
-                        try self.newToken(TokenType.LessThanLessThan);
-                    }
-                } else {
-                    try self.rewind(-1);
-                    try self.newToken(TokenType.LessThan);
-                }
-            },
-            '>' => {
-                var next_char = try self.advance();
-                if (next_char == '=') {
-                    try self.newToken(TokenType.GreaterThanEqual);
-                } else if (next_char == '>') {
-                    next_char = try self.advance();
-
-                    if (next_char == '>') {
-                        next_char = try self.advance();
-
-                        if (next_char == '=') {
-                            try self.newToken(TokenType.GreaterThanGreaterThanGreaterThanEqual);
-                        } else {
-                            try self.rewind(-1);
-                            try self.newToken(TokenType.GreaterThanGreaterThanGreaterThan);
-                        }
-                    } else if (next_char == '=') {
-                        try self.newToken(TokenType.GreaterThanGreaterThanEqual);
-                    } else {
-                        try self.rewind(-1);
-                        try self.newToken(TokenType.GreaterThanGreaterThan);
-                    }
-                } else {
-                    try self.rewind(-1);
-                    try self.newToken(TokenType.GreaterThan);
-                }
-            },
-            '!' => {
-                var next_char = try self.advance();
-                if (next_char == '=') {
-                    next_char = try self.advance();
-
-                    if (next_char == '=') {
-                        try self.newToken(TokenType.ExclamationMarkEqualEqual);
-                    } else {
-                        try self.newToken(TokenType.ExclamationMarkEqual);
-                    }
-                } else {
-                    try self.rewind(-1);
-                    try self.newToken(TokenType.ExclamationMark);
-                }
-            },
-            '/' => {
-                var next_char = try self.advance();
-                if (next_char == '=') {
-                    try self.newToken(TokenType.SlashEqual);
-                } else if (next_char == '/') {
-                    const start_index = self.index - 1;
-                    var end_index: u32 = start_index;
-
-                    while (true) {
-                        next_char = try self.maybe_advance() orelse break;
-                        if (next_char == '\n' or next_char == '\r') {
-                            break;
-                        }
-                        end_index += 1;
-                    }
-
-                    try self.newTokenWithValue(TokenType.LineComment, self.buffer[start_index..end_index]);
-                } else if (next_char == '*') {
-                    const start_index = self.index - 1;
-                    var end_index: u32 = start_index;
-
-                    while (true) {
-                        next_char = try self.maybe_advance() orelse break;
-
-                        if (next_char == '*') {
-                            const one_more_char = try self.maybe_advance() orelse break;
-
-                            if (one_more_char == '/') {
-                                break;
-                            } else {
-                                end_index += 2;
-                            }
-                        } else {
-                            end_index += 1;
-                        }
-                    }
-
-                    try self.newTokenWithValue(TokenType.MultilineComment, self.buffer[start_index..end_index]);
-                } else {
-                    try self.rewind(-1);
-                    try self.newToken(TokenType.Slash);
-                }
-            },
-            '&' => {
-                var next_char = try self.advance();
-                if (next_char == '&') {
-                    next_char = try self.advance();
-                    if (next_char == '=') {
-                        try self.newToken(TokenType.AmpersandAmpersandEqual);
-                    } else {
-                        try self.rewind(-1);
-                        try self.newToken(TokenType.AmpersandAmpersand);
-                    }
-                } else if (next_char == '=') {
-                    try self.newToken(TokenType.AmpersandEqual);
-                } else {
-                    try self.rewind(-1);
-                    try self.newToken(TokenType.Ampersand);
-                }
-            },
-            '^' => {
-                const next_char = try self.advance();
-                if (next_char == '=') {
-                    try self.newToken(TokenType.CaretEqual);
-                } else {
-                    try self.rewind(-1);
-                    try self.newToken(TokenType.Caret);
-                }
-            },
-            '|' => {
-                var next_char = try self.advance();
-                if (next_char == '|') {
-                    next_char = try self.advance();
-                    if (next_char == '=') {
-                        try self.newToken(TokenType.BarBarEqual);
-                    } else {
-                        try self.rewind(-1);
-                        try self.newToken(TokenType.BarBar);
-                    }
-                } else if (next_char == '=') {
-                    try self.newToken(TokenType.BarEqual);
-                } else {
-                    try self.rewind(-1);
-                    try self.newToken(TokenType.Bar);
-                }
-            },
-            '+' => {
-                const next_char = try self.advance();
-                if (next_char == '=') {
-                    try self.newToken(TokenType.PlusEqual);
-                } else if (next_char == '+') {
-                    try self.newToken(TokenType.PlusPlus);
-                } else {
-                    try self.rewind(-1);
-                    try self.newToken(TokenType.Plus);
-                }
-            },
-            '-' => {
-                const next_char = try self.advance();
-                if (next_char == '=') {
-                    try self.newToken(TokenType.MinusEqual);
-                } else if (next_char == '-') {
-                    try self.newToken(TokenType.MinusMinus);
-                } else {
-                    try self.rewind(-1);
-                    try self.newToken(TokenType.Minus);
-                }
-            },
-            '*' => {
-                var next_char = try self.advance();
-                if (next_char == '*') {
-                    next_char = try self.advance();
-                    if (next_char == '=') {
-                        try self.newToken(TokenType.StarStarEqual);
-                    } else {
-                        try self.rewind(-1);
-                        try self.newToken(TokenType.StarStar);
-                    }
-                } else if (next_char == '=') {
-                    try self.newToken(TokenType.StarEqual);
-                } else {
-                    try self.rewind(-1);
-                    try self.newToken(TokenType.Star);
-                }
-            },
-            '%' => {
-                const next_char = try self.advance();
-                if (next_char == '=') {
-                    try self.newToken(TokenType.PercentEqual);
-                } else {
-                    try self.rewind(-1);
-                    try self.newToken(TokenType.Percent);
-                }
-            },
-            '=' => {
-                var next_char = try self.advance();
-                if (next_char == '=') {
-                    next_char = try self.advance();
-                    if (next_char == '=') {
-                        try self.newToken(TokenType.EqualEqualEqual);
-                    } else {
-                        try self.rewind(-1);
-                        try self.newToken(TokenType.EqualEqual);
-                    }
-                } else if (next_char == '>') {
-                    try self.newToken(TokenType.Arrow);
-                } else {
-                    try self.rewind(-1);
-                    try self.newToken(TokenType.Equal);
-                }
-            },
-            '{' => {
-                try self.newToken(TokenType.OpenCurlyBrace);
-            },
-            '}' => {
-                try self.newToken(TokenType.CloseCurlyBrace);
-            },
-            '[' => {
-                try self.newToken(TokenType.OpenSquareBracket);
-            },
-            ']' => {
-                try self.newToken(TokenType.CloseSquareBracket);
-            },
-            '(' => {
-                try self.newToken(TokenType.OpenParen);
-            },
-            ')' => {
-                try self.newToken(TokenType.CloseParen);
-            },
-            ',' => {
-                try self.newToken(TokenType.Comma);
-            },
-            ';' => {
-                try self.newToken(TokenType.Semicolon);
-            },
-            ':' => {
-                try self.newToken(TokenType.Colon);
-            },
-            '?' => {
-                var next_char = try self.advance();
-                if (next_char == '?') {
-                    next_char = try self.advance();
-                    if (next_char == '=') {
-                        try self.newToken(TokenType.QuestionMarkQuestionMarkEqual);
-                    } else {
-                        try self.rewind(-1);
-                        try self.newToken(TokenType.QuestionMarkQuestionMark);
-                    }
-                } else if (next_char == '.') {
-                    try self.newToken(TokenType.QuestionMarkDot);
-                } else {
-                    try self.rewind(-1);
-                    try self.newToken(TokenType.QuestionMark);
-                }
-            },
-            '.' => {
-                var next_char = try self.advance();
-                if (next_char == '.') {
-                    next_char = try self.advance();
-                    if (next_char == '.') {
-                        try self.newToken(TokenType.DotDotDot);
-                    } else {
-                        try self.rewind(-2);
-                        try self.newToken(TokenType.Dot);
-                    }
-                } else if (next_char > '0' and next_char < '9') {
-                    try self.readNumericLiteral(self.index - 1, true);
-                } else {
-                    try self.rewind(-1);
-                    try self.newToken(TokenType.Dot);
-                }
-            },
-            '~' => {
-                try self.newToken(TokenType.Tilde);
-            },
-            '#' => {
-                try self.newToken(TokenType.Hash);
-            },
-            '\'', '"' => {
-                const start_pos = self.index;
-                var end_pos = self.index + 1;
-
-                const starting_char = current_char;
-                while (true) {
-                    const next_char = try self.maybe_advance() orelse break;
-                    end_pos += 1;
-
-                    if (next_char == '\n' or next_char == '\r' or next_char == starting_char) {
-                        break;
-                    }
-                }
-
-                try self.newTokenWithValue(TokenType.StringConstant, self.buffer[start_pos..end_pos]);
-            },
-            '0'...'9' => {
-                try self.readNumericLiteral(self.index, false);
-            },
-            else => {
-                const start_pos = self.index;
-                var end_pos = self.index + 1;
-                var next_char: u8 = undefined;
-                while (true) {
-                    next_char = try self.maybe_advance() orelse break;
-                    if (is_whitespace(next_char) or is_punctuation(next_char) or is_operator(next_char)) {
-                        try self.rewind(-1);
-                        break;
-                    }
-                    end_pos += 1;
-                }
-
-                if (keywords_map.get(self.buffer[start_pos..end_pos])) |keyword_type| {
-                    try self.newToken(keyword_type);
-                } else {
-                    try self.newTokenWithValue(TokenType.Identifier, self.buffer[start_pos..end_pos]);
-                }
-
-                self.index = end_pos - 1;
-            },
-        }
-    }
-}
-
-fn readNumericLiteral(self: *Self, start_index: u32, default_has_dot: bool) !void {
-    var token_type: TokenType = TokenType.NumberConstant;
-
-    var has_dot = default_has_dot;
-    var has_exponent = false;
-
-    var end_index: u32 = start_index;
     while (true) {
-        const next_char = try self.maybe_advance() orelse break;
-
-        if (next_char == '.') {
-            if (has_exponent or has_dot or self.buffer[end_index - 1] == '_') {
-                return LexerError.SyntaxError;
-            }
-            has_dot = true;
-            end_index += 1;
-            continue;
-        }
-
-        if (next_char == 'e' or next_char == 'E') {
-            if (has_exponent or self.buffer[end_index - 1] == '_') {
-                return LexerError.SyntaxError;
-            }
-            has_exponent = true;
-            end_index += 1;
-            continue;
-        }
-
-        if (next_char == '_') {
-            if (self.buffer[end_index - 1] == '_' or self.buffer[end_index - 1] == '.' or self.buffer[end_index - 1] == 'e' or self.buffer[end_index - 1] == 'E') {
-                return LexerError.SyntaxError;
-            }
-
-            end_index += 1;
-            continue;
-        }
-
-        if ((next_char < '0' or next_char > '9')) {
-            if (next_char == 'n') {
-                end_index += 1;
-                token_type = TokenType.BigIntConstant;
-            } else {
-                try self.rewind(-1);
-            }
+        const tok = self.next();
+        tokens.append(tok) catch unreachable;
+        if (tok.type == .Eof) {
             break;
         }
-        end_index += 1;
     }
 
-    end_index += 1;
-    if (default_has_dot) {
-        end_index += 1;
-    }
-
-    try self.newTokenWithValue(token_type, self.buffer[start_index..end_index]);
+    return tokens.toOwnedSlice() catch unreachable;
 }
 
-fn advance(self: *Self) !u8 {
-    self.index += 1;
-    if (self.index >= self.buffer.len) {
-        return error.EndOfStream;
-    }
-    return self.buffer[self.index];
-}
-
-fn maybe_advance(self: *Self) !?u8 {
-    return self.advance() catch |err| switch (err) {
-        error.EndOfStream => {
-            return null;
-        },
+pub fn next(self: *Self) Token {
+    var result: Token = .{
+        .type = undefined,
+        .start = self.index,
+        .end = undefined,
     };
-}
 
-fn match(self: *Self, expected_char: u8) !bool {
-    if (self.index >= self.buffer.len) {
-        return error.EndOfStream;
-    }
+    var state: State = State.start;
 
-    if (self.buffer[self.index] == expected_char) {
-        self.index += 1;
-        return true;
-    }
-
-    return false;
-}
-
-fn rewind(self: *Self, offset: i32) !void {
-    if (offset < 0) {
-        if (self.index > 0) {
-            self.index -= @as(u32, @intCast(-offset));
+    while (true) : (self.index += 1) {
+        switch (state) {
+            .start => switch (self.buffer[self.index]) {
+                0 => {
+                    if (self.index >= self.buffer.len) {
+                        self.index -= 1;
+                        result.type = .Eof;
+                        break;
+                    }
+                },
+                ' ', '\t', '\r', '\n' => {
+                    result.start = self.index + 1;
+                },
+                '|' => state = .bar,
+                '&' => state = .ampersand,
+                '^' => state = .caret,
+                '=' => state = .equal,
+                '+' => state = .plus,
+                '-' => state = .minus,
+                '*' => state = .asterisk,
+                '/' => state = .slash,
+                '%' => state = .percent,
+                '!' => state = .exclamation_mark,
+                '<' => state = .less_than,
+                '>' => state = .greater_than,
+                '?' => state = .question_mark,
+                '#' => state = .hash,
+                '.' => state = .dot,
+                ':' => {
+                    result.type = .Colon;
+                    break;
+                },
+                ';' => {
+                    result.type = .Semicolon;
+                    break;
+                },
+                ',' => {
+                    result.type = .Comma;
+                    break;
+                },
+                '{' => {
+                    result.type = .OpenCurlyBrace;
+                    break;
+                },
+                '}' => {
+                    result.type = .CloseCurlyBrace;
+                    break;
+                },
+                '[' => {
+                    result.type = .OpenSquareBracket;
+                    break;
+                },
+                ']' => {
+                    result.type = .CloseSquareBracket;
+                    break;
+                },
+                '(' => {
+                    result.type = .OpenParen;
+                    break;
+                },
+                ')' => {
+                    result.type = .CloseParen;
+                    break;
+                },
+                '@' => {
+                    result.type = .At;
+                    break;
+                },
+                '~' => {
+                    result.type = .Tilde;
+                    break;
+                },
+                '0'...'9' => state = .number,
+                '\'' => state = .string_single_quote,
+                '"' => state = .string_double_quote,
+                else => state = .identifier,
+            },
+            .ampersand => switch (self.buffer[self.index]) {
+                '&' => state = .ampersand_ampersand,
+                '=' => {
+                    result.type = .AmpersandEqual;
+                    break;
+                },
+                else => {
+                    self.index -= 1;
+                    result.type = .Ampersand;
+                    break;
+                },
+            },
+            .ampersand_ampersand => switch (self.buffer[self.index]) {
+                '=' => {
+                    result.type = .AmpersandAmpersandEqual;
+                    break;
+                },
+                else => {
+                    self.index -= 1;
+                    result.type = .AmpersandAmpersand;
+                    break;
+                },
+            },
+            .bar => switch (self.buffer[self.index]) {
+                '|' => state = .bar_bar,
+                '=' => {
+                    result.type = .BarEqual;
+                    break;
+                },
+                else => {
+                    self.index -= 1;
+                    result.type = .Bar;
+                    break;
+                },
+            },
+            .bar_bar => switch (self.buffer[self.index]) {
+                '=' => {
+                    result.type = .BarBarEqual;
+                    break;
+                },
+                else => {
+                    self.index -= 1;
+                    result.type = .BarBar;
+                    break;
+                },
+            },
+            .caret => switch (self.buffer[self.index]) {
+                '=' => {
+                    result.type = .CaretEqual;
+                    break;
+                },
+                else => {
+                    self.index -= 1;
+                    result.type = .Caret;
+                    break;
+                },
+            },
+            .equal => switch (self.buffer[self.index]) {
+                '=' => state = .equal_equal,
+                else => {
+                    self.index -= 1;
+                    result.type = .Equal;
+                    break;
+                },
+            },
+            .equal_equal => switch (self.buffer[self.index]) {
+                '=' => {
+                    result.type = .EqualEqualEqual;
+                    break;
+                },
+                else => {
+                    self.index -= 1;
+                    result.type = .EqualEqual;
+                    break;
+                },
+            },
+            .exclamation_mark => switch (self.buffer[self.index]) {
+                '=' => state = .exclamation_mark_equal,
+                else => {
+                    self.index -= 1;
+                    result.type = .ExclamationMark;
+                    break;
+                },
+            },
+            .exclamation_mark_equal => switch (self.buffer[self.index]) {
+                '=' => {
+                    result.type = .ExclamationMarkEqualEqual;
+                    break;
+                },
+                else => {
+                    self.index -= 1;
+                    result.type = .ExclamationMarkEqual;
+                    break;
+                },
+            },
+            .question_mark => switch (self.buffer[self.index]) {
+                '?' => state = .question_mark_question_mark,
+                '.' => {
+                    result.type = .QuestionMarkDot;
+                    break;
+                },
+                else => {
+                    self.index -= 1;
+                    result.type = .QuestionMark;
+                    break;
+                },
+            },
+            .question_mark_question_mark => switch (self.buffer[self.index]) {
+                '=' => {
+                    result.type = .QuestionMarkQuestionMarkEqual;
+                    break;
+                },
+                else => {
+                    self.index -= 1;
+                    result.type = .QuestionMarkQuestionMark;
+                    break;
+                },
+            },
+            .dot => switch (self.buffer[self.index]) {
+                '.' => {
+                    self.index += 1;
+                    switch (self.buffer[self.index]) {
+                        '.' => {
+                            result.type = .DotDotDot;
+                            break;
+                        },
+                        else => {
+                            self.index -= 1;
+                            result.type = .Dot;
+                            break;
+                        },
+                    }
+                },
+                '0'...'9', '_' => state = .number_dot,
+                else => {
+                    self.index -= 1;
+                    result.type = .Dot;
+                    break;
+                },
+            },
+            .plus => switch (self.buffer[self.index]) {
+                '=' => {
+                    result.type = .PlusEqual;
+                    break;
+                },
+                '+' => {
+                    result.type = .PlusPlus;
+                    break;
+                },
+                else => {
+                    self.index -= 1;
+                    result.type = .Plus;
+                    break;
+                },
+            },
+            .minus => switch (self.buffer[self.index]) {
+                '=' => {
+                    result.type = .MinusEqual;
+                    break;
+                },
+                '-' => {
+                    result.type = .MinusMinus;
+                    break;
+                },
+                else => {
+                    self.index -= 1;
+                    result.type = .Minus;
+                    break;
+                },
+            },
+            .asterisk => switch (self.buffer[self.index]) {
+                '=' => {
+                    result.type = .StarEqual;
+                    break;
+                },
+                '*' => state = .asterisk_asterisk,
+                else => {
+                    self.index -= 1;
+                    result.type = .Star;
+                    break;
+                },
+            },
+            .asterisk_asterisk => switch (self.buffer[self.index]) {
+                '=' => {
+                    result.type = .StarStarEqual;
+                    break;
+                },
+                else => {
+                    self.index -= 1;
+                    result.type = .StarStar;
+                    break;
+                },
+            },
+            .slash => switch (self.buffer[self.index]) {
+                '=' => {
+                    result.type = .SlashEqual;
+                    break;
+                },
+                '/' => state = .line_comment,
+                else => {
+                    self.index -= 1;
+                    result.type = .Slash;
+                    break;
+                },
+            },
+            .percent => switch (self.buffer[self.index]) {
+                '=' => {
+                    result.type = .PercentEqual;
+                    break;
+                },
+                else => {
+                    self.index -= 1;
+                    result.type = .Percent;
+                    break;
+                },
+            },
+            .less_than => switch (self.buffer[self.index]) {
+                '=' => {
+                    result.type = .LessThanEqual;
+                    break;
+                },
+                '<' => state = .less_than_less_than,
+                else => {
+                    self.index -= 1;
+                    result.type = .LessThan;
+                    break;
+                },
+            },
+            .less_than_less_than => switch (self.buffer[self.index]) {
+                '=' => {
+                    result.type = .LessThanLessThanEqual;
+                    break;
+                },
+                else => {
+                    self.index -= 1;
+                    result.type = .LessThanLessThan;
+                    break;
+                },
+            },
+            .greater_than => switch (self.buffer[self.index]) {
+                '=' => {
+                    result.type = .GreaterThanEqual;
+                    break;
+                },
+                '>' => state = .greater_than_greater_than,
+                else => {
+                    self.index -= 1;
+                    result.type = .GreaterThan;
+                    break;
+                },
+            },
+            .greater_than_greater_than => switch (self.buffer[self.index]) {
+                '=' => {
+                    result.type = .GreaterThanGreaterThanEqual;
+                    break;
+                },
+                '>' => state = .greater_than_greater_than_greater_than,
+                else => {
+                    self.index -= 1;
+                    result.type = .GreaterThanGreaterThan;
+                    break;
+                },
+            },
+            .greater_than_greater_than_greater_than => switch (self.buffer[self.index]) {
+                '=' => {
+                    result.type = .GreaterThanGreaterThanGreaterThanEqual;
+                    break;
+                },
+                else => {
+                    self.index -= 1;
+                    result.type = .GreaterThanGreaterThanGreaterThan;
+                    break;
+                },
+            },
+            .line_comment => switch (self.buffer[self.index]) {
+                '\n' => {
+                    result.type = .LineComment;
+                    break;
+                },
+                else => {},
+            },
+            .multiline_comment => switch (self.buffer[self.index]) {
+                '*' => {
+                    self.index += 1;
+                    if (self.buffer[self.index] == '/') {
+                        result.type = .MultilineComment;
+                        break;
+                    } else {
+                        self.index -= 1;
+                    }
+                },
+                else => {},
+            },
+            .string_single_quote => switch (self.buffer[self.index]) {
+                '\'' => {
+                    result.type = .StringConstant;
+                    break;
+                },
+                else => {},
+            },
+            .string_double_quote => switch (self.buffer[self.index]) {
+                '"' => {
+                    result.type = .StringConstant;
+                    break;
+                },
+                else => {},
+            },
+            .number => switch (self.buffer[self.index]) {
+                '0'...'9', '_' => {},
+                '.' => state = .number_dot,
+                'e', 'E' => state = .number_exponent_sign,
+                'n' => {
+                    result.type = .BigIntConstant;
+                    break;
+                },
+                else => {
+                    self.index -= 1;
+                    result.type = .NumberConstant;
+                    break;
+                },
+            },
+            .number_dot => switch (self.buffer[self.index]) {
+                '0'...'9', '_' => {},
+                'e', 'E' => state = .number_exponent_sign,
+                'n' => {
+                    result.type = .BigIntConstant;
+                    break;
+                },
+                else => {
+                    self.index -= 1;
+                    result.type = .NumberConstant;
+                    break;
+                },
+            },
+            .number_exponent_sign => switch (self.buffer[self.index]) {
+                '+', '-' => state = .number_exponent,
+                '0'...'9', '_' => state = .number_exponent,
+                'n' => {
+                    result.type = .BigIntConstant;
+                    break;
+                },
+                else => {
+                    self.index -= 1;
+                    result.type = .NumberConstant;
+                    break;
+                },
+            },
+            .number_exponent => switch (self.buffer[self.index]) {
+                '0'...'9', '_' => {},
+                'n' => {
+                    result.type = .BigIntConstant;
+                    break;
+                },
+                else => {
+                    self.index -= 1;
+                    result.type = .NumberConstant;
+                    break;
+                },
+            },
+            .hash => switch (self.buffer[self.index]) {
+                '0'...'9', 'a'...'z', 'A'...'Z', '_', '$' => {},
+                '!' => state = .shebang,
+                else => {
+                    self.index -= 1;
+                    result.type = .PrivateIdentifier;
+                    break;
+                },
+            },
+            .shebang => switch (self.buffer[self.index]) {
+                '\n' => {
+                    result.type = .Shebang;
+                    break;
+                },
+                else => {},
+            },
+            .identifier => switch (self.buffer[self.index]) {
+                'a'...'z', 'A'...'Z', '_', '$', '0'...'9' => {},
+                else => {
+                    if (keywords_map.get(self.buffer[result.start..self.index])) |token_type| {
+                        result.type = token_type;
+                    } else {
+                        result.type = .Identifier;
+                    }
+                    self.index -= 1;
+                    break;
+                },
+            },
         }
-    } else {
-        self.index += @as(u32, @intCast(offset));
     }
+
+    self.index += 1;
+    result.end = self.index;
+
+    return result;
 }
 
 fn is_whitespace(s: u8) bool {
@@ -523,6 +573,31 @@ fn is_punctuation(s: u8) bool {
 
 fn is_operator(s: u8) bool {
     return std.mem.indexOfScalar(u8, OPERATOR_CHARS, s) != null;
+}
+
+const ExpectedToken = struct { TokenType, []const u8 };
+
+fn expectTokens(text: [:0]const u8, expected: []const ExpectedToken) !void {
+    var lexer = Lexer.init(std.testing.allocator, text);
+    const tokens = lexer.tokenize();
+    defer std.testing.allocator.free(tokens);
+
+    for (expected, 0..) |expected_token, i| {
+        if (i >= tokens.len) {
+            std.debug.print("expected {}, but found end of token list\n", .{expected_token});
+            return error.TestExpectedEqual;
+        }
+
+        if (expected_token[0] != tokens[i].type) {
+            std.debug.print("expected {s}, found {s}\n", .{ @tagName(expected_token[0]), @tagName(tokens[i].type) });
+            return error.TestExpectedEqual;
+        }
+
+        if (!std.mem.eql(u8, expected_token[1], tokens[i].literal(text))) {
+            std.debug.print("expected {s}, found {s}\n", .{ expected_token[1], tokens[i].literal(text) });
+            return error.TestExpectedEqual;
+        }
+    }
 }
 
 test "is_whitespace" {
@@ -564,158 +639,134 @@ test "is_operator" {
 }
 
 test "should tokenize keywords" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
+    const text =
+        \\var
+        \\let
+        \\const
+        \\async
+        \\await
+        \\function
+        \\return
+        \\for
+        \\while
+        \\break
+        \\continue
+        \\do
+        \\if
+        \\else
+        \\class
+        \\extends
+        \\interface
+        \\type
+        \\case
+        \\debugger
+        \\default
+        \\delete
+        \\enum
+        \\import
+        \\export
+        \\false
+        \\true
+        \\finally
+        \\try
+        \\catch
+        \\in
+        \\instanceof
+        \\new
+        \\null
+        \\undefined
+        \\super
+        \\switch
+        \\this
+        \\throw
+        \\void
+        \\with
+        \\as
+        \\implements
+        \\package
+        \\private
+        \\protected
+        \\public
+        \\static
+        \\yield
+        \\from
+        \\any
+        \\unknown
+    ;
 
-    const keywords = [_][]const u8{
-        "var",
-        "let",
-        "const",
-        "async",
-        "await",
-        "function",
-        "return",
-        "for",
-        "while",
-        "break",
-        "continue",
-        "do",
-        "if",
-        "else",
-        "class",
-        "extends",
-        "interface",
-        "type",
-        "case",
-        "debugger",
-        "default",
-        "delete",
-        "enum",
-        "import",
-        "export",
-        "false",
-        "true",
-        "finally",
-        "try",
-        "catch",
-        "in",
-        "instanceof",
-        "new",
-        "null",
-        "undefined",
-        "super",
-        "switch",
-        "this",
-        "throw",
-        "void",
-        "with",
-        "as",
-        "implements",
-        "package",
-        "private",
-        "protected",
-        "public",
-        "static",
-        "yield",
-        "from",
+    const expected_tokens = [_]ExpectedToken{
+        .{ TokenType.Var, "var" },
+        .{ TokenType.Let, "let" },
+        .{ TokenType.Const, "const" },
+        .{ TokenType.Async, "async" },
+        .{ TokenType.Await, "await" },
+        .{ TokenType.Function, "function" },
+        .{ TokenType.Return, "return" },
+        .{ TokenType.For, "for" },
+        .{ TokenType.While, "while" },
+        .{ TokenType.Break, "break" },
+        .{ TokenType.Continue, "continue" },
+        .{ TokenType.Do, "do" },
+        .{ TokenType.If, "if" },
+        .{ TokenType.Else, "else" },
+        .{ TokenType.Class, "class" },
+        .{ TokenType.Extends, "extends" },
+        .{ TokenType.Interface, "interface" },
+        .{ TokenType.Type, "type" },
+        .{ TokenType.Case, "case" },
+        .{ TokenType.Debugger, "debugger" },
+        .{ TokenType.Default, "default" },
+        .{ TokenType.Delete, "delete" },
+        .{ TokenType.Enum, "enum" },
+        .{ TokenType.Import, "import" },
+        .{ TokenType.Export, "export" },
+        .{ TokenType.False, "false" },
+        .{ TokenType.True, "true" },
+        .{ TokenType.Finally, "finally" },
+        .{ TokenType.Try, "try" },
+        .{ TokenType.Catch, "catch" },
+        .{ TokenType.In, "in" },
+        .{ TokenType.Instanceof, "instanceof" },
+        .{ TokenType.New, "new" },
+        .{ TokenType.Null, "null" },
+        .{ TokenType.Undefined, "undefined" },
+        .{ TokenType.Super, "super" },
+        .{ TokenType.Switch, "switch" },
+        .{ TokenType.This, "this" },
+        .{ TokenType.Throw, "throw" },
+        .{ TokenType.Void, "void" },
+        .{ TokenType.With, "with" },
+        .{ TokenType.As, "as" },
+        .{ TokenType.Implements, "implements" },
+        .{ TokenType.Package, "package" },
+        .{ TokenType.Private, "private" },
+        .{ TokenType.Protected, "protected" },
+        .{ TokenType.Public, "public" },
+        .{ TokenType.Static, "static" },
+        .{ TokenType.Yield, "yield" },
+        .{ TokenType.From, "from" },
+        .{ TokenType.Any, "any" },
+        .{ TokenType.Unknown, "unknown" },
+        .{ TokenType.Eof, "" },
     };
-    const expected_tokens = [_]TokenType{
-        TokenType.Var,
-        TokenType.Let,
-        TokenType.Const,
-        TokenType.Async,
-        TokenType.Await,
-        TokenType.Function,
-        TokenType.Return,
-        TokenType.For,
-        TokenType.While,
-        TokenType.Break,
-        TokenType.Continue,
-        TokenType.Do,
-        TokenType.If,
-        TokenType.Else,
-        TokenType.Class,
-        TokenType.Extends,
-        TokenType.Interface,
-        TokenType.Type,
-        TokenType.Case,
-        TokenType.Debugger,
-        TokenType.Default,
-        TokenType.Delete,
-        TokenType.Enum,
-        TokenType.Import,
-        TokenType.Export,
-        TokenType.False,
-        TokenType.True,
-        TokenType.Finally,
-        TokenType.Try,
-        TokenType.Catch,
-        TokenType.In,
-        TokenType.Instanceof,
-        TokenType.New,
-        TokenType.Null,
-        TokenType.Undefined,
-        TokenType.Super,
-        TokenType.Switch,
-        TokenType.This,
-        TokenType.Throw,
-        TokenType.Void,
-        TokenType.With,
-        TokenType.As,
-        TokenType.Implements,
-        TokenType.Package,
-        TokenType.Private,
-        TokenType.Protected,
-        TokenType.Public,
-        TokenType.Static,
-        TokenType.Yield,
-        TokenType.From,
-    };
 
-    var lexer = Lexer.init(arena.allocator(), try std.mem.join(arena.allocator(), " ", &keywords));
-    try lexer.tokenize();
-
-    try expectEqual(expected_tokens.len, lexer.tokens().len - 1);
-    for (expected_tokens, 0..) |expected_token, i| {
-        const token = lexer.getToken(i);
-        try expectEqual(expected_token, token.type);
-    }
+    try expectTokens(text, &expected_tokens);
 }
 
 test "should tokenize identifiers" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
-    const expected_tokens = [_]TokenType{
-        TokenType.Identifier,
-        TokenType.Identifier,
-        TokenType.Identifier,
+    const text = "foo bar baz";
+    const expected_tokens = [_]ExpectedToken{
+        .{ TokenType.Identifier, "foo" },
+        .{ TokenType.Identifier, "bar" },
+        .{ TokenType.Identifier, "baz" },
+        .{ TokenType.Eof, "" },
     };
-    const expected_values = [_][]const u8{
-        "foo",
-        "bar",
-        "baz",
-    };
-    const buffer = "foo bar baz";
-    var lexer = Lexer.init(arena.allocator(), buffer);
-    try lexer.tokenize();
 
-    try expectEqual(expected_tokens.len, lexer.tokens().len - 1);
-    for (expected_tokens, 0..) |expected_token, i| {
-        const token = lexer.getToken(i);
-        try expectEqual(expected_token, token.type);
-        try expectEqualStrings(expected_values[i], lexer.getTokenValue(i).?);
-    }
+    try expectTokens(text, &expected_tokens);
 }
 
 test "should parse both identifiers and operators" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
-    const buffer = "a + b a+b c;";
-    var lexer = Lexer.init(arena.allocator(), buffer);
-    try lexer.tokenize();
-
+    const text = "a + b a+b c;";
     const expected_tokens = .{
         .{ TokenType.Identifier, "a" },
         .{ TokenType.Plus, "+" },
@@ -725,144 +776,135 @@ test "should parse both identifiers and operators" {
         .{ TokenType.Identifier, "b" },
         .{ TokenType.Identifier, "c" },
         .{ TokenType.Semicolon, ";" },
+        .{ TokenType.Eof, "" },
     };
 
-    inline for (expected_tokens, 0..) |expected_token, i| {
-        const token = lexer.getToken(i);
-        try expectEqual(expected_token[0], token.type);
-        try expectEqualStrings(expected_token[1], lexer.getTokenValue(i) orelse token.lexeme());
-    }
+    try expectTokens(text, &expected_tokens);
 }
 
 test "should tokenize operators" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
+    const text =
+        \\&
+        \\&&
+        \\^
+        \\|
+        \\||
+        \\+
+        \\++
+        \\-
+        \\--
+        \\*
+        \\**
+        \\/
+        \\%
+        \\!
+        \\!=
+        \\!==
+        \\=
+        \\==
+        \\===
+        \\>
+        \\>=
+        \\>>
+        \\>>=
+        \\>>>
+        \\>>>=
+        \\<
+        \\<=
+        \\<<
+        \\<<=
+        \\&=
+        \\&&=
+        \\|=
+        \\||=
+        \\^=
+        \\+=
+        \\-=
+        \\*=
+        \\**=
+        \\/=
+        \\%=
+        \\{
+        \\}
+        \\[
+        \\]
+        \\(
+        \\)
+        \\.
+        \\...
+        \\,
+        \\;
+        \\:
+        \\?
+        \\?.
+        \\??
+        \\??=
+        \\~
+        \\@
+    ;
 
-    const operators = [_][]const u8{
-        "&",
-        "&&",
-        "^",
-        "|",
-        "||",
-        "+",
-        "++",
-        "-",
-        "--",
-        "*",
-        "**",
-        "/",
-        "%",
-        "!",
-        "!=",
-        "!==",
-        "=",
-        "==",
-        "===",
-        ">",
-        ">=",
-        ">>",
-        ">>=",
-        ">>>",
-        ">>>=",
-        "<",
-        "<=",
-        "<<",
-        "<<=",
-        "&=",
-        "&&=",
-        "|=",
-        "||=",
-        "^=",
-        "+=",
-        "-=",
-        "*=",
-        "**=",
-        "/=",
-        "%=",
-        "{",
-        "}",
-        "[",
-        "]",
-        "(",
-        ")",
-        ".",
-        "...",
-        ",",
-        ";",
-        ":",
-        "?",
-        "?.",
-        "??",
-        "??=",
-        "~",
+    const expected_tokens = [_]ExpectedToken{
+        .{ TokenType.Ampersand, "&" },
+        .{ TokenType.AmpersandAmpersand, "&&" },
+        .{ TokenType.Caret, "^" },
+        .{ TokenType.Bar, "|" },
+        .{ TokenType.BarBar, "||" },
+        .{ TokenType.Plus, "+" },
+        .{ TokenType.PlusPlus, "++" },
+        .{ TokenType.Minus, "-" },
+        .{ TokenType.MinusMinus, "--" },
+        .{ TokenType.Star, "*" },
+        .{ TokenType.StarStar, "**" },
+        .{ TokenType.Slash, "/" },
+        .{ TokenType.Percent, "%" },
+        .{ TokenType.ExclamationMark, "!" },
+        .{ TokenType.ExclamationMarkEqual, "!=" },
+        .{ TokenType.ExclamationMarkEqualEqual, "!==" },
+        .{ TokenType.Equal, "=" },
+        .{ TokenType.EqualEqual, "==" },
+        .{ TokenType.EqualEqualEqual, "===" },
+        .{ TokenType.GreaterThan, ">" },
+        .{ TokenType.GreaterThanEqual, ">=" },
+        .{ TokenType.GreaterThanGreaterThan, ">>" },
+        .{ TokenType.GreaterThanGreaterThanEqual, ">>=" },
+        .{ TokenType.GreaterThanGreaterThanGreaterThan, ">>>" },
+        .{ TokenType.GreaterThanGreaterThanGreaterThanEqual, ">>>=" },
+        .{ TokenType.LessThan, "<" },
+        .{ TokenType.LessThanEqual, "<=" },
+        .{ TokenType.LessThanLessThan, "<<" },
+        .{ TokenType.LessThanLessThanEqual, "<<=" },
+        .{ TokenType.AmpersandEqual, "&=" },
+        .{ TokenType.AmpersandAmpersandEqual, "&&=" },
+        .{ TokenType.BarEqual, "|=" },
+        .{ TokenType.BarBarEqual, "||=" },
+        .{ TokenType.CaretEqual, "^=" },
+        .{ TokenType.PlusEqual, "+=" },
+        .{ TokenType.MinusEqual, "-=" },
+        .{ TokenType.StarEqual, "*=" },
+        .{ TokenType.StarStarEqual, "**=" },
+        .{ TokenType.SlashEqual, "/=" },
+        .{ TokenType.PercentEqual, "%=" },
+        .{ TokenType.OpenCurlyBrace, "{" },
+        .{ TokenType.CloseCurlyBrace, "}" },
+        .{ TokenType.OpenSquareBracket, "[" },
+        .{ TokenType.CloseSquareBracket, "]" },
+        .{ TokenType.OpenParen, "(" },
+        .{ TokenType.CloseParen, ")" },
+        .{ TokenType.Dot, "." },
+        .{ TokenType.DotDotDot, "..." },
+        .{ TokenType.Comma, "," },
+        .{ TokenType.Semicolon, ";" },
+        .{ TokenType.Colon, ":" },
+        .{ TokenType.QuestionMark, "?" },
+        .{ TokenType.QuestionMarkDot, "?." },
+        .{ TokenType.QuestionMarkQuestionMark, "??" },
+        .{ TokenType.QuestionMarkQuestionMarkEqual, "??=" },
+        .{ TokenType.Tilde, "~" },
+        .{ TokenType.At, "@" },
+        .{ TokenType.Eof, "" },
     };
-    const expected_tokens = [_]TokenType{
-        TokenType.Ampersand,
-        TokenType.AmpersandAmpersand,
-        TokenType.Caret,
-        TokenType.Bar,
-        TokenType.BarBar,
-        TokenType.Plus,
-        TokenType.PlusPlus,
-        TokenType.Minus,
-        TokenType.MinusMinus,
-        TokenType.Star,
-        TokenType.StarStar,
-        TokenType.Slash,
-        TokenType.Percent,
-        TokenType.ExclamationMark,
-        TokenType.ExclamationMarkEqual,
-        TokenType.ExclamationMarkEqualEqual,
-        TokenType.Equal,
-        TokenType.EqualEqual,
-        TokenType.EqualEqualEqual,
-        TokenType.GreaterThan,
-        TokenType.GreaterThanEqual,
-        TokenType.GreaterThanGreaterThan,
-        TokenType.GreaterThanGreaterThanEqual,
-        TokenType.GreaterThanGreaterThanGreaterThan,
-        TokenType.GreaterThanGreaterThanGreaterThanEqual,
-        TokenType.LessThan,
-        TokenType.LessThanEqual,
-        TokenType.LessThanLessThan,
-        TokenType.LessThanLessThanEqual,
-        TokenType.AmpersandEqual,
-        TokenType.AmpersandAmpersandEqual,
-        TokenType.BarEqual,
-        TokenType.BarBarEqual,
-        TokenType.CaretEqual,
-        TokenType.PlusEqual,
-        TokenType.MinusEqual,
-        TokenType.StarEqual,
-        TokenType.StarStarEqual,
-        TokenType.SlashEqual,
-        TokenType.PercentEqual,
-        TokenType.OpenCurlyBrace,
-        TokenType.CloseCurlyBrace,
-        TokenType.OpenSquareBracket,
-        TokenType.CloseSquareBracket,
-        TokenType.OpenParen,
-        TokenType.CloseParen,
-        TokenType.Dot,
-        TokenType.DotDotDot,
-        TokenType.Comma,
-        TokenType.Semicolon,
-        TokenType.Colon,
-        TokenType.QuestionMark,
-        TokenType.QuestionMarkDot,
-        TokenType.QuestionMarkQuestionMark,
-        TokenType.QuestionMarkQuestionMarkEqual,
-        TokenType.Tilde,
-    };
-    var lexer = Lexer.init(arena.allocator(), try std.mem.join(arena.allocator(), " ", &operators));
-    try lexer.tokenize();
 
-    // we remove one because of Eof token
-    try expectEqual(expected_tokens.len, lexer.tokens().len - 1);
-    for (expected_tokens, 0..) |expected_token, i| {
-        const token = lexer.getToken(i);
-        try expectEqual(expected_token, token.type);
-    }
+    try expectTokens(text, &expected_tokens);
 }
 
 // test "should tokenize comments" {
@@ -888,30 +930,17 @@ test "should tokenize operators" {
 // }
 
 test "should tokenize strings" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
     const buffer = "'hello' \"hello\" \"hello''world\"";
-    var lexer = Lexer.init(arena.allocator(), buffer);
-    try lexer.tokenize();
 
-    var token = lexer.getToken(0);
-    try expectEqual(TokenType.StringConstant, token.type);
-    try expectEqualStrings("'hello'", lexer.getTokenValue(0).?);
-
-    token = lexer.getToken(1);
-    try expectEqual(TokenType.StringConstant, token.type);
-    try expectEqualStrings("\"hello\"", lexer.getTokenValue(1).?);
-
-    token = lexer.getToken(2);
-    try expectEqual(TokenType.StringConstant, token.type);
-    try expectEqualStrings("\"hello''world\"", lexer.getTokenValue(2).?);
+    try expectTokens(buffer, &[_]ExpectedToken{
+        .{ TokenType.StringConstant, "'hello'" },
+        .{ TokenType.StringConstant, "\"hello\"" },
+        .{ TokenType.StringConstant, "\"hello''world\"" },
+        .{ TokenType.Eof, "" },
+    });
 }
 
 test "should tokenize decimal numbers" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
     const expected_tokens = .{
         .{ TokenType.NumberConstant, "123" },
         .{ TokenType.NumberConstant, "123.456" },
@@ -922,15 +951,9 @@ test "should tokenize decimal numbers" {
         .{ TokenType.BigIntConstant, "123_456n" },
         .{ TokenType.NumberConstant, ".123" },
         .{ TokenType.NumberConstant, ".123e456" },
+        .{ TokenType.Eof, "" },
     };
-
     const buffer = "123 123.456 123e456 123.456e456 123n 123_456 123_456n .123 .123e456";
-    var lexer = Lexer.init(arena.allocator(), buffer);
-    try lexer.tokenize();
 
-    inline for (expected_tokens, 0..) |expected_token, i| {
-        const token = lexer.getToken(i);
-        try expectEqual(expected_token.@"0", token.type);
-        try expectEqualStrings(expected_token.@"1", lexer.getTokenValue(i).?);
-    }
+    try expectTokens(buffer, &expected_tokens);
 }

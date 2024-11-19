@@ -1,5 +1,4 @@
 const std = @import("std");
-const builtin = @import("builtin");
 
 pub const newline = "\n";
 pub const PUNCTUATION_CHARS = ".,:;()[]'\"{}";
@@ -75,6 +74,7 @@ pub const TokenType = enum(u8) {
     Whitespace,
     LineComment,
     MultilineComment,
+    PrivateIdentifier,
     Identifier,
     Keyword,
     StringConstant,
@@ -137,7 +137,8 @@ pub const TokenType = enum(u8) {
     QuestionMarkQuestionMark,
     QuestionMarkQuestionMarkEqual,
     Tilde,
-    Hash,
+    Shebang,
+    At,
 
     // Keywords
     Var,
@@ -204,14 +205,18 @@ pub const TokenType = enum(u8) {
 
 pub const Token = struct {
     type: TokenType,
-    pos: u32,
-    string_idx: ?u32,
+    start: u32,
+    end: u32,
 
     pub const Empty = 0;
     pub const Index = u32;
 
     pub fn format(self: Token, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
-        try std.fmt.format(writer, "Token(.type = {s}, .pos = {d})", .{ @tagName(self.type), self.pos });
+        try std.fmt.format(writer, "Token(.type = {s}, .start = {d}, .end = {d})", .{ @tagName(self.type), self.start, self.end });
+    }
+
+    pub fn literal(self: Token, buffer: []const u8) []const u8 {
+        return buffer[self.start..self.end];
     }
 
     pub fn lexeme(self: Token) []const u8 {
@@ -337,7 +342,9 @@ pub const Token = struct {
             .NumberConstant => "number",
             .BigIntConstant => "bigint",
             .StringConstant => "string",
+            .PrivateIdentifier => "private identifier",
             .Identifier => "identifier",
+            .Shebang => "shebang",
             .Keyword => "keyword",
             .Whitespace => "whitespace",
             .LineComment => "line comment",

@@ -8,6 +8,7 @@ var cmdline_buffer: [4096]u8 = undefined;
 var fba = std.heap.FixedBufferAllocator.init(&cmdline_buffer);
 
 pub fn main() void {
+    var timer = std.time.Timer.start() catch unreachable;
     const test_fn_list = builtin.test_functions;
     var ok_count: usize = 0;
     var skip_count: usize = 0;
@@ -68,6 +69,7 @@ pub fn main() void {
     if (leaks != 0) {
         std.debug.print("{d} tests leaked memory.\n", .{leaks});
     }
+    std.debug.print("Done in {}\n", .{std.fmt.fmtDuration(timer.read())});
     if (leaks != 0 or log_err_count != 0 or fail_count != 0) {
         std.process.exit(1);
     }

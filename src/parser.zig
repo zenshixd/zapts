@@ -32,21 +32,22 @@ pub const ParserError = error{ SyntaxError, OutOfMemory, NoSpaceLeft, Overflow }
 const Self = @This();
 
 gpa: std.mem.Allocator,
-lexer: Lexer,
 arena: std.heap.ArenaAllocator,
+buffer: [:0]const u8,
+tokens: []const Token,
 cur_token: Token.Index,
 pool: AST.Pool,
 errors: std.ArrayList([]const u8),
 
-pub fn init(gpa: std.mem.Allocator, buffer: []const u8) !Self {
+pub fn init(gpa: std.mem.Allocator, buffer: [:0]const u8) !Self {
     var lexer = Lexer.init(gpa, buffer);
-    try lexer.tokenize();
 
     return Self{
         .cur_token = 0,
         .gpa = gpa,
         .arena = std.heap.ArenaAllocator.init(gpa),
-        .lexer = lexer,
+        .buffer = buffer,
+        .tokens = lexer.tokenize(),
         .pool = AST.Pool.init(gpa),
         .errors = std.ArrayList([]const u8).init(gpa),
     };
@@ -56,7 +57,7 @@ pub fn deinit(self: *Self) void {
     self.arena.deinit();
     self.errors.deinit();
     self.pool.deinit();
-    self.lexer.deinit();
+    self.gpa.free(self.tokens);
 }
 
 pub fn parse(self: *Self) ParserError!AST.Node.Index {
@@ -71,7 +72,7 @@ pub fn parse(self: *Self) ParserError!AST.Node.Index {
         try nodes.append(try self.parseStatement());
     }
 
-    const subrange = try self.pool.listToSubrange(nodes.items);
+    const subrange = self.pool.listToSubrange(nodes.items);
 
     assert(self.pool.nodes.items[0].tag == .root);
     self.pool.nodes.items[0].data = .{ .lhs = subrange.start, .rhs = subrange.end };
@@ -79,14 +80,12 @@ pub fn parse(self: *Self) ParserError!AST.Node.Index {
 }
 
 pub fn token(self: Self) Token {
-    return self.lexer.getToken(self.cur_token);
+    return self.tokens[self.cur_token];
 }
 
 pub fn advance(self: *Self) Token.Index {
     //std.debug.print("advancing from {}\n", .{self.lexer.getToken(self.cur_token)});
-    if (self.cur_token + 1 < self.lexer.tokens().len) {
-        self.cur_token += 1;
-    }
+    self.cur_token += 1;
     return self.cur_token;
 }
 
@@ -104,7 +103,7 @@ pub fn peekMatch(self: Self, token_type: TokenType) bool {
 
 pub fn peekMatchMany(self: Self, comptime token_types: anytype) bool {
     inline for (token_types, 0..) |tok_type, i| {
-        if (self.lexer.getToken(self.cur_token + i).type != tok_type) {
+        if (self.tokens[self.cur_token + i].type != tok_type) {
             return false;
         }
     }
@@ -215,7 +214,7 @@ pub fn parseClassStatement(self: *Self, is_abstract: bool) ParserError!?AST.Node
 
         try body.append(try self.parseClassStaticMember());
     }
-    return try self.pool.addNode(self.cur_token, AST.Node{ .class = .{
+    return self.pool.addNode(self.cur_token, AST.Node{ .class = .{
         .abstract = is_abstract,
         .name = name orelse AST.Node.Empty,
         .super_class = super_class,
@@ -231,7 +230,7 @@ fn parseInterfaceList(self: *Self) ParserError![]AST.Node.Index {
         if (!self.match(TokenType.Identifier) and !try parseKeywordAsIdentifier(self)) {
             return self.fail(diagnostics.identifier_expected, .{});
         }
-        try list.append(try self.pool.addNode(self.cur_token - 1, AST.Node{
+        try list.append(self.pool.addNode(self.cur_token - 1, AST.Node{
             .simple_value = .{ .kind = .identifier },
         }));
         if (!self.match(TokenType.Comma)) {
@@ -255,12 +254,12 @@ fn parseClassStaticMember(self: *Self) ParserError!AST.Node.Index {
                 try block.append(field);
             }
 
-            return try self.pool.addNode(self.cur_token, AST.Node{
+            return self.pool.addNode(self.cur_token, AST.Node{
                 .class_static_block = block.items,
             });
         }
 
-        return try self.pool.addNode(self.cur_token, AST.Node{ .class_member = .{
+        return self.pool.addNode(self.cur_token, AST.Node{ .class_member = .{
             .flags = AST.ClassMemberFlags.static,
             .node = try self.parseClassMember(),
         } });
@@ -298,7 +297,7 @@ fn parseClassMember(self: *Self) ParserError!AST.Node.Index {
         try self.parseClassField() orelse
         return self.fail(diagnostics.identifier_expected, .{});
 
-    return try self.pool.addNode(self.cur_token, AST.Node{
+    return self.pool.addNode(self.cur_token, AST.Node{
         .class_member = .{
             .flags = @intCast(flags),
             .node = node,
@@ -335,7 +334,7 @@ pub fn parseMethod(self: *Self, flags: u4) ParserError!?AST.Node.Index {
     const args = try self.parseFunctionArguments() orelse return self.fail(diagnostics.ARG_expected, .{"("});
     const return_type = try self.parseOptionalDataType();
     const body = try self.parseBlock() orelse return self.fail(diagnostics.ARG_expected, .{"{"});
-    return try self.pool.addNode(cur_token, AST.Node{ .object_method = .{
+    return self.pool.addNode(cur_token, AST.Node{ .object_method = .{
         .flags = flags,
         .name = elem_name,
         .params = args,
@@ -354,7 +353,7 @@ pub fn parseClassField(self: *Self) ParserError!?AST.Node.Index {
     }
 
     _ = try self.consume(TokenType.Semicolon, diagnostics.ARG_expected, .{";"});
-    return try self.pool.addNode(self.cur_token, AST.Node{ .class_field = .{
+    return self.pool.addNode(self.cur_token, AST.Node{ .class_field = .{
         .name = elem_name,
         .decl_type = decl_type,
         .value = value,
@@ -375,7 +374,7 @@ pub fn parseMethodGetter(self: *Self) ParserError!?AST.Node.Index {
     const return_type = try self.parseOptionalDataType();
     const body = try self.parseBlock() orelse return self.fail(diagnostics.ARG_expected, .{"{"});
 
-    return try self.pool.addNode(self.cur_token, AST.Node{ .object_method = .{
+    return self.pool.addNode(self.cur_token, AST.Node{ .object_method = .{
         .flags = AST.FunctionFlags.Getter,
         .name = elem_name,
         .params = args,
@@ -398,7 +397,7 @@ pub fn parseMethodSetter(self: *Self) ParserError!?AST.Node.Index {
     const return_type = try self.parseOptionalDataType();
     const body = try self.parseBlock() orelse return self.fail(diagnostics.ARG_expected, .{"{"});
 
-    return try self.pool.addNode(self.cur_token, AST.Node{ .object_method = .{
+    return self.pool.addNode(self.cur_token, AST.Node{ .object_method = .{
         .flags = AST.FunctionFlags.Setter,
         .name = elem_name,
         .params = args,
@@ -409,32 +408,27 @@ pub fn parseMethodSetter(self: *Self) ParserError!?AST.Node.Index {
 
 pub fn parseObjectElementName(self: *Self) ParserError!?AST.Node.Index {
     switch (self.token().type) {
-        .Identifier => {
+        .Identifier, .PrivateIdentifier => {
             _ = self.advance();
-            return try self.pool.addNode(self.cur_token - 1, AST.Node{ .simple_value = .{ .kind = .identifier } });
+            return self.pool.addNode(self.cur_token - 1, AST.Node{ .simple_value = .{ .kind = .identifier } });
         },
         .StringConstant => {
             _ = self.advance();
-            return try self.pool.addNode(self.cur_token - 1, AST.Node{ .simple_value = .{ .kind = .string } });
+            return self.pool.addNode(self.cur_token - 1, AST.Node{ .simple_value = .{ .kind = .string } });
         },
         .NumberConstant => {
             _ = self.advance();
-            return try self.pool.addNode(self.cur_token - 1, AST.Node{ .simple_value = .{ .kind = .number } });
+            return self.pool.addNode(self.cur_token - 1, AST.Node{ .simple_value = .{ .kind = .number } });
         },
         .BigIntConstant => {
             _ = self.advance();
-            return try self.pool.addNode(self.cur_token - 1, AST.Node{ .simple_value = .{ .kind = .bigint } });
+            return self.pool.addNode(self.cur_token - 1, AST.Node{ .simple_value = .{ .kind = .bigint } });
         },
         .OpenSquareBracket => {
             _ = self.advance();
             const node = try parseAssignment(self);
             _ = try self.consume(TokenType.CloseSquareBracket, diagnostics.ARG_expected, .{"]"});
-            return try self.pool.addNode(self.cur_token, AST.Node{ .computed_identifier = node });
-        },
-        .Hash => {
-            _ = self.advance();
-            _ = try self.consume(TokenType.Identifier, diagnostics.identifier_expected, .{});
-            return try self.pool.addNode(self.cur_token - 1, AST.Node{ .simple_value = .{ .kind = .private_identifier } });
+            return self.pool.addNode(self.cur_token, AST.Node{ .computed_identifier = node });
         },
         else => {
             return null;
@@ -468,7 +462,7 @@ pub fn parseFunctionStatement(self: *Self, flags: u4) ParserError!?AST.Node.Inde
     const return_type = try self.parseOptionalDataType();
     const body = try self.parseBlock() orelse return self.fail(diagnostics.ARG_expected, .{"{"});
 
-    return try self.pool.addNode(self.cur_token, AST.Node{ .function_decl = .{
+    return self.pool.addNode(self.cur_token, AST.Node{ .function_decl = .{
         .flags = fn_flags,
         .name = func_name,
         .params = args,
@@ -490,7 +484,7 @@ pub fn parseFunctionArguments(self: *Self) ParserError!?[]AST.Node.Index {
                 try self.emitError(diagnostics.ARG_expected, .{","});
             }
             const param_type = try self.parseOptionalDataType();
-            try args.append(try self.pool.addNode(identifier, AST.Node{ .function_param = .{
+            try args.append(self.pool.addNode(identifier, AST.Node{ .function_param = .{
                 .type = param_type,
                 .node = identifier,
             } }));
@@ -530,7 +524,7 @@ pub fn parseBlock(self: *Self) ParserError!?AST.Node.Index {
         }
     }
 
-    return try self.pool.addNode(self.cur_token, AST.Node{ .block = statements.items });
+    return self.pool.addNode(self.cur_token, AST.Node{ .block = statements.items });
 }
 
 pub fn parseDeclaration(self: *Self) ParserError!?AST.Node.Index {
@@ -554,7 +548,7 @@ pub fn parseDeclaration(self: *Self) ParserError!?AST.Node.Index {
             value = try parseAssignment(self);
         }
 
-        try nodes.append(try self.pool.addNode(self.cur_token, AST.Node{ .decl_binding = .{
+        try nodes.append(self.pool.addNode(self.cur_token, AST.Node{ .decl_binding = .{
             .name = identifier,
             .decl_type = identifier_data_type,
             .value = value,
@@ -564,7 +558,7 @@ pub fn parseDeclaration(self: *Self) ParserError!?AST.Node.Index {
         }
     }
 
-    return try self.pool.addNode(self.cur_token, AST.Node{ .declaration = .{
+    return self.pool.addNode(self.cur_token, AST.Node{ .declaration = .{
         .kind = kind,
         .list = nodes.items,
     } });
@@ -583,7 +577,7 @@ fn parseTypeDeclaration(self: *Self) ParserError!?AST.Node.Index {
 
     const identifier_data_type = try self.parseSymbolType();
 
-    return try self.pool.addNode(self.cur_token, AST.Node{ .type_decl = .{
+    return self.pool.addNode(self.cur_token, AST.Node{ .type_decl = .{
         .left = identifier,
         .right = identifier_data_type,
     } });
@@ -615,7 +609,7 @@ fn parseInterfaceDeclaration(self: *Self) ParserError!?AST.Node.Index {
         try list.append(node);
         has_comma = self.match(TokenType.Comma) or self.match(TokenType.Semicolon);
     }
-    return try self.pool.addNode(self.cur_token, AST.Node{ .interface_decl = .{
+    return self.pool.addNode(self.cur_token, AST.Node{ .interface_decl = .{
         .name = identifier,
         .extends = &[_]AST.Node.Index{},
         .body = list.items,
@@ -628,10 +622,10 @@ fn parseReturnStatement(self: *Self) ParserError!?AST.Node.Index {
     }
 
     if (self.match(TokenType.Semicolon)) {
-        return try self.pool.addNode(self.cur_token, .{ .@"return" = AST.Node.Empty });
+        return self.pool.addNode(self.cur_token, .{ .@"return" = AST.Node.Empty });
     }
 
-    return try self.pool.addNode(self.cur_token, AST.Node{ .@"return" = try self.parseExpression() });
+    return self.pool.addNode(self.cur_token, AST.Node{ .@"return" = try self.parseExpression() });
 }
 
 fn parseEmptyStatement(self: *Self) ParserError!?AST.Node.Index {
@@ -654,7 +648,7 @@ fn parseIfStatement(self: *Self) ParserError!?AST.Node.Index {
 
     const else_node = if (self.match(TokenType.Else)) try self.parseStatement() else AST.Node.Empty;
 
-    return try self.pool.addNode(self.cur_token, AST.Node{ .@"if" = AST.Node.If{
+    return self.pool.addNode(self.cur_token, AST.Node{ .@"if" = AST.Node.If{
         .expr = cond,
         .body = then,
         .@"else" = else_node,
@@ -664,7 +658,7 @@ fn parseIfStatement(self: *Self) ParserError!?AST.Node.Index {
 pub fn parseExpression(self: *Self) ParserError!AST.Node.Index {
     var node = try parseAssignment(self);
     while (self.match(TokenType.Comma)) {
-        const new_node = try self.pool.addNode(self.cur_token, AST.Node{
+        const new_node = self.pool.addNode(self.cur_token, AST.Node{
             .comma = .{
                 .left = node,
                 .right = try parseAssignment(self),
@@ -684,7 +678,7 @@ pub fn parseConditionalExpression(self: *Self) ParserError!AST.Node.Index {
         const true_expr = try parseAssignment(self);
         _ = try self.consume(TokenType.Colon, diagnostics.ARG_expected, .{":"});
         const false_expr = try parseAssignment(self);
-        const new_node = try self.pool.addNode(self.cur_token, AST.Node{ .ternary_expr = .{
+        const new_node = self.pool.addNode(self.cur_token, AST.Node{ .ternary_expr = .{
             .expr = node,
             .body = true_expr,
             .@"else" = false_expr,
@@ -720,7 +714,7 @@ fn parseArrowFunctionWith1Arg(self: *Self, arrow_type: anytype) ParserError!?AST
     args.appendAssumeCapacity(arg);
 
     const body = try self.parseConciseBody();
-    return try self.pool.addNode(self.cur_token, AST.Node{ .arrow_function = .{
+    return self.pool.addNode(self.cur_token, AST.Node{ .arrow_function = .{
         .type = arrow_type,
         .params = args.items,
         .body = body,
@@ -745,7 +739,7 @@ fn parseArrowFunctionWithParenthesis(self: *Self, arrow_type: anytype) ParserErr
     }
 
     const body = try self.parseConciseBody();
-    return try self.pool.addNode(self.cur_token, AST.Node{ .arrow_function = .{
+    return self.pool.addNode(self.cur_token, AST.Node{ .arrow_function = .{
         .type = arrow_type,
         .params = args,
         .body = body,
@@ -773,7 +767,7 @@ const unary_operators = .{
 pub fn parseUnary(self: *Self) ParserError!AST.Node.Index {
     inline for (unary_operators) |unary_operator| {
         if (self.match(unary_operator.token)) {
-            return try self.pool.addNode(self.cur_token, @unionInit(AST.Node, unary_operator.tag, try self.parseUnary()));
+            return self.pool.addNode(self.cur_token, @unionInit(AST.Node, unary_operator.tag, try self.parseUnary()));
         }
     }
 
@@ -782,11 +776,11 @@ pub fn parseUnary(self: *Self) ParserError!AST.Node.Index {
 
 fn parseUpdateExpression(self: *Self) ParserError!AST.Node.Index {
     if (self.match(TokenType.PlusPlus)) {
-        return try self.pool.addNode(self.cur_token, AST.Node{
+        return self.pool.addNode(self.cur_token, AST.Node{
             .plusplus_pre = try self.parseUnary(),
         });
     } else if (self.match(TokenType.MinusMinus)) {
-        return try self.pool.addNode(self.cur_token, AST.Node{
+        return self.pool.addNode(self.cur_token, AST.Node{
             .minusminus_pre = try self.parseUnary(),
         });
     }
@@ -794,11 +788,11 @@ fn parseUpdateExpression(self: *Self) ParserError!AST.Node.Index {
     const node = try self.parseLeftHandSideExpression();
 
     if (self.match(TokenType.PlusPlus)) {
-        return try self.pool.addNode(self.cur_token, AST.Node{
+        return self.pool.addNode(self.cur_token, AST.Node{
             .plusplus_post = node,
         });
     } else if (self.match(TokenType.MinusMinus)) {
-        return try self.pool.addNode(self.cur_token, AST.Node{
+        return self.pool.addNode(self.cur_token, AST.Node{
             .minusminus_post = node,
         });
     }
@@ -817,7 +811,7 @@ fn parseNewExpression(self: *Self) ParserError!?AST.Node.Index {
 
     const maybe_node = try self.parseCallableExpression();
     if (maybe_node) |node| {
-        return try self.pool.addNode(self.cur_token, AST.Node{
+        return self.pool.addNode(self.cur_token, AST.Node{
             .new_expr = node,
         });
     }
@@ -866,7 +860,7 @@ fn parseCallableExpression(self: *Self) ParserError!?AST.Node.Index {
             }
         }
 
-        const new_node = try self.pool.addNode(self.cur_token, AST.Node{
+        const new_node = self.pool.addNode(self.cur_token, AST.Node{
             .call_expr = .{
                 .node = node,
                 .params = nodes.items,
@@ -882,7 +876,7 @@ fn parseIndexAccess(self: *Self, expr: AST.Node.Index) ParserError!?AST.Node.Ind
     if (!self.match(TokenType.OpenSquareBracket)) {
         return null;
     }
-    const node = try self.pool.addNode(self.cur_token, AST.Node{
+    const node = self.pool.addNode(self.cur_token, AST.Node{
         .index_access = .{
             .left = expr,
             .right = try self.parseExpression(),
@@ -901,7 +895,7 @@ fn parsePropertyAccess(self: *Self, expr: AST.Node.Index) ParserError!?AST.Node.
 
     const identifier = try self.parseIdentifier() orelse return self.fail(diagnostics.identifier_expected, .{});
 
-    return try self.pool.addNode(self.cur_token, AST.Node{
+    return self.pool.addNode(self.cur_token, AST.Node{
         .property_access = .{
             .left = expr,
             .right = identifier,
@@ -926,7 +920,7 @@ fn parseSymbolUnionType(self: *Self) ParserError!?AST.Node.Index {
     var node = try self.parseSymbolIntersectionType() orelse return null;
 
     if (self.match(TokenType.Bar)) {
-        const new_node = try self.pool.addNode(self.cur_token, AST.Node{
+        const new_node = self.pool.addNode(self.cur_token, AST.Node{
             .type_union = .{
                 .left = node,
                 .right = try self.parseSymbolUnionType() orelse return self.fail(diagnostics.type_expected, .{}),
@@ -943,7 +937,7 @@ fn parseSymbolIntersectionType(self: *Self) ParserError!?AST.Node.Index {
     var node = try self.parseSymbolTypeUnary() orelse return null;
 
     if (self.match(TokenType.Ampersand)) {
-        const new_node = try self.pool.addNode(self.cur_token, AST.Node{
+        const new_node = self.pool.addNode(self.cur_token, AST.Node{
             .type_intersection = .{
                 .left = node,
                 .right = try self.parseSymbolIntersectionType() orelse return self.fail(diagnostics.type_expected, .{}),
@@ -958,11 +952,11 @@ fn parseSymbolIntersectionType(self: *Self) ParserError!?AST.Node.Index {
 
 fn parseSymbolTypeUnary(self: *Self) ParserError!?AST.Node.Index {
     if (self.match(TokenType.Typeof)) {
-        return try self.pool.addNode(self.cur_token, AST.Node{
+        return self.pool.addNode(self.cur_token, AST.Node{
             .typeof = try self.parseSymbolType(),
         });
     } else if (self.match(TokenType.Keyof)) {
-        return try self.pool.addNode(self.cur_token, AST.Node{
+        return self.pool.addNode(self.cur_token, AST.Node{
             .keyof = try self.parseSymbolType(),
         });
     }
@@ -975,7 +969,7 @@ fn parseSymbolArrayType(self: *Self) ParserError!?AST.Node.Index {
 
     if (self.match(TokenType.OpenSquareBracket)) {
         if (self.match(TokenType.CloseSquareBracket)) {
-            return try self.pool.addNode(self.cur_token, AST.Node{ .array_type = node });
+            return self.pool.addNode(self.cur_token, AST.Node{ .array_type = node });
         }
         return self.fail(diagnostics.unexpected_token, .{});
     }
@@ -1016,7 +1010,7 @@ fn parseObjectType(self: *Self) ParserError!?AST.Node.Index {
         has_comma = self.match(TokenType.Comma) or self.match(TokenType.Semicolon);
     }
 
-    return try self.pool.addNode(self.cur_token, AST.Node{ .object_type = list.items });
+    return self.pool.addNode(self.cur_token, AST.Node{ .object_type = list.items });
 }
 
 fn parseObjectPropertyType(self: *Self) ParserError!?AST.Node.Index {
@@ -1028,7 +1022,7 @@ fn parseObjectPropertyType(self: *Self) ParserError!?AST.Node.Index {
         right = try self.parseSymbolType();
     }
 
-    return try self.pool.addNode(self.cur_token, AST.Node{
+    return self.pool.addNode(self.cur_token, AST.Node{
         .object_type_field = .{
             .name = identifier,
             .type = right,
@@ -1050,7 +1044,7 @@ fn parseObjectMethodType(self: *Self) ParserError!?AST.Node.Index {
     const list = try self.parseFunctionArgumentsType();
     const return_type = try self.parseOptionalDataType();
 
-    return try self.pool.addNode(self.cur_token, AST.Node{ .function_type = .{
+    return self.pool.addNode(self.cur_token, AST.Node{ .function_type = .{
         .name = identifier,
         .params = list,
         .return_type = return_type,
@@ -1070,7 +1064,7 @@ fn parseFunctionArgumentsType(self: *Self) ParserError![]AST.Node.Index {
                 return self.fail(diagnostics.ARG_expected, .{","});
             }
             const arg_type = try self.parseOptionalDataType();
-            try args.append(try self.pool.addNode(identifier, AST.Node{ .function_param = .{
+            try args.append(self.pool.addNode(identifier, AST.Node{ .function_param = .{
                 .node = identifier,
                 .type = arg_type,
             } }));
@@ -1102,7 +1096,7 @@ fn parseTupleType(self: *Self) ParserError!?AST.Node.Index {
         try list.append(node);
     }
 
-    return try self.pool.addNode(self.cur_token, AST.Node{ .tuple_type = list.items });
+    return self.pool.addNode(self.cur_token, AST.Node{ .tuple_type = list.items });
 }
 
 const primitive_types = .{
@@ -1121,14 +1115,14 @@ const primitive_types = .{
 fn parsePrimitiveType(self: *Self) ParserError!?AST.Node.Index {
     inline for (primitive_types) |primitive_type| {
         if (self.match(primitive_type[0])) {
-            return try self.pool.addNode(self.cur_token - 1, AST.Node{ .simple_type = .{ .kind = primitive_type[1] } });
+            return self.pool.addNode(self.cur_token - 1, AST.Node{ .simple_type = .{ .kind = primitive_type[1] } });
         }
     }
 
     return null;
 }
 fn parseGenericType(self: *Self) ParserError!?AST.Node.Index {
-    var node = try self.parseTypeIdentifier() orelse return null;
+    var node = self.parseTypeIdentifier() orelse return null;
 
     if (self.match(TokenType.LessThan)) {
         var params = std.ArrayList(AST.Node.Index).init(self.arena.allocator());
@@ -1144,7 +1138,7 @@ fn parseGenericType(self: *Self) ParserError!?AST.Node.Index {
 
         _ = try self.consume(TokenType.GreaterThan, diagnostics.ARG_expected, .{">"});
 
-        node = try self.pool.addNode(self.cur_token, AST.Node{ .generic_type = .{
+        node = self.pool.addNode(self.cur_token, AST.Node{ .generic_type = .{
             .name = node,
             .params = params.items,
         } });
@@ -1153,7 +1147,7 @@ fn parseGenericType(self: *Self) ParserError!?AST.Node.Index {
     return node;
 }
 
-fn parseTypeIdentifier(self: *Self) ParserError!?AST.Node.Index {
+fn parseTypeIdentifier(self: *Self) ?AST.Node.Index {
     const identifier = self.consumeOrNull(TokenType.Identifier) orelse return null;
 
     const type_map = .{
@@ -1163,14 +1157,14 @@ fn parseTypeIdentifier(self: *Self) ParserError!?AST.Node.Index {
         .{ "boolean", .boolean },
     };
 
-    const value = self.lexer.getTokenValue(identifier).?;
+    const value = self.tokens[identifier].literal(self.buffer);
     inline for (type_map) |type_item| {
         if (std.mem.eql(u8, type_item[0], value)) {
-            return try self.pool.addNode(identifier, AST.Node{ .simple_type = .{ .kind = type_item[1] } });
+            return self.pool.addNode(identifier, AST.Node{ .simple_type = .{ .kind = type_item[1] } });
         }
     }
 
-    return try self.pool.addNode(identifier, AST.Node{ .simple_type = .{ .kind = .identifier } });
+    return self.pool.addNode(identifier, AST.Node{ .simple_type = .{ .kind = .identifier } });
 }
 
 pub fn needsSemicolon(pool: AST.Pool, node: AST.Node.Index) bool {
@@ -1198,7 +1192,7 @@ pub fn needsSemicolon(pool: AST.Pool, node: AST.Node.Index) bool {
     };
 }
 
-pub fn expectAST(fn_ptr: fn (parser: *Self) ParserError!AST.Node.Index, expected: AST.Node, text: []const u8) !void {
+pub fn expectAST(fn_ptr: fn (parser: *Self) ParserError!AST.Node.Index, expected: AST.Node, text: [:0]const u8) !void {
     var parser = try Self.init(std.testing.allocator, text);
     defer parser.deinit();
 
@@ -1206,7 +1200,7 @@ pub fn expectAST(fn_ptr: fn (parser: *Self) ParserError!AST.Node.Index, expected
     try std.testing.expectEqualDeep(expected, parser.pool.getNode(node));
 }
 
-pub fn expectMaybeAST(fn_ptr: fn (parser: *Self) ParserError!?AST.Node.Index, expected: ?AST.Node, text: []const u8) !void {
+pub fn expectMaybeAST(fn_ptr: fn (parser: *Self) ParserError!?AST.Node.Index, expected: ?AST.Node, text: [:0]const u8) !void {
     var parser = try Self.init(std.testing.allocator, text);
     defer parser.deinit();
 
@@ -1218,7 +1212,7 @@ pub fn expectMaybeAST(fn_ptr: fn (parser: *Self) ParserError!?AST.Node.Index, ex
     }
 }
 
-pub fn expectASTAndToken(fn_ptr: fn (parser: *Self) ParserError!?AST.Node.Index, expected: ?AST.Node, tok_type: TokenType, token_value: ?[]const u8, text: []const u8) !void {
+pub fn expectASTAndToken(fn_ptr: fn (parser: *Self) ParserError!?AST.Node.Index, expected: ?AST.Node, tok_type: TokenType, token_value: []const u8, text: [:0]const u8) !void {
     var parser = try Self.init(std.testing.allocator, text);
     defer parser.deinit();
 
@@ -1239,7 +1233,7 @@ pub fn expectASTAndToken(fn_ptr: fn (parser: *Self) ParserError!?AST.Node.Index,
 
 pub fn expectSyntaxError(
     fn_ptr: fn (parser: *Self) ParserError!?AST.Node.Index,
-    comptime text: []const u8,
+    comptime text: [:0]const u8,
     comptime expected_error: diagnostics.DiagnosticMessage,
     args: anytype,
 ) !void {
@@ -1256,23 +1250,12 @@ pub fn expectSyntaxError(
 
 pub fn expectToken(self: *Self, tok_type: TokenType, node: AST.Node.Index) !void {
     const raw = self.pool.getRawNode(node);
-    try expectEqual(tok_type, self.lexer.getToken(raw.main_token).type);
+    try expectEqual(tok_type, self.tokens[raw.main_token].type);
 }
 
-pub fn expectTokenValue(self: *Self, expected_value: ?[]const u8, node: AST.Node.Index) !void {
+pub fn expectTokenValue(self: *Self, expected_value: []const u8, node: AST.Node.Index) !void {
     const raw = self.pool.getRawNode(node);
-    if (expected_value) |expected| {
-        if (self.lexer.getTokenValue(raw.main_token)) |value| {
-            try expectEqualStrings(expected, value);
-        } else {
-            return error.TestExpectedEqual;
-        }
-    } else {
-        if (self.lexer.getTokenValue(raw.main_token)) |value| {
-            std.debug.print("expected null, got {s}\n", .{value});
-            return error.TestExpectedEqual;
-        }
-    }
+    try expectEqualStrings(expected_value, self.tokens[raw.main_token].literal(self.buffer));
 }
 
 pub fn expectSimpleMethod(parser: Self, node_idx: AST.Node.Index, expected_flags: anytype, expected_name: []const u8) !void {
@@ -1280,8 +1263,8 @@ pub fn expectSimpleMethod(parser: Self, node_idx: AST.Node.Index, expected_flags
     try expectEqual(expected_flags, node.object_method.flags);
 
     const name_node = parser.pool.getRawNode(node.object_method.name);
-    const name_token = parser.lexer.getTokenValue(name_node.main_token);
-    try expectEqualStrings(expected_name, name_token.?);
+    const name_token = parser.tokens[name_node.main_token].literal(parser.buffer);
+    try expectEqualStrings(expected_name, name_token);
 }
 
 pub fn expectTSError(parser: Self, comptime expected_error: diagnostics.DiagnosticMessage, comptime args: anytype) !void {

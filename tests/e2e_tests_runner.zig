@@ -168,7 +168,7 @@ pub const TestRunner = struct {
         var file = try std.fs.cwd().openFile(case_filepath, .{ .mode = .read_only });
         defer file.close();
 
-        const buffer = try file.readToEndAlloc(arena.allocator(), zapts.MAX_FILE_SIZE);
+        const buffer = try file.readToEndAllocOptions(arena.allocator(), zapts.MAX_FILE_SIZE, null, @alignOf(u8), 0);
         const result = try zapts.compileBuffer(arena.allocator(), path.basename(case_filepath), buffer);
 
         if (self.update_baselines) {

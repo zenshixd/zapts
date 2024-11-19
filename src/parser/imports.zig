@@ -14,13 +14,14 @@ const expectEqualStrings = std.testing.expectEqualStrings;
 const expectEqualDeep = std.testing.expectEqualDeep;
 const expectError = std.testing.expectError;
 const expectMaybeAST = Parser.expectMaybeAST;
+const expectSyntaxError = Parser.expectSyntaxError;
 
 pub fn parseImportStatement(self: *Parser) ParserError!?AST.Node.Index {
     if (!self.match(TokenType.Import)) {
         return null;
     }
     if (self.consumeOrNull(TokenType.StringConstant)) |path| {
-        return try self.pool.addNode(self.cur_token, .{
+        return self.pool.addNode(self.cur_token, .{
             .import = .{ .simple = path },
         });
     }
@@ -29,7 +30,7 @@ pub fn parseImportStatement(self: *Parser) ParserError!?AST.Node.Index {
 
     const path_token = try parseFromClause(self) orelse return self.fail(diagnostics.ARG_expected, .{"from"});
 
-    return try self.pool.addNode(self.cur_token, AST.Node{
+    return self.pool.addNode(self.cur_token, AST.Node{
         .import = .{
             .full = .{
                 .bindings = bindings,
@@ -42,29 +43,29 @@ pub fn parseImportStatement(self: *Parser) ParserError!?AST.Node.Index {
 fn parseImportClause(self: *Parser) ParserError![]AST.Node.Index {
     var bindings = std.ArrayList(AST.Node.Index).init(self.arena.allocator());
 
-    try bindings.append(
+    bindings.append(
         try parseImportDefaultBinding(self) orelse
             try parseImportNamespaceBinding(self) orelse
             try parseImportNamedBindings(self) orelse
             return self.fail(diagnostics.declaration_or_statement_expected, .{}),
-    );
+    ) catch unreachable;
 
     if (self.pool.getNode(bindings.items[0]).import_binding == .default) {
         if (self.match(TokenType.Comma)) {
-            try bindings.append(
+            bindings.append(
                 try parseImportNamespaceBinding(self) orelse
                     try parseImportNamedBindings(self) orelse
                     return self.fail(diagnostics.ARG_expected, .{"{"}),
-            );
+            ) catch unreachable;
         }
     }
 
-    return try bindings.toOwnedSlice();
+    return bindings.toOwnedSlice() catch unreachable;
 }
 
 fn parseImportDefaultBinding(self: *Parser) !?AST.Node.Index {
     if (self.consumeOrNull(TokenType.Identifier)) |identifier| {
-        return try self.pool.addNode(self.cur_token, .{ .import_binding = .{ .default = identifier } });
+        return self.pool.addNode(self.cur_token, .{ .import_binding = .{ .default = identifier } });
     }
 
     return null;
@@ -78,7 +79,7 @@ fn parseImportNamespaceBinding(self: *Parser) !?AST.Node.Index {
     _ = try self.consume(TokenType.As, diagnostics.ARG_expected, .{"as"});
     const identifier = try self.consume(TokenType.Identifier, diagnostics.identifier_expected, .{});
 
-    return try self.pool.addNode(self.cur_token, .{ .import_binding = .{ .namespace = identifier } });
+    return self.pool.addNode(self.cur_token, .{ .import_binding = .{ .namespace = identifier } });
 }
 
 fn parseImportNamedBindings(self: *Parser) !?AST.Node.Index {
@@ -87,11 +88,10 @@ fn parseImportNamedBindings(self: *Parser) !?AST.Node.Index {
     }
 
     var named_bindings = std.ArrayList(AST.Node.Index).init(self.arena.allocator());
-    defer named_bindings.deinit();
 
     while (true) {
         if (self.consumeOrNull(TokenType.Identifier)) |identifier| {
-            try named_bindings.append(identifier);
+            named_bindings.append(identifier) catch unreachable;
         }
 
         if (self.match(TokenType.CloseCurlyBrace)) {
@@ -100,7 +100,9 @@ fn parseImportNamedBindings(self: *Parser) !?AST.Node.Index {
         _ = try self.consume(TokenType.Comma, diagnostics.ARG_expected, .{","});
     }
 
-    return try self.pool.addNode(self.cur_token, .{ .import_binding = .{ .named = named_bindings.items } });
+    return self.pool.addNode(self.cur_token, .{ .import_binding = .{
+        .named = named_bindings.toOwnedSlice() catch unreachable,
+    } });
 }
 
 pub fn parseExportStatement(self: *Parser) ParserError!?AST.Node.Index {
@@ -118,7 +120,7 @@ pub fn parseExportStatement(self: *Parser) ParserError!?AST.Node.Index {
         try parseDefaultExport(self) orelse
         return self.fail(diagnostics.declaration_or_statement_expected, .{});
 
-    return try self.pool.addNode(self.cur_token, .{ .@"export" = .{
+    return self.pool.addNode(self.cur_token, .{ .@"export" = .{
         .node = node,
     } });
 }
@@ -133,7 +135,7 @@ fn parseExportFromClause(self: *Parser) ParserError!?AST.Node.Index {
         }
 
         const path_token = try parseFromClause(self) orelse return self.fail(diagnostics.ARG_expected, .{"from"});
-        return try self.pool.addNode(self.cur_token, AST.Node{ .@"export" = .{
+        return self.pool.addNode(self.cur_token, AST.Node{ .@"export" = .{
             .from_all = .{
                 .alias = namespace,
                 .path = path_token,
@@ -143,29 +145,27 @@ fn parseExportFromClause(self: *Parser) ParserError!?AST.Node.Index {
 
     if (self.match(TokenType.OpenCurlyBrace)) {
         var exports = std.ArrayList(AST.Node.Index).init(self.arena.allocator());
-        defer exports.deinit();
 
-        var has_comma = true;
-        while (true) {
-            if (self.match(TokenType.CloseCurlyBrace)) {
-                break;
-            }
-            if (!has_comma) {
-                try self.emitError(diagnostics.ARG_expected, .{","});
-            }
+        while (!self.match(TokenType.CloseCurlyBrace)) {
             const identifier = try self.consume(TokenType.Identifier, diagnostics.identifier_expected, .{});
             var alias: Token.Index = 0;
             if (self.match(TokenType.As)) {
                 alias = try self.consume(TokenType.Identifier, diagnostics.identifier_expected, .{});
             }
-            has_comma = self.consumeOrNull(TokenType.Comma) != null;
-            try exports.append(identifier);
+
+            exports.append(identifier) catch unreachable;
+
+            if (self.match(TokenType.CloseCurlyBrace)) {
+                break;
+            }
+            _ = try self.consume(TokenType.Comma, diagnostics.ARG_expected, .{","});
         }
+
         const path = try parseFromClause(self);
-        return try self.pool.addNode(self.cur_token, AST.Node{
+        return self.pool.addNode(self.cur_token, AST.Node{
             .@"export" = .{
                 .from = .{
-                    .bindings = exports.items,
+                    .bindings = exports.toOwnedSlice() catch unreachable,
                     .path = path orelse AST.Node.Empty,
                 },
             },
@@ -190,6 +190,12 @@ fn parseFromClause(self: *Parser) ParserError!?Token.Index {
         return null;
     }
     return try self.consume(TokenType.StringConstant, diagnostics.string_literal_expected, .{});
+}
+
+test "should return null if its not import statement" {
+    const text = "identifier";
+
+    try expectMaybeAST(parseImportStatement, null, text);
 }
 
 test "should parse simple import statement" {
@@ -228,6 +234,12 @@ test "should parse namespace import statement" {
     try expectEqualDeep(AST.Node{ .import_binding = .{ .namespace = 3 } }, parser.pool.getNode(full_import.bindings[0]));
 }
 
+test "should return error if \"as\" is missing" {
+    const text = "import * foo from 'bar'";
+
+    try expectSyntaxError(parseImportStatement, text, diagnostics.ARG_expected, .{"as"});
+}
+
 test "should parse named import statement" {
     const text = "import { foo, bar } from 'bar'";
     var parser = try Parser.init(std.testing.allocator, text);
@@ -241,4 +253,52 @@ test "should parse named import statement" {
     };
     try expectEqualDeep(AST.Node{ .import = .{ .full = full_import } }, parser.pool.getNode(node.?));
     try expectEqualDeep(AST.Node{ .import_binding = .{ .named = @constCast(&[_]AST.Node.Index{ 2, 4 }) } }, parser.pool.getNode(full_import.bindings[0]));
+}
+
+test "should return error if comma is missing" {
+    const text = "import {foo bar} from 'bar'";
+
+    try expectSyntaxError(parseImportStatement, text, diagnostics.ARG_expected, .{","});
+}
+
+test "should return error if its not binding" {
+    const text = "import + from 'bar'";
+
+    try expectSyntaxError(parseImportStatement, text, diagnostics.declaration_or_statement_expected, .{});
+}
+
+test "should parse default import and namespace binding" {
+    const text = "import foo, * as bar from 'bar'";
+
+    try expectMaybeAST(parseImportStatement, AST.Node{ .import = .{ .full = .{
+        .bindings = @constCast(&[_]AST.Node.Index{ 1, 2 }),
+        .path = 7,
+    } } }, text);
+}
+
+test "should parse default import and named binding" {
+    const text = "import foo, { bar } from 'bar'";
+
+    try expectMaybeAST(parseImportStatement, AST.Node{ .import = .{ .full = .{
+        .bindings = @constCast(&[_]AST.Node.Index{ 1, 2 }),
+        .path = 7,
+    } } }, text);
+}
+
+test "should return error if second binding list is not valid binding" {
+    const text = "import foo, + from 'bar'";
+
+    try expectSyntaxError(parseImportStatement, text, diagnostics.ARG_expected, .{"{"});
+}
+
+test "should return error if path is missing" {
+    const text = "import foo";
+
+    try expectSyntaxError(parseImportStatement, text, diagnostics.ARG_expected, .{"from"});
+}
+
+test "should return error if path is not a string" {
+    const text = "import foo from 123";
+
+    try expectSyntaxError(parseImportStatement, text, diagnostics.string_literal_expected, .{});
 }

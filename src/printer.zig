@@ -95,23 +95,25 @@ const WorkerQueue = struct {
     }
 };
 
-filename: []const u8,
-lexer: Lexer,
-pool: AST.Pool,
 gpa: std.mem.Allocator,
 arena: std.heap.ArenaAllocator,
+filename: []const u8,
+buffer: [:0]const u8,
+tokens: []const Token,
+pool: AST.Pool,
 output: std.ArrayList(u8),
 queue: WorkerQueue,
 local_queue: WorkerQueue,
 indent: usize = 0,
 
-pub fn init(allocator: std.mem.Allocator, filename: []const u8, parser: *Parser) Printer {
+pub fn init(allocator: std.mem.Allocator, filename: []const u8, buffer: [:0]const u8, parser: *Parser) Printer {
     return .{
         .filename = filename,
+        .buffer = buffer,
         .gpa = allocator,
-        .pool = parser.pool,
-        .lexer = parser.lexer,
         .arena = std.heap.ArenaAllocator.init(allocator),
+        .tokens = parser.tokens,
+        .pool = parser.pool,
         .output = std.ArrayList(u8).init(allocator),
         .queue = .{ .allocator = allocator },
         .local_queue = .{ .allocator = allocator },
@@ -159,11 +161,7 @@ fn processWorkerItem(self: *Printer, item: WorkerItem) !void {
 }
 
 inline fn getTokenValue(self: *Printer, token: Token.Index) []const u8 {
-    if (self.lexer.getTokenValue(token)) |value| {
-        return value;
-    }
-
-    return self.lexer.getToken(token).lexeme();
+    return self.tokens[token].literal(self.buffer);
 }
 
 inline fn queueText(self: *Printer, text: []const u8) !void {

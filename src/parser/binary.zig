@@ -40,7 +40,7 @@ pub fn parseAssignment(parser: *Parser) ParserError!AST.Node.Index {
     inline for (assignment_map) |assignment| {
         if (parser.match(assignment[0])) {
             const tag = assignment[1];
-            return try parser.pool.addNode(parser.cur_token, @unionInit(AST.Node, tag, .{
+            return parser.pool.addNode(parser.cur_token, @unionInit(AST.Node, tag, .{
                 .left = node,
                 .right = try parseAssignment(parser),
             }));
@@ -83,7 +83,7 @@ pub fn parseBinaryExpression(parser: *Parser, operator_index: comptime_int) Pars
         try parser.parseUnary();
 
     while (parser.match(binary_operators[operator_index].token)) {
-        const new_node = try parser.pool.addNode(parser.cur_token, @unionInit(AST.Node, binary_operators[operator_index].tag, .{
+        const new_node = parser.pool.addNode(parser.cur_token, @unionInit(AST.Node, binary_operators[operator_index].tag, .{
             .left = node,
             .right = if (operator_index + 1 < binary_operators.len)
                 try parseBinaryExpression(parser, operator_index + 1)

@@ -34,7 +34,7 @@ pub fn parsePrimaryExpression(parser: *Parser) ParserError!?AST.Node.Index {
 
 pub fn parseIdentifier(parser: *Parser) ParserError!?AST.Node.Index {
     if (parser.match(TokenType.Identifier) or try parseKeywordAsIdentifier(parser)) {
-        return try parser.pool.addNode(parser.cur_token - 1, AST.Node{ .simple_value = .{ .kind = .identifier } });
+        return parser.pool.addNode(parser.cur_token - 1, AST.Node{ .simple_value = .{ .kind = .identifier } });
     }
 
     return null;
@@ -67,7 +67,7 @@ const literal_map = .{
 pub fn parseLiteral(parser: *Parser) ParserError!?AST.Node.Index {
     inline for (literal_map) |literal| {
         if (parser.match(literal[0])) {
-            return try parser.pool.addNode(parser.cur_token - 1, AST.Node{ .simple_value = .{ .kind = literal[1] } });
+            return parser.pool.addNode(parser.cur_token - 1, AST.Node{ .simple_value = .{ .kind = literal[1] } });
         }
     }
 
@@ -101,7 +101,7 @@ pub fn parseArrayLiteral(parser: *Parser) ParserError!?AST.Node.Index {
         }
     }
 
-    return try parser.pool.addNode(parser.cur_token, AST.Node{
+    return parser.pool.addNode(parser.cur_token, AST.Node{
         .array_literal = values.items,
     });
 }
@@ -130,7 +130,7 @@ pub fn parseObjectLiteral(parser: *Parser) ParserError!?AST.Node.Index {
         seen_comma = parser.consumeOrNull(TokenType.Comma) != null;
     }
 
-    return try parser.pool.addNode(parser.cur_token, AST.Node{
+    return parser.pool.addNode(parser.cur_token, AST.Node{
         .object_literal = try nodes.toOwnedSlice(),
     });
 }
@@ -152,7 +152,7 @@ pub fn parseObjectField(parser: *Parser) ParserError!?AST.Node.Index {
     }
 
     if (parser.match(TokenType.Colon)) {
-        return try parser.pool.addNode(parser.cur_token, AST.Node{
+        return parser.pool.addNode(parser.cur_token, AST.Node{
             .object_literal_field = .{
                 .left = identifier.?,
                 .right = try parseAssignment(parser),
@@ -160,7 +160,7 @@ pub fn parseObjectField(parser: *Parser) ParserError!?AST.Node.Index {
         });
     } else if (parser.peekMatch(TokenType.Comma) or parser.peekMatch(TokenType.CloseCurlyBrace)) {
         _ = parser.advance();
-        return try parser.pool.addNode(parser.cur_token, AST.Node{
+        return parser.pool.addNode(parser.cur_token, AST.Node{
             .object_literal_field_shorthand = identifier.?,
         });
     }
@@ -170,7 +170,7 @@ pub fn parseObjectField(parser: *Parser) ParserError!?AST.Node.Index {
 
 pub fn parseGroupingExpression(parser: *Parser) ParserError!?AST.Node.Index {
     if (parser.match(TokenType.OpenParen)) {
-        const node = try parser.pool.addNode(parser.cur_token, AST.Node{
+        const node = parser.pool.addNode(parser.cur_token, AST.Node{
             .grouping = try parser.parseExpression(),
         });
 
@@ -229,7 +229,7 @@ test "should parse allowed keyword as identifier" {
         \\abstract
     ;
 
-    try expectASTAndToken(parseIdentifier, AST.Node{ .simple_value = .{ .kind = .identifier } }, TokenType.Abstract, null, text);
+    try expectASTAndToken(parseIdentifier, AST.Node{ .simple_value = .{ .kind = .identifier } }, TokenType.Abstract, "abstract", text);
 }
 
 test "should return null if no identifier" {
@@ -250,11 +250,11 @@ test "should return null if not allowed keyword" {
 
 test "should parse literal" {
     const test_cases = .{
-        .{ "this", AST.SimpleValueKind.this, TokenType.This, null },
-        .{ "null", AST.SimpleValueKind.null, TokenType.Null, null },
-        .{ "undefined", AST.SimpleValueKind.undefined, TokenType.Undefined, null },
-        .{ "true", AST.SimpleValueKind.true, TokenType.True, null },
-        .{ "false", AST.SimpleValueKind.false, TokenType.False, null },
+        .{ "this", AST.SimpleValueKind.this, TokenType.This, "this" },
+        .{ "null", AST.SimpleValueKind.null, TokenType.Null, "null" },
+        .{ "undefined", AST.SimpleValueKind.undefined, TokenType.Undefined, "undefined" },
+        .{ "true", AST.SimpleValueKind.true, TokenType.True, "true" },
+        .{ "false", AST.SimpleValueKind.false, TokenType.False, "false" },
         .{ "123", AST.SimpleValueKind.number, TokenType.NumberConstant, "123" },
         .{ "123n", AST.SimpleValueKind.bigint, TokenType.BigIntConstant, "123n" },
         .{ "\"hello\"", AST.SimpleValueKind.string, TokenType.StringConstant, "\"hello\"" },

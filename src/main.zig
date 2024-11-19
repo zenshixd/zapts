@@ -34,6 +34,7 @@ pub fn main() !void {
     std.log.info("Output file:\n{s}\n", .{result[0].outputFiles[0].filename});
     std.log.info("Output:\n{s}", .{result[0].outputFiles[0].buffer});
 }
+
 test {
     _ = @import("ast.zig");
     _ = @import("compile.zig");

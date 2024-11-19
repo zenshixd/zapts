@@ -37,7 +37,7 @@ pub fn compile(opts: CompileOptions) ![]CompileResult {
         var file = try cwd_dir.openFile(filename, .{ .mode = .read_only });
         defer file.close();
 
-        const buffer = try file.readToEndAlloc(opts.gpa, MAX_FILE_SIZE);
+        const buffer = try file.readToEndAllocOptions(opts.gpa, MAX_FILE_SIZE, null, @alignOf(u8), 0);
         const output = try compileBuffer(opts.gpa, filename, buffer);
 
         try result.append(output);
@@ -46,7 +46,7 @@ pub fn compile(opts: CompileOptions) ![]CompileResult {
     return result.items;
 }
 
-pub fn compileBuffer(allocator: std.mem.Allocator, filename: []const u8, buffer: []const u8) !CompileResult {
+pub fn compileBuffer(allocator: std.mem.Allocator, filename: []const u8, buffer: [:0]const u8) !CompileResult {
     var parser = try Parser.init(allocator, buffer);
     defer parser.deinit();
 
@@ -63,7 +63,7 @@ pub fn compileBuffer(allocator: std.mem.Allocator, filename: []const u8, buffer:
         std.debug.print("Error: {s}\n", .{parser_error});
     }
 
-    var printer = Printer.init(allocator, filename, &parser);
+    var printer = Printer.init(allocator, filename, buffer, &parser);
 
     const output = try printer.print();
 
