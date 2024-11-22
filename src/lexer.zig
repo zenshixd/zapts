@@ -226,6 +226,10 @@ pub fn next(self: *Self) Token {
             },
             .equal => switch (self.buffer[self.index]) {
                 '=' => state = .equal_equal,
+                '>' => {
+                    result.type = .Arrow;
+                    break;
+                },
                 else => {
                     self.index -= 1;
                     result.type = .Equal;

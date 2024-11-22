@@ -16,6 +16,9 @@ pub const Tag = enum {
     import_binding_default,
     import_binding_namespace,
 
+    // lhs: identifier, rhs: alias or empty
+    binding_decl,
+
     // lhs: start, rhs: end
     export_named,
     // lhs: Extra.Subrange, rhs: path
@@ -97,6 +100,7 @@ pub const Tag = enum {
     neqq,
     @"and",
     @"or",
+    coalesce,
     plus_expr,
     minus_expr,
     multiply_expr,
@@ -117,6 +121,7 @@ pub const Tag = enum {
     exp_assign,
     and_assign,
     or_assign,
+    coalesce_assign,
     bitwise_and_assign,
     bitwise_or_assign,
     bitwise_xor_assign,
@@ -179,6 +184,7 @@ pub const Raw = struct {
         rhs: Node.Index = 0,
     };
 
+    // LCOV_EXCL_START
     pub fn format(self: Raw, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
         try std.fmt.format(writer, "AST.Raw{{.tag = .{s}, .main_token = {d}, .data.lhs = {d}, .data.rhs = {d}}}", .{
             @tagName(self.tag),
@@ -187,6 +193,7 @@ pub const Raw = struct {
             self.data.rhs,
         });
     }
+    // LCOV_EXCL_STOP
 };
 
 pub const ClassMemberFlags = struct {
@@ -265,6 +272,13 @@ pub const Extra = struct {
         right: Node.Index,
     };
 
+    pub const ArrowFunction = struct {
+        params_start: Node.Index,
+        params_end: Node.Index,
+        body: Node.Index,
+        return_type: Node.Index,
+    };
+
     pub const Function = struct {
         flags: Node.Index,
         params_start: Node.Index,
@@ -274,6 +288,8 @@ pub const Extra = struct {
     };
 
     pub const FunctionType = struct {
+        generic_params_start: Node.Index,
+        generic_params_end: Node.Index,
         params_start: Node.Index,
         params_end: Node.Index,
         return_type: Node.Index,
@@ -291,6 +307,7 @@ pub const Node = union(enum) {
     root: []Node.Index,
     import: Import,
     import_binding: ImportBinding,
+    binding_decl: BindingDecl,
     @"export": Export,
 
     class: ClassDeclaration,
@@ -337,6 +354,7 @@ pub const Node = union(enum) {
     neqq: Binary,
     @"and": Binary,
     @"or": Binary,
+    coalesce: Binary,
     plus_expr: Binary,
     minus_expr: Binary,
     multiply_expr: Binary,
@@ -357,6 +375,7 @@ pub const Node = union(enum) {
     exp_assign: Binary,
     and_assign: Binary,
     or_assign: Binary,
+    coalesce_assign: Binary,
     bitwise_and_assign: Binary,
     bitwise_or_assign: Binary,
     bitwise_xor_assign: Binary,
@@ -424,6 +443,11 @@ pub const Node = union(enum) {
         named: []Node.Index,
         default: Node.Index,
         namespace: Node.Index,
+    };
+
+    pub const BindingDecl = struct {
+        name: Token.Index,
+        alias: Node.Index,
     };
 
     pub const Export = union(enum) {
@@ -543,6 +567,7 @@ pub const Node = union(enum) {
 
     pub const FunctionType = struct {
         name: Token.Index,
+        generic_params: []Node.Index,
         params: []Node.Index,
         return_type: Node.Index,
     };
@@ -597,7 +622,7 @@ pub const Pool = struct {
             .tag = .root,
             .main_token = 0,
             .data = .{},
-        }) catch @panic("couldnt init AST.Pool with root node. OOM?");
+        }) catch @panic("out of memory"); // LCOV_EXCL_LINE
 
         return pool;
     }
@@ -615,6 +640,13 @@ pub const Pool = struct {
                     .tag = .root,
                     .main_token = main_token,
                     .data = .{ .lhs = subrange.start, .rhs = subrange.end },
+                });
+            },
+            .binding_decl => |binding_decl| {
+                return self.addRawNode(.{
+                    .tag = .binding_decl,
+                    .main_token = main_token,
+                    .data = .{ .lhs = binding_decl.name, .rhs = binding_decl.alias },
                 });
             },
             .import => |import| {
@@ -911,7 +943,7 @@ pub const Pool = struct {
                         .block => .block,
                         .array_literal => .array_literal,
                         .object_literal => .object_literal,
-                        else => unreachable,
+                        else => unreachable, // LCOV_EXCL_LINE
                     },
                     .main_token = main_token,
                     .data = .{ .lhs = subrange.start, .rhs = subrange.end },
@@ -930,7 +962,7 @@ pub const Pool = struct {
                     .function_expr => .func_expr,
                     .class_method => .class_method,
                     .object_method => .object_method,
-                    else => unreachable,
+                    else => unreachable, // LCOV_EXCL_LINE
                 };
                 const subrange = self.listToSubrange(func_decl.params);
                 return self.addRawNode(.{
@@ -954,10 +986,11 @@ pub const Pool = struct {
                     .tag = if (arrow_func.type == .async_arrow) .async_arrow_function else .arrow_function,
                     .main_token = main_token,
                     .data = .{
-                        .lhs = self.addExtra(Extra.FunctionType{
+                        .lhs = self.addExtra(Extra.ArrowFunction{
                             .params_start = subrange.start,
                             .params_end = subrange.end,
                             .return_type = arrow_func.return_type,
+                            .body = arrow_func.body,
                         }),
                         .rhs = arrow_func.body,
                     },
@@ -986,8 +1019,11 @@ pub const Pool = struct {
                 });
             },
             .function_type => |func_type| {
+                const generic_params_subrange = self.listToSubrange(func_type.generic_params);
                 const params_subrange = self.listToSubrange(func_type.params);
                 const extra = self.addExtra(Extra.FunctionType{
+                    .generic_params_start = generic_params_subrange.start,
+                    .generic_params_end = generic_params_subrange.end,
                     .params_start = params_subrange.start,
                     .params_end = params_subrange.end,
                     .return_type = func_type.return_type,
@@ -1014,6 +1050,7 @@ pub const Pool = struct {
             .neqq,
             .@"and",
             .@"or",
+            .coalesce,
             .plus_expr,
             .minus_expr,
             .multiply_expr,
@@ -1034,6 +1071,7 @@ pub const Pool = struct {
             .exp_assign,
             .and_assign,
             .or_assign,
+            .coalesce_assign,
             .bitwise_and_assign,
             .bitwise_or_assign,
             .bitwise_xor_assign,
@@ -1063,6 +1101,7 @@ pub const Pool = struct {
                     .neqq => .neqq,
                     .@"and" => .@"and",
                     .@"or" => .@"or",
+                    .coalesce => .coalesce,
                     .plus_expr => .plus_expr,
                     .minus_expr => .minus_expr,
                     .multiply_expr => .multiply_expr,
@@ -1083,6 +1122,7 @@ pub const Pool = struct {
                     .exp_assign => .exp_assign,
                     .and_assign => .and_assign,
                     .or_assign => .or_assign,
+                    .coalesce_assign => .coalesce_assign,
                     .bitwise_and_assign => .bitwise_and_assign,
                     .bitwise_or_assign => .bitwise_or_assign,
                     .bitwise_xor_assign => .bitwise_xor_assign,
@@ -1098,7 +1138,7 @@ pub const Pool = struct {
                     .type_intersection => .type_intersection,
                     .type_union => .type_union,
                     .type_decl => .type_decl,
-                    else => unreachable,
+                    else => unreachable, // LCOV_EXCL_LINE
                 };
                 return self.addRawNode(.{
                     .tag = tag,
@@ -1150,7 +1190,7 @@ pub const Pool = struct {
                     .computed_identifier => .computed_identifier,
                     .object_literal_field_shorthand => .object_literal_field_shorthand,
                     .array_type => .array_type,
-                    else => unreachable,
+                    else => unreachable, // LCOV_EXCL_LINE
                 };
                 return self.addRawNode(.{
                     .tag = tag,
@@ -1165,7 +1205,7 @@ pub const Pool = struct {
                 const tag: Tag = switch (key) {
                     .@"break" => .@"break",
                     .@"continue" => .@"continue",
-                    else => unreachable,
+                    else => unreachable, // LCOV_EXCL_LINE
                 };
                 return self.addRawNode(.{
                     .tag = tag,
@@ -1265,6 +1305,14 @@ pub const Pool = struct {
                     },
                 };
             },
+            .binding_decl => {
+                return .{
+                    .binding_decl = .{
+                        .name = node.data.lhs,
+                        .alias = node.data.rhs,
+                    },
+                };
+            },
             .export_named => {
                 return .{
                     .@"export" = .{
@@ -1344,7 +1392,7 @@ pub const Pool = struct {
                             .var_decl => .@"var",
                             .const_decl => .@"const",
                             .let_decl => .let,
-                            else => unreachable,
+                            else => unreachable, // LCOV_EXCL_LINE
                         },
                         .list = self.extra.items[node.data.lhs..node.data.rhs],
                     },
@@ -1370,7 +1418,7 @@ pub const Pool = struct {
                 return switch (node.tag) {
                     .@"if" => .{ .@"if" = data },
                     .ternary => .{ .ternary_expr = data },
-                    else => unreachable,
+                    else => unreachable, // LCOV_EXCL_LINE
                 };
             },
             .@"switch" => {
@@ -1480,17 +1528,17 @@ pub const Pool = struct {
                     .func_expr => .{ .function_expr = decl },
                     .class_method => .{ .class_method = decl },
                     .object_method => .{ .object_method = decl },
-                    else => unreachable,
+                    else => unreachable, // LCOV_EXCL_LINE
                 };
             },
             .async_arrow_function, .arrow_function => {
-                const extra = self.getExtra(Extra.FunctionType, node.data.lhs);
+                const extra = self.getExtra(Extra.ArrowFunction, node.data.lhs);
                 return Node{
                     .arrow_function = .{
                         .type = switch (node.tag) {
                             .async_arrow_function => .async_arrow,
                             .arrow_function => .arrow,
-                            else => unreachable,
+                            else => unreachable, // LCOV_EXCL_LINE
                         },
                         .params = self.extra.items[extra.params_start..extra.params_end],
                         .body = node.data.rhs,
@@ -1513,7 +1561,7 @@ pub const Pool = struct {
                     .array_literal => .{ .array_literal = nodes },
                     .object_literal => .{ .object_literal = nodes },
                     .class_static_block => .{ .class_static_block = nodes },
-                    else => unreachable,
+                    else => unreachable, // LCOV_EXCL_LINE
                 };
             },
             .comma,
@@ -1528,6 +1576,7 @@ pub const Pool = struct {
             .neqq,
             .@"and",
             .@"or",
+            .coalesce,
             .plus_expr,
             .minus_expr,
             .multiply_expr,
@@ -1548,6 +1597,7 @@ pub const Pool = struct {
             .exp_assign,
             .and_assign,
             .or_assign,
+            .coalesce_assign,
             .bitwise_and_assign,
             .bitwise_or_assign,
             .bitwise_xor_assign,
@@ -1581,6 +1631,7 @@ pub const Pool = struct {
                     .neqq => .{ .neqq = data },
                     .@"and" => .{ .@"and" = data },
                     .@"or" => .{ .@"or" = data },
+                    .coalesce => .{ .coalesce = data },
                     .plus_expr => .{ .plus_expr = data },
                     .minus_expr => .{ .minus_expr = data },
                     .multiply_expr => .{ .multiply_expr = data },
@@ -1601,6 +1652,7 @@ pub const Pool = struct {
                     .exp_assign => .{ .exp_assign = data },
                     .and_assign => .{ .and_assign = data },
                     .or_assign => .{ .or_assign = data },
+                    .coalesce_assign => .{ .coalesce_assign = data },
                     .bitwise_and_assign => .{ .bitwise_and_assign = data },
                     .bitwise_or_assign => .{ .bitwise_or_assign = data },
                     .bitwise_xor_assign => .{ .bitwise_xor_assign = data },
@@ -1616,7 +1668,7 @@ pub const Pool = struct {
                     .type_intersection => .{ .type_intersection = data },
                     .type_union => .{ .type_union = data },
                     .type_decl => .{ .type_decl = data },
-                    else => unreachable,
+                    else => unreachable, // LCOV_EXCL_LINE
                 };
             },
 
@@ -1660,7 +1712,7 @@ pub const Pool = struct {
                     .computed_identifier => .{ .computed_identifier = node.data.lhs },
                     .object_literal_field_shorthand => .{ .object_literal_field_shorthand = node.data.lhs },
                     .array_type => .{ .array_type = node.data.lhs },
-                    else => unreachable,
+                    else => unreachable, // LCOV_EXCL_LINE
                 };
             },
 
@@ -1670,7 +1722,7 @@ pub const Pool = struct {
                 return switch (node.tag) {
                     .@"break" => .{ .@"break" = {} },
                     .@"continue" => .{ .@"continue" = {} },
-                    else => unreachable,
+                    else => unreachable, // LCOV_EXCL_LINE
                 };
             },
 
@@ -1681,7 +1733,7 @@ pub const Pool = struct {
                 return switch (node.tag) {
                     .simple_type => .{ .simple_type = data },
                     .simple_value => .{ .simple_value = data },
-                    else => unreachable,
+                    else => unreachable, // LCOV_EXCL_LINE
                 };
             },
 
@@ -1689,6 +1741,7 @@ pub const Pool = struct {
                 const extra = self.getExtra(Extra.FunctionType, node.data.rhs);
                 return .{ .function_type = .{
                     .name = node.data.lhs,
+                    .generic_params = self.extra.items[extra.generic_params_start..extra.generic_params_end],
                     .params = self.extra.items[extra.params_start..extra.params_end],
                     .return_type = extra.return_type,
                 } };
@@ -1698,7 +1751,7 @@ pub const Pool = struct {
                 return switch (node.tag) {
                     .object_type => .{ .object_type = self.extra.items[node.data.lhs..node.data.rhs] },
                     .tuple_type => .{ .tuple_type = self.extra.items[node.data.lhs..node.data.rhs] },
-                    else => unreachable,
+                    else => unreachable, // LCOV_EXCL_LINE
                 };
             },
 
@@ -1767,46 +1820,31 @@ pub const Pool = struct {
     }
 };
 
-pub fn main() void {
-    var implements = [_]Node.Index{3};
-    var body = [_]Node.Index{4};
-    var class = Node{ .class = .{
-        .abstract = false,
-        .name = 1,
-        .super_class = 2,
-        .implements = &implements,
-        .body = &body,
-    } };
-    var slice_ptr: []u8 = undefined;
-    slice_ptr.ptr = @ptrCast(&class);
-    slice_ptr.len = @sizeOf(Node);
-    std.debug.print("Key: {d} {d}\n", .{ @sizeOf(Node), @sizeOf(Raw) });
-    std.debug.print(".class: {d}\n", .{@intFromEnum(Node.class)});
-    std.debug.print("typeInfo: {d}\n", .{slice_ptr});
+fn expectRawNode(expected_raw: Raw, node: Node) !void {
+    var pool = Pool{
+        .nodes = std.ArrayList(Raw).init(std.testing.allocator),
+        .extra = std.ArrayList(Node.Index).init(std.testing.allocator),
+    };
+    defer pool.deinit();
+
+    const node_idx = pool.addNode(0, node);
+
+    try expectEqualDeep(expected_raw, pool.getRawNode(node_idx));
+    try expectEqualDeep(node, pool.getNode(node_idx));
 }
 
 test "Pool root" {
-    var pool = Pool.init(std.testing.allocator);
-    defer pool.deinit();
-
-    const root_node = 0;
-    var stmts = [_]Node.Index{ 1, 2, 3, 4, 5 };
-    const range = pool.listToSubrange(&stmts);
-    pool.nodes.items[root_node].data = .{ .lhs = range.start, .rhs = range.end };
-
-    try expectEqual(Raw{
+    var stmts = [_]Node.Index{ 1, 2, 3 };
+    try expectRawNode(Raw{
         .tag = .root,
         .main_token = 0,
         .data = .{ .lhs = 0, .rhs = @intCast(stmts.len) },
-    }, pool.getRawNode(root_node));
-    try expectEqualDeep(Node{ .root = &stmts }, pool.getNode(root_node));
-    try expectEqual(5, pool.extra.items.len);
+    }, Node{ .root = &stmts });
 }
 
 test "Pool imports" {
-    var pool = Pool.init(std.testing.allocator);
-    defer pool.deinit();
-
+    const name_node = 1;
+    const alias_node = 2;
     const path_node_index = 4;
     const identifier_token = 2;
     var named_bindings = [_]Node.Index{identifier_token};
@@ -1815,146 +1853,70 @@ test "Pool imports" {
     const tests = .{
         .{
             Node{ .import_binding = .{ .named = &named_bindings } },
-            .import_binding_named,
-            .{ .lhs = 0, .rhs = named_bindings.len },
+            Raw{ .tag = .import_binding_named, .main_token = 0, .data = .{ .lhs = 0, .rhs = named_bindings.len } },
         },
         .{
             Node{ .import_binding = .{ .default = identifier_token } },
-            .import_binding_default,
-            .{ .lhs = identifier_token, .rhs = Node.Empty },
+            Raw{ .tag = .import_binding_default, .main_token = 0, .data = .{ .lhs = identifier_token, .rhs = Node.Empty } },
         },
         .{
             Node{ .import_binding = .{ .namespace = identifier_token } },
-            .import_binding_namespace,
-            .{ .lhs = identifier_token, .rhs = Node.Empty },
+            Raw{ .tag = .import_binding_namespace, .main_token = 0, .data = .{ .lhs = identifier_token, .rhs = Node.Empty } },
         },
         .{
             Node{ .import = .{ .simple = path_node_index } },
-            .import,
-            .{ .lhs = Node.Empty, .rhs = path_node_index },
+            Raw{ .tag = .import, .main_token = 0, .data = .{ .lhs = Node.Empty, .rhs = path_node_index } },
         },
         .{
             Node{ .import = .{ .full = .{ .bindings = &import_bindings, .path = path_node_index } } },
-            .import,
-            .{ .lhs = 4, .rhs = path_node_index },
+            Raw{ .tag = .import, .main_token = 0, .data = .{ .lhs = import_bindings.len, .rhs = path_node_index } },
+        },
+        .{
+            Node{ .binding_decl = .{ .name = name_node, .alias = alias_node } },
+            Raw{ .tag = .binding_decl, .main_token = 0, .data = .{ .lhs = name_node, .rhs = alias_node } },
         },
     };
 
-    inline for (tests, 1..) |test_case, expected_index| {
-        const result_node = pool.addNode(0, test_case[0]);
-        try expectEqual(expected_index, result_node);
-        try expectEqualDeep(test_case[0], pool.getNode(result_node));
-        try expectEqual(Raw{
-            .tag = test_case[1],
-            .main_token = 0,
-            .data = test_case[2],
-        }, pool.getRawNode(result_node));
+    inline for (tests) |test_case| {
+        try expectRawNode(test_case[1], test_case[0]);
     }
 }
 
 test "Pool exports" {
-    var pool = Pool.init(std.testing.allocator);
-    defer pool.deinit();
+    const node_index = 3;
+    const path_index = 4;
+    const alias_index = 5;
+    var bindings = [_]Node.Index{ 1, 2 };
 
-    const named_exports_extra_start: u32 = @intCast(pool.extra.items.len);
-    var named_bindings = [_]Node.Index{ 1, 2 };
-    const named_exports_key = Node{ .@"export" = .{
-        .named = named_bindings[0..],
-    } };
-    const named_exports = pool.addNode(0, named_exports_key);
-
-    try expectEqual(1, named_exports);
-    try expectEqual(Raw{
-        .tag = .export_named,
-        .main_token = 0,
-        .data = .{
-            .lhs = named_exports_extra_start,
-            .rhs = @intCast(named_exports_extra_start + named_bindings.len),
+    const tests = .{
+        .{
+            Node{ .@"export" = .{ .named = &bindings } },
+            Raw{ .tag = .export_named, .main_token = 0, .data = .{ .lhs = 0, .rhs = bindings.len } },
         },
-    }, pool.nodes.items[named_exports]);
-    try expectEqualDeep(named_exports_key, pool.getNode(named_exports));
-    try expectEqual(2, pool.extra.items.len);
-    try expectEqualSlices(u32, named_bindings[0..], pool.extra.items[named_exports_extra_start .. named_exports_extra_start + named_bindings.len]);
-
-    const path_node_index = 4;
-    const alias_node = 5;
-    const from_exports_extra_start: u32 = @intCast(pool.extra.items.len);
-    const from_exports_key = Node{ .@"export" = .{
-        .from = .{
-            .bindings = named_bindings[0..],
-            .path = path_node_index,
+        .{
+            Node{ .@"export" = .{ .from = .{ .bindings = &bindings, .path = path_index } } },
+            Raw{ .tag = .export_from, .main_token = 0, .data = .{ .lhs = bindings.len, .rhs = path_index } },
         },
-    } };
-    const from_exports = pool.addNode(0, from_exports_key);
-
-    try expectEqual(2, from_exports);
-    try expectEqual(Raw{
-        .tag = .export_from,
-        .main_token = 0,
-        .data = .{
-            .lhs = @intCast(from_exports_extra_start + named_bindings.len),
-            .rhs = path_node_index,
+        .{
+            Node{ .@"export" = .{ .from_all = .{ .alias = alias_index, .path = path_index } } },
+            Raw{ .tag = .export_from_all, .main_token = 0, .data = .{ .lhs = alias_index, .rhs = path_index } },
         },
-    }, pool.nodes.items[from_exports]);
-    try expectEqualDeep(from_exports_key, pool.getNode(from_exports));
-    try expectEqual(from_exports_extra_start + named_bindings.len + 2, pool.extra.items.len);
-    const subrange_index: u32 = @intCast(from_exports_extra_start + named_bindings.len);
-    try expectEqual(Extra.Subrange{
-        .start = from_exports_extra_start,
-        .end = subrange_index,
-    }, pool.getExtra(Extra.Subrange, subrange_index));
-
-    const from_exports_all_extra_start: u32 = @intCast(pool.extra.items.len);
-    const from_exports_all_key = Node{ .@"export" = .{
-        .from_all = .{
-            .alias = alias_node,
-            .path = path_node_index,
+        .{
+            Node{ .@"export" = .{ .default = node_index } },
+            Raw{ .tag = .export_default, .main_token = 0, .data = .{ .lhs = node_index, .rhs = 0 } },
         },
-    } };
-    const from_exports_all = pool.addNode(0, from_exports_all_key);
-
-    try expectEqual(3, from_exports_all);
-    try expectEqual(Raw{
-        .tag = .export_from_all,
-        .main_token = 0,
-        .data = .{
-            .lhs = alias_node,
-            .rhs = path_node_index,
+        .{
+            Node{ .@"export" = .{ .node = node_index } },
+            Raw{ .tag = .export_node, .main_token = 0, .data = .{ .lhs = node_index, .rhs = 0 } },
         },
-    }, pool.nodes.items[from_exports_all]);
-    try expectEqualDeep(from_exports_all_key, pool.getNode(from_exports_all));
-    try expectEqual(from_exports_all_extra_start, pool.extra.items.len);
+    };
 
-    const exported_node = 5;
-    const export_node_key = Node{ .@"export" = .{
-        .node = exported_node,
-    } };
-    const export_node = pool.addNode(0, export_node_key);
-    try expectEqual(4, export_node);
-    try expectEqual(Raw{
-        .tag = .export_node,
-        .main_token = 0,
-        .data = .{ .lhs = exported_node },
-    }, pool.nodes.items[export_node]);
-    try expectEqualDeep(export_node_key, pool.getNode(export_node));
-
-    const export_default_node_key = Node{ .@"export" = .{
-        .default = exported_node,
-    } };
-    const export_default_node = pool.addNode(0, export_default_node_key);
-    try expectEqual(5, export_default_node);
-    try expectEqual(Raw{
-        .tag = .export_default,
-        .main_token = 0,
-        .data = .{ .lhs = exported_node },
-    }, pool.nodes.items[export_default_node]);
-    try expectEqualDeep(export_default_node_key, pool.getNode(export_default_node));
+    inline for (tests) |test_case| {
+        try expectRawNode(test_case[1], test_case[0]);
+    }
 }
 
 test "Pool class declaration" {
-    var pool = Pool.init(std.testing.allocator);
-    defer pool.deinit();
-
     const name_node = 1;
     const super_class_node = 2;
     var implements = [_]Node.Index{3};
@@ -1962,407 +1924,176 @@ test "Pool class declaration" {
 
     const tests = .{
         .{
-            Node{ .class = Node.ClassDeclaration{
-                .abstract = false,
-                .name = name_node,
-                .super_class = super_class_node,
-                .implements = &implements,
-                .body = &body,
-            } },
+            Node{ .class = Node.ClassDeclaration{ .abstract = false, .name = name_node, .super_class = super_class_node, .implements = &implements, .body = &body } },
             .class_decl,
         },
         .{
-            Node{ .class = Node.ClassDeclaration{
-                .abstract = true,
-                .name = name_node,
-                .super_class = super_class_node,
-                .implements = &implements,
-                .body = &body,
-            } },
+            Node{ .class = Node.ClassDeclaration{ .abstract = true, .name = name_node, .super_class = super_class_node, .implements = &implements, .body = &body } },
             .abstract_class_decl,
         },
     };
 
-    inline for (tests, 1..) |test_case, expected_index| {
-        const start_extra_index: u32 = @intCast(pool.extra.items.len);
-        const result_node = pool.addNode(0, test_case[0]);
-        try expectEqual(expected_index, result_node);
-        try expectEqual(Raw{
+    inline for (tests) |test_case| {
+        try expectRawNode(Raw{
             .tag = test_case[1],
             .main_token = 0,
-            .data = .{
-                .lhs = name_node,
-                .rhs = @intCast(start_extra_index + implements.len + body.len),
-            },
-        }, pool.getRawNode(result_node));
-        try expectEqualDeep(test_case[0], pool.getNode(result_node));
-        try expectEqual(start_extra_index + implements.len + body.len + 5, pool.extra.items.len);
-        try expectEqualSlices(
-            u32,
-            &[_]Node.Index{
-                implements[0],
-                body[0],
-                super_class_node,
-                start_extra_index,
-                @intCast(start_extra_index + implements.len),
-                @intCast(start_extra_index + implements.len),
-                @intCast(start_extra_index + implements.len + body.len),
-            },
-            pool.extra.items[start_extra_index..],
-        );
+            .data = .{ .lhs = name_node, .rhs = @intCast(implements.len + body.len) },
+        }, test_case[0]);
     }
 }
 
 test "Pool class members" {
-    var pool = Pool.init(std.testing.allocator);
-    defer pool.deinit();
-
     const flags = ClassMemberFlags.abstract | ClassMemberFlags.public | ClassMemberFlags.readonly;
     const name_node = 1;
     const decl_type_node = 2;
     const value_node = 3;
+    const class_field_node = 4;
+    var class_static_nodes = [_]Node.Index{class_field_node};
 
-    var start_extra_index: u32 = @intCast(pool.extra.items.len);
-    const class_field_key = Node{ .class_field = .{
-        .name = name_node,
-        .decl_type = decl_type_node,
-        .value = value_node,
-    } };
-
-    const class_field_node = pool.addNode(0, class_field_key);
-
-    try expectEqual(1, class_field_node);
-    try expectEqual(Raw{
-        .tag = .class_field,
-        .main_token = 0,
-        .data = .{
-            .lhs = name_node,
-            .rhs = start_extra_index,
+    const tests = .{
+        .{
+            Node{ .class_field = .{ .name = name_node, .decl_type = decl_type_node, .value = value_node } },
+            Raw{ .tag = .class_field, .main_token = 0, .data = .{ .lhs = name_node, .rhs = 0 } },
         },
-    }, pool.getRawNode(class_field_node));
-    try expectEqualDeep(class_field_key, pool.getNode(class_field_node));
-    try expectEqual(start_extra_index + 2, pool.extra.items.len);
-    try expectEqualSlices(u32, &[_]Node.Index{ decl_type_node, value_node }, pool.extra.items[start_extra_index..]);
-
-    start_extra_index = @intCast(pool.extra.items.len);
-    const class_member_key = Node{ .class_member = .{
-        .flags = @intCast(flags),
-        .node = class_field_node,
-    } };
-
-    const class_member_node = pool.addNode(0, class_member_key);
-
-    try expectEqual(2, class_member_node);
-    try expectEqual(Raw{
-        .tag = .class_member,
-        .main_token = 0,
-        .data = .{
-            .lhs = flags,
-            .rhs = class_field_node,
+        .{
+            Node{ .class_member = .{ .flags = @intCast(flags), .node = class_field_node } },
+            Raw{ .tag = .class_member, .main_token = 0, .data = .{ .lhs = flags, .rhs = class_field_node } },
         },
-    }, pool.getRawNode(class_member_node));
-    try expectEqualDeep(class_member_key, pool.getNode(class_member_node));
-    try expectEqual(start_extra_index, pool.extra.items.len);
-
-    start_extra_index = @intCast(pool.extra.items.len);
-    var class_static_block_nodes = [_]Node.Index{class_field_node};
-    const class_static_block_key = Node{ .class_static_block = &class_static_block_nodes };
-    const class_static_block_node = pool.addNode(0, class_static_block_key);
-    try expectEqual(3, class_static_block_node);
-    try expectEqual(Raw{
-        .tag = .class_static_block,
-        .main_token = 0,
-        .data = .{
-            .lhs = start_extra_index,
-            .rhs = @intCast(start_extra_index + 1),
+        .{
+            Node{ .class_static_block = &class_static_nodes },
+            Raw{ .tag = .class_static_block, .main_token = 0, .data = .{ .lhs = 0, .rhs = @intCast(class_static_nodes.len) } },
         },
-    }, pool.getRawNode(class_static_block_node));
-    try expectEqualDeep(class_static_block_key, pool.getNode(class_static_block_node));
-    try expectEqual(start_extra_index + class_static_block_nodes.len, pool.extra.items.len);
-    try expectEqualSlices(u32, &[_]Node.Index{class_field_node}, pool.extra.items[start_extra_index..]);
+    };
+
+    inline for (tests) |test_case| {
+        try expectRawNode(test_case[1], test_case[0]);
+    }
 }
 
 test "Pool declarations" {
-    var pool = Pool.init(std.testing.allocator);
-    defer pool.deinit();
-
     const name_node = 1;
     const decl_type_node = 2;
     const value_node = 3;
+    var binding_list = [_]Node.Index{4};
 
-    var start_extra_index: u32 = @intCast(pool.extra.items.len);
-    const decl_binding_key = Node{ .decl_binding = .{
-        .name = name_node,
-        .decl_type = decl_type_node,
-        .value = value_node,
-    } };
-    const decl_binding_node = pool.addNode(0, decl_binding_key);
-
-    try expectEqual(1, decl_binding_node);
-    try expectEqual(Raw{
-        .tag = .decl_binding,
-        .main_token = 0,
-        .data = .{
-            .lhs = name_node,
-            .rhs = start_extra_index,
-        },
-    }, pool.getRawNode(decl_binding_node));
-    try expectEqualDeep(decl_binding_key, pool.getNode(decl_binding_node));
-    try expectEqual(start_extra_index + 2, pool.extra.items.len);
-    try expectEqualSlices(u32, &[_]Node.Index{ decl_type_node, value_node }, pool.extra.items[start_extra_index..]);
-
-    var binding_list = [_]Node.Index{decl_binding_node};
     const tests = .{
-        .{ .@"var", .var_decl },
-        .{ .@"const", .const_decl },
-        .{ .let, .let_decl },
+        .{
+            Node{ .decl_binding = .{ .name = name_node, .decl_type = decl_type_node, .value = value_node } },
+            Raw{ .tag = .decl_binding, .main_token = 0, .data = .{ .lhs = name_node, .rhs = 0 } },
+        },
+        .{
+            Node{ .declaration = .{ .kind = .@"var", .list = &binding_list } },
+            Raw{ .tag = .var_decl, .main_token = 0, .data = .{ .lhs = 0, .rhs = @intCast(binding_list.len) } },
+        },
+        .{
+            Node{ .declaration = .{ .kind = .@"const", .list = &binding_list } },
+            Raw{ .tag = .const_decl, .main_token = 0, .data = .{ .lhs = 0, .rhs = @intCast(binding_list.len) } },
+        },
+        .{
+            Node{ .declaration = .{ .kind = .let, .list = &binding_list } },
+            Raw{ .tag = .let_decl, .main_token = 0, .data = .{ .lhs = 0, .rhs = @intCast(binding_list.len) } },
+        },
     };
 
-    inline for (tests, 2..) |test_case, expected_index| {
-        start_extra_index = @intCast(pool.extra.items.len);
-        const key = Node{ .declaration = .{
-            .kind = test_case[0],
-            .list = &binding_list,
-        } };
-        const result_node = pool.addNode(0, key);
-        try expectEqual(expected_index, result_node);
-        try expectEqual(Raw{
-            .tag = test_case[1],
-            .main_token = 0,
-            .data = .{
-                .lhs = start_extra_index,
-                .rhs = @intCast(start_extra_index + binding_list.len),
-            },
-        }, pool.getRawNode(result_node));
-        try expectEqualDeep(key, pool.getNode(result_node));
-        try expectEqual(start_extra_index + binding_list.len, pool.extra.items.len);
+    inline for (tests) |test_case| {
+        try expectRawNode(test_case[1], test_case[0]);
     }
 }
 
 test "Pool ifs" {
-    var pool = Pool.init(std.testing.allocator);
-    defer pool.deinit();
-
     const expr_node = 1;
     const body_node = 2;
     const else_node = 3;
 
-    const start_extra_index: u32 = @intCast(pool.extra.items.len);
-    const if_node_key = Node{ .@"if" = .{
-        .expr = expr_node,
-        .body = body_node,
-        .@"else" = else_node,
-    } };
-    const if_node = pool.addNode(0, if_node_key);
-    try expectEqual(1, if_node);
-    try expectEqual(Raw{
+    try expectRawNode(Raw{
         .tag = .@"if",
         .main_token = 0,
         .data = .{
-            .lhs = start_extra_index,
+            .lhs = 0,
             .rhs = else_node,
         },
-    }, pool.nodes.items[if_node]);
-    try expectEqualDeep(if_node_key, pool.getNode(if_node));
+    }, Node{ .@"if" = .{ .expr = expr_node, .body = body_node, .@"else" = else_node } });
 }
 
 test "Pool switches" {
-    var pool = Pool.init(std.testing.allocator);
-    defer pool.deinit();
-
     const case_expr_node = 1;
     var case_body_node = [_]u32{2};
+    var switch_cases = [_]Node.Index{ 3, 4 };
 
-    var start_extra_index: u32 = @intCast(pool.extra.items.len);
-    const case_node_key = Node{ .case = .{
-        .case = .{
-            .expr = case_expr_node,
-            .body = &case_body_node,
+    const tests = .{
+        .{
+            Node{ .case = .{ .case = .{ .expr = case_expr_node, .body = &case_body_node } } },
+            Raw{ .tag = .case, .main_token = 0, .data = .{ .lhs = case_expr_node, .rhs = case_body_node.len } },
         },
-    } };
-    const case_node = pool.addNode(0, case_node_key);
-    try expectEqual(1, case_node);
-    try expectEqual(Raw{
-        .tag = .case,
-        .main_token = 0,
-        .data = .{
-            .lhs = case_expr_node,
-            .rhs = start_extra_index + 1,
+        .{
+            Node{ .case = .{ .default = &case_body_node } },
+            Raw{ .tag = .default, .main_token = 0, .data = .{ .lhs = 0, .rhs = @intCast(case_body_node.len) } },
         },
-    }, pool.nodes.items[case_node]);
-    try expectEqualDeep(case_node_key, pool.getNode(case_node));
-    try expectEqual(start_extra_index + 3, pool.extra.items.len);
-    try expectEqual(Extra.Subrange{
-        .start = start_extra_index,
-        .end = start_extra_index + 1,
-    }, pool.getExtra(Extra.Subrange, start_extra_index + 1));
+        .{
+            Node{ .@"switch" = .{ .expr = case_expr_node, .cases = &switch_cases } },
+            Raw{ .tag = .@"switch", .main_token = 0, .data = .{ .lhs = case_expr_node, .rhs = @intCast(switch_cases.len) } },
+        },
+    };
 
-    start_extra_index = @intCast(pool.extra.items.len);
-    const default_node_key = Node{ .case = .{
-        .default = &case_body_node,
-    } };
-    const default_node = pool.addNode(0, default_node_key);
-    try expectEqual(2, default_node);
-    try expectEqual(Raw{
-        .tag = .default,
-        .main_token = 0,
-        .data = .{
-            .lhs = start_extra_index,
-            .rhs = start_extra_index + 1,
-        },
-    }, pool.nodes.items[default_node]);
-    try expectEqualDeep(default_node_key, pool.getNode(default_node));
-    try expectEqual(start_extra_index + 1, pool.extra.items.len);
-    try expectEqualSlices(u32, &case_body_node, pool.extra.items[start_extra_index .. start_extra_index + 1]);
-
-    start_extra_index = @intCast(pool.extra.items.len);
-    var switch_cases = [_]Node.Index{ case_node, default_node };
-    const switch_cases_len: u32 = @intCast(switch_cases.len);
-    const switch_node_key = Node{ .@"switch" = .{
-        .expr = case_expr_node,
-        .cases = &switch_cases,
-    } };
-    const switch_node = pool.addNode(0, switch_node_key);
-    try expectEqual(3, switch_node);
-    try expectEqual(Raw{
-        .tag = .@"switch",
-        .main_token = 0,
-        .data = .{
-            .lhs = case_expr_node,
-            .rhs = start_extra_index + switch_cases_len,
-        },
-    }, pool.nodes.items[switch_node]);
-    try expectEqualDeep(switch_node_key, pool.getNode(switch_node));
-    try expectEqual(start_extra_index + switch_cases_len + 2, pool.extra.items.len);
-    const switch_range = pool.getExtra(Extra.Subrange, start_extra_index + switch_cases_len);
-    try expectEqual(Extra.Subrange{
-        .start = start_extra_index,
-        .end = start_extra_index + switch_cases_len,
-    }, switch_range);
+    inline for (tests) |test_case| {
+        try expectRawNode(test_case[1], test_case[0]);
+    }
 }
 
 test "Pool for loops" {
-    var pool = Pool.init(std.testing.allocator);
-    defer pool.deinit();
-
     const init_node = 1;
     const cond_node = 2;
     const post_node = 3;
     const body_node = 4;
 
-    var start_extra_index: u32 = @intCast(pool.extra.items.len);
-    const for_node_key = Node{ .@"for" = .{
-        .classic = .{
-            .init = init_node,
-            .cond = cond_node,
-            .post = post_node,
-            .body = body_node,
-        },
-    } };
-    const for_node = pool.addNode(0, for_node_key);
-    try expectEqual(1, for_node);
-    try expectEqual(Raw{
-        .tag = .@"for",
-        .main_token = 0,
-        .data = .{
-            .lhs = start_extra_index,
-            .rhs = body_node,
-        },
-    }, pool.getRawNode(for_node));
-    try expectEqualDeep(for_node_key, pool.getNode(for_node));
-    try expectEqual(start_extra_index + 3, pool.extra.items.len);
-    try expectEqual(Extra.ForThree{
-        .init = init_node,
-        .cond = cond_node,
-        .post = post_node,
-    }, pool.getExtra(Extra.ForThree, start_extra_index));
-
-    start_extra_index = @intCast(pool.extra.items.len);
-    const for_in_key = Node{ .@"for" = .{
-        .in = .{
-            .left = init_node,
-            .right = cond_node,
-            .body = body_node,
-        },
-    } };
-    const for_in_node = pool.addNode(0, for_in_key);
-    try expectEqual(2, for_in_node);
-    try expectEqual(Raw{
-        .tag = .for_in,
-        .main_token = 0,
-        .data = .{
-            .lhs = start_extra_index,
-            .rhs = body_node,
-        },
-    }, pool.getRawNode(for_in_node));
-    try expectEqualDeep(for_in_key, pool.getNode(for_in_node));
-    try expectEqual(start_extra_index + 2, pool.extra.items.len);
-    try expectEqual(Extra.ForTwo{
-        .left = init_node,
-        .right = cond_node,
-    }, pool.getExtra(Extra.ForTwo, start_extra_index));
-
-    start_extra_index = @intCast(pool.extra.items.len);
-    const for_of_key = Node{ .@"for" = .{
-        .of = .{
-            .left = init_node,
-            .right = cond_node,
-            .body = body_node,
-        },
-    } };
-    const for_of_node = pool.addNode(0, for_of_key);
-    try expectEqual(3, for_of_node);
-    try expectEqual(Raw{
-        .tag = .for_of,
-        .main_token = 0,
-        .data = .{
-            .lhs = start_extra_index,
-            .rhs = body_node,
-        },
-    }, pool.getRawNode(for_of_node));
-    try expectEqualDeep(for_of_key, pool.getNode(for_of_node));
-    try expectEqual(start_extra_index + 2, pool.extra.items.len);
-    try expectEqual(Extra.ForTwo{
-        .left = init_node,
-        .right = cond_node,
-    }, pool.getExtra(Extra.ForTwo, start_extra_index));
-}
-
-test "Pool while loops" {
-    var pool = Pool.init(std.testing.allocator);
-    defer pool.deinit();
-
-    const cond_node = 1;
-    const body_node = 2;
-
-    const data = .{
-        .cond = cond_node,
-        .body = body_node,
-    };
     const tests = .{
-        .{ Node{ .@"while" = data }, .@"while" },
-        .{ Node{ .do_while = data }, .do_while },
+        .{
+            Node{ .@"for" = .{
+                .classic = .{
+                    .init = init_node,
+                    .cond = cond_node,
+                    .post = post_node,
+                    .body = body_node,
+                },
+            } },
+            Raw{ .tag = .@"for", .main_token = 0, .data = .{ .lhs = 0, .rhs = body_node } },
+        },
+        .{
+            Node{ .@"for" = .{
+                .in = .{
+                    .left = init_node,
+                    .right = cond_node,
+                    .body = body_node,
+                },
+            } },
+            Raw{ .tag = .for_in, .main_token = 0, .data = .{ .lhs = 0, .rhs = body_node } },
+        },
+        .{
+            Node{ .@"for" = .{
+                .of = .{
+                    .left = init_node,
+                    .right = cond_node,
+                    .body = body_node,
+                },
+            } },
+            Raw{ .tag = .for_of, .main_token = 0, .data = .{ .lhs = 0, .rhs = body_node } },
+        },
+        .{
+            Node{ .@"while" = .{ .cond = cond_node, .body = body_node } },
+            Raw{ .tag = .@"while", .main_token = 0, .data = .{ .lhs = cond_node, .rhs = body_node } },
+        },
+        .{
+            Node{ .do_while = .{ .cond = cond_node, .body = body_node } },
+            Raw{ .tag = .do_while, .main_token = 0, .data = .{ .lhs = cond_node, .rhs = body_node } },
+        },
     };
-    inline for (tests, 1..) |test_case, expected_index| {
-        const while_node = pool.addNode(0, test_case[0]);
-        try expectEqual(expected_index, while_node);
-        try expectEqual(Raw{
-            .tag = test_case[1],
-            .main_token = 0,
-            .data = .{
-                .lhs = cond_node,
-                .rhs = body_node,
-            },
-        }, pool.getRawNode(while_node));
-        try expectEqualDeep(test_case[0], pool.getNode(while_node));
-        try expectEqual(0, pool.extra.items.len);
+
+    inline for (tests) |test_case| {
+        try expectRawNode(test_case[1], test_case[0]);
     }
 }
 
 test "Pool blocks" {
-    var pool = Pool.init(std.testing.allocator);
-    defer pool.deinit();
-
     var stmts = [_]Node.Index{ 1, 2 };
 
     const test_cases = .{
@@ -2371,159 +2102,85 @@ test "Pool blocks" {
         .{ Node{ .object_literal = &stmts }, .object_literal },
     };
 
-    inline for (test_cases, 1..) |test_case, expected_index| {
-        const start_extra_index: u32 = @intCast(pool.extra.items.len);
-        const block_node_node = pool.addNode(0, test_case[0]);
-        try expectEqual(expected_index, block_node_node);
-        try expectEqual(Raw{
+    inline for (test_cases) |test_case| {
+        try expectRawNode(Raw{
             .tag = test_case[1],
             .main_token = 0,
-            .data = .{ .lhs = start_extra_index, .rhs = @intCast(start_extra_index + stmts.len) },
-        }, pool.getRawNode(block_node_node));
-        try expectEqualDeep(test_case[0], pool.getNode(block_node_node));
-        try expectEqual(start_extra_index + stmts.len, pool.extra.items.len);
+            .data = .{ .lhs = 0, .rhs = @intCast(stmts.len) },
+        }, test_case[0]);
     }
 }
 
 test "Pool function expressions" {
-    var pool = Pool.init(std.testing.allocator);
-    defer pool.deinit();
-
     const param_name_node = 1;
     const param_type_node = 2;
-    const func_param_key = Node{ .function_param = .{
-        .node = param_name_node,
-        .type = param_type_node,
-    } };
-    const func_param_node = pool.addNode(0, func_param_key);
-
-    try expectEqual(1, func_param_node);
-    try expectEqual(Raw{
-        .tag = .function_param,
-        .main_token = 0,
-        .data = .{
-            .lhs = param_name_node,
-            .rhs = param_type_node,
-        },
-    }, pool.getRawNode(func_param_node));
-    try expectEqualDeep(func_param_key, pool.getNode(func_param_node));
-
-    var params = [_]Node.Index{func_param_node};
+    var params = [_]Node.Index{3};
 
     const name_node = 3;
     const body_node = 4;
     const return_type = 5;
-
     const async_func_data = .{ .flags = FunctionFlags.Async, .name = name_node, .params = &params, .body = body_node, .return_type = return_type };
 
     const tests = .{
-        .{ Node{ .function_decl = async_func_data }, .func_decl },
-        .{ Node{ .function_expr = async_func_data }, .func_expr },
-        .{ Node{ .class_method = async_func_data }, .class_method },
-        .{ Node{ .object_method = async_func_data }, .object_method },
+        .{
+            Node{ .function_param = .{ .node = param_name_node, .type = param_type_node } },
+            Raw{ .tag = .function_param, .main_token = 0, .data = .{ .lhs = param_name_node, .rhs = param_type_node } },
+        },
+        .{
+            Node{ .function_decl = async_func_data },
+            Raw{ .tag = .func_decl, .main_token = 0, .data = .{ .lhs = name_node, .rhs = @intCast(params.len) } },
+        },
+        .{
+            Node{ .function_expr = async_func_data },
+            Raw{ .tag = .func_expr, .main_token = 0, .data = .{ .lhs = name_node, .rhs = @intCast(params.len) } },
+        },
+        .{
+            Node{ .class_method = async_func_data },
+            Raw{ .tag = .class_method, .main_token = 0, .data = .{ .lhs = name_node, .rhs = @intCast(params.len) } },
+        },
+        .{
+            Node{ .object_method = async_func_data },
+            Raw{ .tag = .object_method, .main_token = 0, .data = .{ .lhs = name_node, .rhs = @intCast(params.len) } },
+        },
     };
-    inline for (tests, 2..) |test_case, expected_index| {
-        const start_extra_index: u32 = @intCast(pool.extra.items.len);
-        const result_node = pool.addNode(0, test_case[0]);
 
-        try expectEqual(expected_index, result_node);
-        try expectEqual(Raw{
-            .tag = test_case[1],
-            .main_token = 0,
-            .data = .{
-                .lhs = name_node,
-                .rhs = @intCast(start_extra_index + params.len),
-            },
-        }, pool.getRawNode(result_node));
-        try expectEqualDeep(test_case[0], pool.getNode(result_node));
-        try expectEqual(start_extra_index + params.len + 5, pool.extra.items.len);
-        try expectEqualSlices(
-            u32,
-            &[_]Node.Index{ FunctionFlags.Async, params[0], start_extra_index, @intCast(start_extra_index + params.len), body_node, return_type },
-            pool.extra.items[start_extra_index..],
-        );
+    inline for (tests) |test_case| {
+        try expectRawNode(test_case[1], test_case[0]);
     }
 }
 
 test "Pool arrow functions" {
-    var pool = Pool.init(std.testing.allocator);
-    defer pool.deinit();
-
     var params = [_]Node.Index{ 1, 2 };
     const body_node = 3;
     const return_type = 5;
 
     const tests = .{
-        .{ .type = .arrow, .tag = .arrow_function },
-        .{ .type = .async_arrow, .tag = .async_arrow_function },
+        .{
+            Node{ .arrow_function = .{ .type = .arrow, .params = &params, .body = body_node, .return_type = return_type } },
+            Raw{ .tag = .arrow_function, .main_token = 0, .data = .{ .lhs = @intCast(params.len), .rhs = body_node } },
+        },
+        .{
+            Node{ .arrow_function = .{ .type = .async_arrow, .params = &params, .body = body_node, .return_type = return_type } },
+            Raw{ .tag = .async_arrow_function, .main_token = 0, .data = .{ .lhs = @intCast(params.len), .rhs = body_node } },
+        },
     };
-    inline for (tests, 1..) |test_case, expected_index| {
-        const start_extra_index: u32 = @intCast(pool.extra.items.len);
-        const key = Node{ .arrow_function = .{
-            .type = test_case.type,
-            .params = &params,
-            .body = body_node,
-            .return_type = return_type,
-        } };
-        const result_node = pool.addNode(0, key);
-        try expectEqual(expected_index, result_node);
-        try expectEqual(Raw{
-            .tag = test_case.tag,
-            .main_token = 0,
-            .data = .{
-                .lhs = @intCast(start_extra_index + params.len),
-                .rhs = body_node,
-            },
-        }, pool.getRawNode(result_node));
-        try expectEqualDeep(key, pool.getNode(result_node));
-        try expectEqual(start_extra_index + params.len + 3, pool.extra.items.len);
-        try expectEqualSlices(
-            u32,
-            &[_]Node.Index{ params[0], params[1], start_extra_index, @intCast(start_extra_index + params.len), return_type },
-            pool.extra.items[start_extra_index..],
-        );
+    inline for (tests) |test_case| {
+        try expectRawNode(test_case[1], test_case[0]);
     }
 }
 
 test "Pool call expressions" {
-    var pool = Pool.init(std.testing.allocator);
-    defer pool.deinit();
-
     const main_node = 1;
     var params = [_]Node.Index{ 1, 2 };
 
-    const tests = .{
-        .{
-            Node{ .call_expr = .{ .node = main_node, .params = &params } },
-            .call_expr,
-        },
-    };
-    inline for (tests, 1..) |test_case, expected_index| {
-        const start_extra_index: u32 = @intCast(pool.extra.items.len);
-        const result_node = pool.addNode(0, test_case[0]);
-        try expectEqual(expected_index, result_node);
-        try expectEqual(Raw{
-            .tag = test_case[1],
-            .main_token = 0,
-            .data = .{
-                .lhs = main_node,
-                .rhs = @intCast(start_extra_index + params.len),
-            },
-        }, pool.getRawNode(result_node));
-        try expectEqualDeep(test_case[0], pool.getNode(result_node));
-        try expectEqual(start_extra_index + params.len + 2, pool.extra.items.len);
-        try expectEqualSlices(
-            u32,
-            &[_]Node.Index{ params[0], params[1], start_extra_index, @intCast(start_extra_index + params.len) },
-            pool.extra.items[start_extra_index..],
-        );
-    }
+    try expectRawNode(Raw{
+        .tag = .call_expr,
+        .main_token = 0,
+        .data = .{ .lhs = main_node, .rhs = @intCast(params.len) },
+    }, Node{ .call_expr = .{ .node = main_node, .params = &params } });
 }
 
 test "Pool binary" {
-    var pool = Pool.init(std.testing.allocator);
-    defer pool.deinit();
-
     const left_node = 1;
     const right_node = 2;
 
@@ -2544,6 +2201,7 @@ test "Pool binary" {
         .{ Node{ .neqq = data }, .neqq },
         .{ Node{ .@"and" = data }, .@"and" },
         .{ Node{ .@"or" = data }, .@"or" },
+        .{ Node{ .coalesce = data }, .coalesce },
         .{ Node{ .plus_expr = data }, .plus_expr },
         .{ Node{ .minus_expr = data }, .minus_expr },
         .{ Node{ .multiply_expr = data }, .multiply_expr },
@@ -2564,6 +2222,7 @@ test "Pool binary" {
         .{ Node{ .exp_assign = data }, .exp_assign },
         .{ Node{ .and_assign = data }, .and_assign },
         .{ Node{ .or_assign = data }, .or_assign },
+        .{ Node{ .coalesce_assign = data }, .coalesce_assign },
         .{ Node{ .bitwise_and_assign = data }, .bitwise_and_assign },
         .{ Node{ .bitwise_or_assign = data }, .bitwise_or_assign },
         .{ Node{ .bitwise_xor_assign = data }, .bitwise_xor_assign },
@@ -2581,26 +2240,19 @@ test "Pool binary" {
         .{ Node{ .type_union = data }, .type_union },
     };
 
-    inline for (tests, 1..) |test_case, expected_index| {
-        const result_node = pool.addNode(0, test_case[0]);
-        try expectEqual(expected_index, result_node);
-        try expectEqual(Raw{
+    inline for (tests) |test_case| {
+        try expectRawNode(Raw{
             .tag = test_case[1],
             .main_token = 0,
             .data = .{
                 .lhs = data.left,
                 .rhs = data.right,
             },
-        }, pool.getRawNode(result_node));
-        try expectEqualDeep(test_case[0], pool.getNode(result_node));
-        try expectEqual(0, pool.extra.items.len);
+        }, test_case[0]);
     }
 }
 
 test "Pool single node" {
-    var pool = Pool.init(std.testing.allocator);
-    defer pool.deinit();
-
     const node = 1;
 
     const tests = .{
@@ -2621,47 +2273,35 @@ test "Pool single node" {
         .{ Node{ .computed_identifier = node }, .computed_identifier },
         .{ Node{ .object_literal_field_shorthand = node }, .object_literal_field_shorthand },
         .{ Node{ .array_type = node }, .array_type },
+        .{ Node{ .keyof = node }, .keyof },
+        .{ Node{ .@"return" = node }, .@"return" },
     };
 
-    inline for (tests, 1..) |test_case, expected_index| {
-        const result_node = pool.addNode(0, test_case[0]);
-        try expectEqual(expected_index, result_node);
-        try expectEqual(Raw{
+    inline for (tests) |test_case| {
+        try expectRawNode(Raw{
             .tag = test_case[1],
             .main_token = 0,
             .data = .{ .lhs = node },
-        }, pool.getRawNode(result_node));
-        try expectEqualDeep(test_case[0], pool.getNode(result_node));
-        try expectEqual(0, pool.extra.items.len);
+        }, test_case[0]);
     }
 }
 
 test "Pool empty" {
-    var pool = Pool.init(std.testing.allocator);
-    defer pool.deinit();
-
     const tests = .{
         .{ Node{ .@"break" = {} }, .@"break" },
         .{ Node{ .@"continue" = {} }, .@"continue" },
     };
 
-    inline for (tests, 1..) |test_case, expected_index| {
-        const result_node = pool.addNode(0, test_case[0]);
-        try expectEqual(expected_index, result_node);
-        try expectEqual(Raw{
+    inline for (tests) |test_case| {
+        try expectRawNode(Raw{
             .tag = test_case[1],
             .main_token = 0,
             .data = .{ .lhs = 0, .rhs = 0 },
-        }, pool.getRawNode(result_node));
-        try expectEqualDeep(test_case[0], pool.getNode(result_node));
-        try expectEqual(0, pool.extra.items.len);
+        }, test_case[0]);
     }
 }
 
 test "Pool simple_value" {
-    var pool = Pool.init(std.testing.allocator);
-    defer pool.deinit();
-
     const data = Node.SimpleValue{
         .kind = .this,
     };
@@ -2670,60 +2310,41 @@ test "Pool simple_value" {
         .{ Node{ .simple_value = data }, .simple_value },
     };
 
-    inline for (tests, 1..) |test_case, expected_index| {
-        const result_node = pool.addNode(0, test_case[0]);
-        try expectEqual(expected_index, result_node);
-        try expectEqual(Raw{
+    inline for (tests) |test_case| {
+        try expectRawNode(Raw{
             .tag = test_case[1],
             .main_token = 0,
             .data = .{ .lhs = @intFromEnum(data.kind), .rhs = Node.Empty },
-        }, pool.getRawNode(result_node));
-        try expectEqualDeep(test_case[0], pool.getNode(result_node));
-        try expectEqual(0, pool.extra.items.len);
+        }, test_case[0]);
     }
 }
 
 test "Pool object type" {
-    var pool = Pool.init(std.testing.allocator);
-    defer pool.deinit();
-
     const field_name = 1;
     const field_type = 2;
-    const obj_type_field = Node{ .object_type_field = .{
-        .name = field_name,
-        .type = field_type,
-    } };
-    const obj_type_field_node = pool.addNode(0, obj_type_field);
+    var field_list = [_]Node.Index{ 3, 4 };
 
-    try expectEqual(1, obj_type_field_node);
-    try expectEqual(Raw{
-        .tag = .object_type_field,
-        .main_token = 0,
-        .data = .{ .lhs = field_name, .rhs = field_type },
-    }, pool.getRawNode(obj_type_field_node));
-    try expectEqualDeep(obj_type_field, pool.getNode(obj_type_field_node));
-
-    var field_list = [_]Node.Index{obj_type_field_node};
-    const obj_type = Node{
-        .object_type = &field_list,
+    const tests = .{
+        .{
+            Node{ .object_type_field = .{ .name = field_name, .type = field_type } },
+            Raw{ .tag = .object_type_field, .main_token = 0, .data = .{ .lhs = field_name, .rhs = field_type } },
+        },
+        .{
+            Node{ .object_type = &field_list },
+            Raw{ .tag = .object_type, .main_token = 0, .data = .{ .lhs = 0, .rhs = @intCast(field_list.len) } },
+        },
+        .{
+            Node{ .tuple_type = &field_list },
+            Raw{ .tag = .tuple_type, .main_token = 0, .data = .{ .lhs = 0, .rhs = @intCast(field_list.len) } },
+        },
     };
-    const obj_type_node = pool.addNode(0, obj_type);
 
-    try expectEqual(2, obj_type_node);
-    try expectEqual(Raw{
-        .tag = .object_type,
-        .main_token = 0,
-        .data = .{ .lhs = 0, .rhs = @intCast(pool.extra.items.len) },
-    }, pool.getRawNode(obj_type_node));
-    try expectEqualDeep(obj_type, pool.getNode(obj_type_node));
-    try expectEqual(1, pool.extra.items.len);
-    try expectEqualSlices(Node.Index, &[_]Node.Index{obj_type_field_node}, pool.extra.items[0..]);
+    inline for (tests) |test_case| {
+        try expectRawNode(test_case[1], test_case[0]);
+    }
 }
 
 test "Pool generic_type" {
-    var pool = Pool.init(std.testing.allocator);
-    defer pool.deinit();
-
     const name_node = 1;
     var params = [_]Node.Index{2};
     const data = Node.GenericType{
@@ -2734,32 +2355,37 @@ test "Pool generic_type" {
         .{ Node{ .generic_type = data }, .generic_type },
     };
 
-    inline for (tests, 1..) |test_case, expected_index| {
-        const start_extra_index: u32 = @intCast(pool.extra.items.len);
-        const result_node = pool.addNode(0, test_case[0]);
-        try expectEqual(expected_index, result_node);
-        try expectEqual(Raw{
+    inline for (tests) |test_case| {
+        try expectRawNode(Raw{
             .tag = test_case[1],
             .main_token = 0,
             .data = .{
                 .lhs = name_node,
-                .rhs = @intCast(start_extra_index + params.len),
+                .rhs = @intCast(params.len),
             },
-        }, pool.getRawNode(result_node));
-        try expectEqualDeep(test_case[0], pool.getNode(result_node));
-        try expectEqual(params.len + 2, pool.extra.items.len);
-        try expectEqualSlices(
-            u32,
-            &[_]Node.Index{ params[0], start_extra_index, @intCast(start_extra_index + params.len) },
-            pool.extra.items[0..],
-        );
+        }, test_case[0]);
+    }
+}
+
+test "Pool function_type" {
+    const name_node = 1;
+    var params = [_]Node.Index{2};
+    var generic_params = [_]Node.Index{3};
+    const return_type = 4;
+
+    const tests = .{
+        .{
+            Node{ .function_type = .{ .name = name_node, .generic_params = &generic_params, .params = &params, .return_type = return_type } },
+            Raw{ .tag = .function_type, .main_token = 0, .data = .{ .lhs = name_node, .rhs = generic_params.len + params.len } },
+        },
+    };
+
+    inline for (tests) |test_case| {
+        try expectRawNode(test_case[1], test_case[0]);
     }
 }
 
 test "Pool interface_decl" {
-    var pool = Pool.init(std.testing.allocator);
-    defer pool.deinit();
-
     const name_node = 1;
     var extends = [_]Node.Index{2};
     var body = [_]Node.Index{3};
@@ -2773,24 +2399,14 @@ test "Pool interface_decl" {
         .{ Node{ .interface_decl = data }, .interface_decl },
     };
 
-    inline for (tests, 1..) |test_case, expected_index| {
-        const start_extra_index: u32 = @intCast(pool.extra.items.len);
-        const result_node = pool.addNode(0, test_case[0]);
-        try expectEqual(expected_index, result_node);
-        try expectEqual(Raw{
+    inline for (tests) |test_case| {
+        try expectRawNode(Raw{
             .tag = test_case[1],
             .main_token = 0,
             .data = .{
                 .lhs = name_node,
-                .rhs = @intCast(start_extra_index + extends.len + body.len),
+                .rhs = @intCast(extends.len + body.len),
             },
-        }, pool.getRawNode(result_node));
-        try expectEqualDeep(test_case[0], pool.getNode(result_node));
-        try expectEqual(extends.len + body.len + 4, pool.extra.items.len);
-        try expectEqualSlices(
-            u32,
-            &[_]Node.Index{ extends[0], body[0], start_extra_index, @intCast(start_extra_index + extends.len), @intCast(start_extra_index + extends.len), @intCast(start_extra_index + extends.len + body.len) },
-            pool.extra.items[0..],
-        );
+        }, test_case[0]);
     }
 }

@@ -5,6 +5,10 @@ const TokenType = @import("../consts.zig").TokenType;
 const ParserError = Parser.ParserError;
 const diagnostics = @import("../diagnostics.zig");
 
+const parseStatement = @import("statements.zig").parseStatement;
+const parseExpression = @import("expressions.zig").parseExpression;
+const parseDeclaration = @import("statements.zig").parseDeclaration;
+
 const expectEqual = std.testing.expectEqual;
 const expectEqualDeep = std.testing.expectEqualDeep;
 const expectEqualStrings = std.testing.expectEqualStrings;
@@ -24,10 +28,10 @@ pub fn parseDoWhileStatement(self: *Parser) ParserError!?AST.Node.Index {
         return null;
     }
 
-    const node = try self.parseStatement();
+    const node = try parseStatement(self);
     _ = try self.consume(TokenType.While, diagnostics.ARG_expected, .{"while"});
     _ = try self.consume(TokenType.OpenParen, diagnostics.ARG_expected, .{"("});
-    const condition = try self.parseExpression();
+    const condition = try parseExpression(self);
     _ = try self.consume(TokenType.CloseParen, diagnostics.ARG_expected, .{")"});
     _ = try self.consume(TokenType.Semicolon, diagnostics.ARG_expected, .{";"});
 
@@ -43,12 +47,12 @@ pub fn parseWhileStatement(self: *Parser) ParserError!?AST.Node.Index {
     }
 
     _ = try self.consume(TokenType.OpenParen, diagnostics.ARG_expected, .{"("});
-    const condition = try self.parseExpression();
+    const condition = try parseExpression(self);
     _ = try self.consume(TokenType.CloseParen, diagnostics.ARG_expected, .{")"});
 
     return self.pool.addNode(self.cur_token, AST.Node{ .@"while" = .{
         .cond = condition,
-        .body = try self.parseStatement(),
+        .body = try parseStatement(self),
     } });
 }
 
@@ -61,71 +65,67 @@ pub fn parseForStatement(self: *Parser) ParserError!?AST.Node.Index {
 
     const for_inner = try parseForClassicStatement(self) orelse
         try parseForInStatement(self) orelse
-        try parseForOfStatement(self);
-
-    if (for_inner == null) {
-        try self.emitError(diagnostics.declaration_or_statement_expected, .{});
-        return error.SyntaxError;
-    }
+        try parseForOfStatement(self) orelse
+        return self.fail(diagnostics.declaration_or_statement_expected, .{});
 
     return for_inner;
 }
 
 pub fn parseForClassicStatement(self: *Parser) ParserError!?AST.Node.Index {
     const cp = self.cur_token;
-    const init_node = if (self.peekMatch(TokenType.Semicolon)) AST.Node.Empty else try self.parseDeclaration() orelse try self.parseExpression();
+    const init_node = if (self.peekMatch(TokenType.Semicolon)) AST.Node.Empty else try parseDeclaration(self) orelse try parseExpression(self);
 
     if (!self.match(TokenType.Semicolon)) {
         // TODO: there is no cleanup of created AST nodes - need to figure out how to do it
         self.cur_token = cp;
         return null;
     }
-    const cond_node = if (self.peekMatch(TokenType.Semicolon)) AST.Node.Empty else try self.parseExpression();
+    const cond_node = if (self.peekMatch(TokenType.Semicolon)) AST.Node.Empty else try parseExpression(self);
     _ = try self.consume(TokenType.Semicolon, diagnostics.ARG_expected, .{";"});
-    const post_node = if (self.peekMatch(TokenType.CloseParen)) AST.Node.Empty else try self.parseExpression();
+    const post_node = if (self.peekMatch(TokenType.CloseParen)) AST.Node.Empty else try parseExpression(self);
     _ = try self.consume(TokenType.CloseParen, diagnostics.ARG_expected, .{")"});
 
     return self.pool.addNode(self.cur_token, AST.Node{ .@"for" = .{ .classic = .{
         .init = init_node,
         .cond = cond_node,
         .post = post_node,
-        .body = try self.parseStatement(),
+        .body = try parseStatement(self),
     } } });
 }
 
 pub fn parseForInStatement(self: *Parser) ParserError!?AST.Node.Index {
     const cp = self.cur_token;
-    const init_node = try self.parseDeclaration() orelse try self.parseExpression();
+    const init_node = try parseDeclaration(self) orelse try parseExpression(self);
     if (!self.match(TokenType.In)) {
         // TODO: there is no cleanup of created AST nodes - need to figure out how to do it
         self.cur_token = cp;
         return null;
     }
-    const right = try self.parseExpression();
+    const right = try parseExpression(self);
     _ = try self.consume(TokenType.CloseParen, diagnostics.ARG_expected, .{")"});
 
     return self.pool.addNode(self.cur_token, AST.Node{ .@"for" = .{ .in = .{
         .left = init_node,
         .right = right,
-        .body = try self.parseStatement(),
+        .body = try parseStatement(self),
     } } });
 }
 
 pub fn parseForOfStatement(self: *Parser) ParserError!?AST.Node.Index {
     const cp = self.cur_token;
 
-    const init_node = try self.parseDeclaration() orelse try self.parseExpression();
+    const init_node = try parseDeclaration(self) orelse try parseExpression(self);
     if (!self.match(TokenType.Of)) {
         self.cur_token = cp;
         return null;
     }
-    const right = try self.parseExpression();
+    const right = try parseExpression(self);
     _ = try self.consume(TokenType.CloseParen, diagnostics.ARG_expected, .{")"});
 
     return self.pool.addNode(self.cur_token, AST.Node{ .@"for" = .{ .of = .{
         .left = init_node,
         .right = right,
-        .body = try self.parseStatement(),
+        .body = try parseStatement(self),
     } } });
 }
 

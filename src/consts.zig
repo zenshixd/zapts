@@ -212,7 +212,7 @@ pub const Token = struct {
     pub const Index = u32;
 
     pub fn format(self: Token, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
-        try std.fmt.format(writer, "Token(.type = {s}, .start = {d}, .end = {d})", .{ @tagName(self.type), self.start, self.end });
+        try std.fmt.format(writer, "Token{{ .type = {s}, .start = {d}, .end = {d} }}", .{ @tagName(self.type), self.start, self.end });
     }
 
     pub fn literal(self: Token, buffer: []const u8) []const u8 {

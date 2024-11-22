@@ -5,6 +5,12 @@ const TokenType = @import("../consts.zig").TokenType;
 const ParserError = Parser.ParserError;
 const diagnostics = @import("../diagnostics.zig");
 
+const parseSymbolType = @import("types.zig").parseSymbolType;
+const parseUnary = @import("expressions.zig").parseUnary;
+const parseAsyncArrowFunction = @import("functions.zig").parseAsyncArrowFunction;
+const parseArrowFunction = @import("functions.zig").parseArrowFunction;
+const parseConditionalExpression = @import("expressions.zig").parseConditionalExpression;
+
 const expectEqual = std.testing.expectEqual;
 const expectEqualDeep = std.testing.expectEqualDeep;
 const expectAST = Parser.expectAST;
@@ -26,16 +32,12 @@ const assignment_map = .{
     .{ .GreaterThanGreaterThanEqual, "bitwise_shift_right_assign" },
     .{ .GreaterThanGreaterThanGreaterThanEqual, "bitwise_unsigned_right_shift_assign" },
     .{ .LessThanLessThanEqual, "bitwise_shift_left_assign" },
+    .{ .QuestionMarkQuestionMarkEqual, "coalesce_assign" },
 };
 pub fn parseAssignment(parser: *Parser) ParserError!AST.Node.Index {
-    var casting_type: ?AST.Node.Index = null;
-    if (parser.match(TokenType.LessThan)) {
-        casting_type = try parser.parseSymbolType();
-        _ = try parser.consume(TokenType.GreaterThan, diagnostics.ARG_expected, .{">"});
-    }
-    const node = try parser.parseAsyncArrowFunction() orelse
-        try parser.parseArrowFunction() orelse
-        try parser.parseConditionalExpression();
+    const node = try parseAsyncArrowFunction(parser) orelse
+        try parseArrowFunction(parser) orelse
+        try parseConditionalExpression(parser);
 
     inline for (assignment_map) |assignment| {
         if (parser.match(assignment[0])) {
@@ -51,6 +53,7 @@ pub fn parseAssignment(parser: *Parser) ParserError!AST.Node.Index {
 }
 
 pub const binary_operators = .{
+    .{ .token = TokenType.QuestionMarkQuestionMark, .tag = "coalesce" },
     .{ .token = TokenType.BarBar, .tag = "or" },
     .{ .token = TokenType.AmpersandAmpersand, .tag = "and" },
     .{ .token = TokenType.Bar, .tag = "bitwise_or" },
@@ -80,7 +83,7 @@ pub fn parseBinaryExpression(parser: *Parser, operator_index: comptime_int) Pars
     var node = if (operator_index + 1 < binary_operators.len)
         try parseBinaryExpression(parser, operator_index + 1)
     else
-        try parser.parseUnary();
+        try parseUnary(parser);
 
     while (parser.match(binary_operators[operator_index].token)) {
         const new_node = parser.pool.addNode(parser.cur_token, @unionInit(AST.Node, binary_operators[operator_index].tag, .{
@@ -88,7 +91,7 @@ pub fn parseBinaryExpression(parser: *Parser, operator_index: comptime_int) Pars
             .right = if (operator_index + 1 < binary_operators.len)
                 try parseBinaryExpression(parser, operator_index + 1)
             else
-                try parser.parseUnary(),
+                try parseUnary(parser),
         }));
         node = new_node;
     }
@@ -97,6 +100,7 @@ pub fn parseBinaryExpression(parser: *Parser, operator_index: comptime_int) Pars
 
 test "should parse binary expression" {
     const test_cases = .{
+        "a ?? b",
         "a || b",
         "a && b",
         "a | b",
@@ -157,6 +161,7 @@ test "should parse assignment expression" {
         "a >>= b",
         "a >>>= b",
         "a <<= b",
+        "a ??= b",
     };
 
     try expectEqual(test_cases.len, assignment_map.len);

@@ -9,6 +9,15 @@ const Parser = @import("../parser.zig");
 const diagnostics = @import("../diagnostics.zig");
 
 const parseAssignment = @import("binary.zig").parseAssignment;
+const parseFunctionStatement = @import("functions.zig").parseFunctionStatement;
+const parseAsyncFunctionStatement = @import("functions.zig").parseAsyncFunctionStatement;
+const parseMethodGetter = @import("functions.zig").parseMethodGetter;
+const parseMethodSetter = @import("functions.zig").parseMethodSetter;
+const parseMethodGenerator = @import("functions.zig").parseMethodGenerator;
+const parseMethodAsyncGenerator = @import("functions.zig").parseMethodAsyncGenerator;
+const parseMethod = @import("functions.zig").parseMethod;
+const parseObjectElementName = @import("functions.zig").parseObjectElementName;
+const parseExpression = @import("expressions.zig").parseExpression;
 
 const ParserError = Parser.ParserError;
 
@@ -25,8 +34,8 @@ pub fn parsePrimaryExpression(parser: *Parser) ParserError!?AST.Node.Index {
         try parseLiteral(parser) orelse
         try parseArrayLiteral(parser) orelse
         try parseObjectLiteral(parser) orelse
-        try parser.parseFunctionStatement(AST.FunctionFlags.None) orelse
-        try parser.parseAsyncFunctionStatement() orelse
+        try parseFunctionStatement(parser) orelse
+        try parseAsyncFunctionStatement(parser) orelse
         // try self.parseClassExpression() orelse
         // try self.parseGeneratorExpression() orelse
         try parseGroupingExpression(parser);
@@ -79,7 +88,7 @@ pub fn parseArrayLiteral(parser: *Parser) ParserError!?AST.Node.Index {
         return null;
     }
 
-    var values = std.ArrayList(AST.Node.Index).init(parser.arena.allocator());
+    var values = std.ArrayList(AST.Node.Index).init(parser.gpa);
     defer values.deinit();
 
     while (true) {
@@ -111,41 +120,37 @@ pub fn parseObjectLiteral(parser: *Parser) ParserError!?AST.Node.Index {
         return null;
     }
 
-    var nodes = std.ArrayList(AST.Node.Index).init(parser.arena.allocator());
+    var nodes = std.ArrayList(AST.Node.Index).init(parser.gpa);
     defer nodes.deinit();
 
-    var seen_comma = true;
     while (!parser.match(TokenType.CloseCurlyBrace)) {
-        if (!seen_comma) {
-            return parser.fail(diagnostics.ARG_expected, .{","});
+        const node = try parseObjectField(parser) orelse parser.fail(diagnostics.property_assignment_expected, .{});
+
+        try nodes.append(try node);
+
+        if (parser.match(TokenType.CloseCurlyBrace)) {
+            break;
         }
 
-        const node = try parseObjectField(parser);
-
-        if (seen_comma and node == null) {
-            return parser.fail(diagnostics.expression_expected, .{});
-        }
-
-        try nodes.append(node.?);
-        seen_comma = parser.consumeOrNull(TokenType.Comma) != null;
+        _ = try parser.consume(TokenType.Comma, diagnostics.ARG_expected, .{","});
     }
 
     return parser.pool.addNode(parser.cur_token, AST.Node{
-        .object_literal = try nodes.toOwnedSlice(),
+        .object_literal = nodes.items,
     });
 }
 
 pub fn parseObjectField(parser: *Parser) ParserError!?AST.Node.Index {
-    const method_node = try parser.parseMethodGetter() orelse
-        try parser.parseMethodSetter() orelse
-        try parser.parseMethodGenerator(AST.FunctionFlags.None) orelse
-        try parser.parseMethodAsyncGenerator() orelse
-        try parser.parseMethod(AST.FunctionFlags.None);
+    const method_node = try parseMethodGetter(parser) orelse
+        try parseMethodSetter(parser) orelse
+        try parseMethodGenerator(parser) orelse
+        try parseMethodAsyncGenerator(parser) orelse
+        try parseMethod(parser);
     if (method_node) |node| {
         return node;
     }
 
-    const identifier = try parser.parseObjectElementName();
+    const identifier = try parseObjectElementName(parser);
 
     if (identifier == null) {
         return null;
@@ -171,7 +176,7 @@ pub fn parseObjectField(parser: *Parser) ParserError!?AST.Node.Index {
 pub fn parseGroupingExpression(parser: *Parser) ParserError!?AST.Node.Index {
     if (parser.match(TokenType.OpenParen)) {
         const node = parser.pool.addNode(parser.cur_token, AST.Node{
-            .grouping = try parser.parseExpression(),
+            .grouping = try parseExpression(parser),
         });
 
         _ = try parser.consume(TokenType.CloseParen, diagnostics.ARG_expected, .{")"});
@@ -362,7 +367,7 @@ test "should fail parsing object literal if field name is invalid" {
     const test_cases = .{ "{ - }", "{ a - b }" };
 
     inline for (test_cases) |test_case| {
-        try expectSyntaxError(parseObjectLiteral, test_case, diagnostics.expression_expected, .{});
+        try expectSyntaxError(parseObjectLiteral, test_case, diagnostics.property_assignment_expected, .{});
     }
 }
 
@@ -373,7 +378,7 @@ test "should fail parsing object literal if there is multiple closing commas" {
         \\}
     ;
 
-    try expectSyntaxError(parseObjectLiteral, text, diagnostics.expression_expected, .{});
+    try expectSyntaxError(parseObjectLiteral, text, diagnostics.property_assignment_expected, .{});
 }
 
 test "should parse grouping expression" {

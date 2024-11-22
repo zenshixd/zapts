@@ -47,21 +47,16 @@ pub fn build(b: *std.Build) void {
     });
     exe_unit_tests.root_module.addImport("jdz_allocator", jdz_dep.module("jdz_allocator"));
 
-    const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
-
-    const test_step = b.step("test", "Run unit tests");
-    test_step.dependOn(&run_exe_unit_tests.step);
-
-    const run_test_with_coverage = b.addSystemCommand(&.{
+    const run_unit_tests = b.addSystemCommand(&.{
         "kcov",
         "--clean",
         "--include-pattern=src",
         b.pathJoin(&.{ b.build_root.path.?, "lcov-report" }),
     });
-    run_test_with_coverage.addArtifactArg(exe_unit_tests);
+    run_unit_tests.addArtifactArg(exe_unit_tests);
 
-    const test_with_coverage = b.step("test:coverage", "Run unit tests with coverage");
-    test_with_coverage.dependOn(&run_test_with_coverage.step);
+    const unit_tests_step = b.step("test", "Run unit tests");
+    unit_tests_step.dependOn(&run_unit_tests.step);
 
     const compile_tests = b.addTest(.{
         .root_source_file = b.path("tests/e2e_tests_runner.zig"),
