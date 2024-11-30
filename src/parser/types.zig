@@ -150,19 +150,53 @@ fn parseObjectMethodType(self: *Parser) ParserError!?AST.Node.Index {
         }
     }
 
-    if (!self.match(TokenType.OpenParen)) {
+    const start_token = self.consumeOrNull(TokenType.OpenParen) orelse {
         self.cur_token = cp;
         return null;
-    }
+    };
+
     const list = try parseFunctionArgumentsType(self);
     defer list.deinit();
 
     const return_type = try parseOptionalDataType(self);
-
-    return self.pool.addNode(self.cur_token, AST.Node{ .function_type = .{
-        .name = identifier,
+    const fn_type = self.pool.addNode(start_token, AST.Node{ .function_type = .{
         .generic_params = if (generics) |g| g.items else &[_]AST.Node.Index{},
         .params = list.items,
+        .return_type = return_type,
+    } });
+
+    return self.pool.addNode(identifier, AST.Node{
+        .object_type_field = .{
+            .name = identifier,
+            .type = fn_type,
+        },
+    });
+}
+
+fn parseFunctionType(self: *Parser) ParserError!?AST.Node.Index {
+    const cur_token = self.cur_token;
+    const generics = if (self.match(TokenType.LessThan)) try parseGenericParams(self) else null;
+    defer {
+        if (generics) |g| {
+            g.deinit();
+        }
+    }
+
+    const start_token = self.consumeOrNull(TokenType.OpenParen) orelse {
+        self.cur_token = cur_token;
+        return null;
+    };
+
+    var params = try parseFunctionArgumentsType(self);
+    defer params.deinit();
+
+    _ = try self.consume(TokenType.Arrow, diagnostics.ARG_expected, .{"=>"});
+
+    const return_type = try parseSymbolType(self);
+
+    return self.pool.addNode(start_token, AST.Node{ .function_type = .{
+        .generic_params = if (generics) |g| g.items else &[_]AST.Node.Index{},
+        .params = params.items,
         .return_type = return_type,
     } });
 }
@@ -461,13 +495,22 @@ test "should parse method type" {
         "fn(a: number, b: string,): boolean",
     };
 
-    inline for (texts) |text| {
-        try expectMaybeAST(parseObjectMethodType, AST.Node{ .function_type = .{
-            .name = 1,
-            .generic_params = &[_]AST.Node.Index{},
-            .params = @constCast(&[_]AST.Node.Index{ 3, 5 }),
-            .return_type = 6,
-        } }, text);
+    inline for (texts, 0..) |text, i| {
+        var parser = try Parser.init(std.testing.allocator, text);
+        defer parser.deinit();
+
+        _ = try parseObjectMethodType(&parser);
+
+        try parser.expectNodesToEqual(&[_]AST.Raw{
+            .{ .tag = .simple_value, .main_token = 0, .data = .{ .lhs = 1, .rhs = 0 } },
+            .{ .tag = .simple_type, .main_token = 4, .data = .{ .lhs = 3, .rhs = 0 } },
+            .{ .tag = .function_param, .main_token = 2, .data = .{ .lhs = 2, .rhs = 2 } },
+            .{ .tag = .simple_type, .main_token = 8, .data = .{ .lhs = 5, .rhs = 0 } },
+            .{ .tag = .function_param, .main_token = 6, .data = .{ .lhs = 6, .rhs = 4 } },
+            .{ .tag = .simple_type, .main_token = 11 + i, .data = .{ .lhs = 6, .rhs = 0 } },
+            .{ .tag = .function_type, .main_token = 1, .data = .{ .lhs = 2, .rhs = 6 } },
+            .{ .tag = .object_type_field, .main_token = 1, .data = .{ .lhs = 1, .rhs = 7 } },
+        });
     }
 }
 
@@ -477,13 +520,27 @@ test "should parse method with generics" {
         "fn<T,>(a: T, b: T): boolean",
     };
 
-    inline for (texts) |text| {
-        try expectMaybeAST(parseObjectMethodType, AST.Node{ .function_type = .{
-            .name = 1,
-            .generic_params = @constCast(&[_]AST.Node.Index{2}),
-            .params = @constCast(&[_]AST.Node.Index{ 4, 6 }),
-            .return_type = 7,
-        } }, text);
+    inline for (texts, 0..) |text, i| {
+        var parser = try Parser.init(std.testing.allocator, text);
+        defer parser.deinit();
+
+        _ = try parseObjectMethodType(&parser);
+
+        parser.expectNodesToEqual(&[_]AST.Raw{
+            .{ .tag = .simple_value, .main_token = 0, .data = .{ .lhs = 1, .rhs = 0 } },
+            .{ .tag = .simple_type, .main_token = 2, .data = .{ .lhs = 1, .rhs = 0 } },
+            .{ .tag = .simple_type, .main_token = 7 + i, .data = .{ .lhs = 1, .rhs = 0 } },
+            .{ .tag = .function_param, .main_token = 5 + i, .data = .{ .lhs = 5 + i, .rhs = 3 } },
+            .{ .tag = .simple_type, .main_token = 11 + i, .data = .{ .lhs = 1, .rhs = 0 } },
+            .{ .tag = .function_param, .main_token = 9 + i, .data = .{ .lhs = 9 + i, .rhs = 5 } },
+            .{ .tag = .simple_type, .main_token = 14 + i, .data = .{ .lhs = 6, .rhs = 0 } },
+            .{ .tag = .function_type, .main_token = 4 + i, .data = .{ .lhs = 3, .rhs = 7 } },
+            .{ .tag = .object_type_field, .main_token = 1, .data = .{ .lhs = 1, .rhs = 8 } },
+        }) catch |err| { // LCOV_EXCL_START
+            std.debug.print("Failed parsing {s}\n", .{text});
+            return err;
+        };
+        // LCOV_EXCL_STOP
     }
 }
 
@@ -496,12 +553,18 @@ test "should return syntax error if there is no comma between generic params" {
 test "should parse method type with types" {
     const text = "fn(a, b)";
 
-    try expectMaybeAST(parseObjectMethodType, AST.Node{ .function_type = .{
-        .name = 1,
-        .generic_params = &[_]AST.Node.Index{},
-        .params = @constCast(&[_]AST.Node.Index{ 2, 3 }),
-        .return_type = 0,
-    } }, text);
+    var parser = try Parser.init(std.testing.allocator, text);
+    defer parser.deinit();
+
+    _ = try parseObjectMethodType(&parser);
+
+    try parser.expectNodesToEqual(&[_]AST.Raw{
+        .{ .tag = .simple_value, .main_token = 0, .data = .{ .lhs = 1, .rhs = 0 } },
+        .{ .tag = .function_param, .main_token = 2, .data = .{ .lhs = 2, .rhs = 0 } },
+        .{ .tag = .function_param, .main_token = 4, .data = .{ .lhs = 4, .rhs = 0 } },
+        .{ .tag = .function_type, .main_token = 1, .data = .{ .lhs = 2, .rhs = 0 } },
+        .{ .tag = .object_type_field, .main_token = 1, .data = .{ .lhs = 1, .rhs = 4 } },
+    });
 }
 
 test "should return null if its not method type" {

@@ -292,7 +292,6 @@ pub const Extra = struct {
         generic_params_end: Node.Index,
         params_start: Node.Index,
         params_end: Node.Index,
-        return_type: Node.Index,
     };
 
     pub const Interface = struct {
@@ -566,7 +565,6 @@ pub const Node = union(enum) {
     };
 
     pub const FunctionType = struct {
-        name: Token.Index,
         generic_params: []Node.Index,
         params: []Node.Index,
         return_type: Node.Index,
@@ -1026,14 +1024,13 @@ pub const Pool = struct {
                     .generic_params_end = generic_params_subrange.end,
                     .params_start = params_subrange.start,
                     .params_end = params_subrange.end,
-                    .return_type = func_type.return_type,
                 });
                 return self.addRawNode(.{
                     .tag = .function_type,
                     .main_token = main_token,
                     .data = .{
-                        .lhs = func_type.name,
-                        .rhs = extra,
+                        .lhs = extra,
+                        .rhs = func_type.return_type,
                     },
                 });
             },
@@ -1738,12 +1735,11 @@ pub const Pool = struct {
             },
 
             .function_type => {
-                const extra = self.getExtra(Extra.FunctionType, node.data.rhs);
+                const extra = self.getExtra(Extra.FunctionType, node.data.lhs);
                 return .{ .function_type = .{
-                    .name = node.data.lhs,
                     .generic_params = self.extra.items[extra.generic_params_start..extra.generic_params_end],
                     .params = self.extra.items[extra.params_start..extra.params_end],
-                    .return_type = extra.return_type,
+                    .return_type = node.data.rhs,
                 } };
             },
 
@@ -2368,15 +2364,14 @@ test "Pool generic_type" {
 }
 
 test "Pool function_type" {
-    const name_node = 1;
     var params = [_]Node.Index{2};
     var generic_params = [_]Node.Index{3};
     const return_type = 4;
 
     const tests = .{
         .{
-            Node{ .function_type = .{ .name = name_node, .generic_params = &generic_params, .params = &params, .return_type = return_type } },
-            Raw{ .tag = .function_type, .main_token = 0, .data = .{ .lhs = name_node, .rhs = generic_params.len + params.len } },
+            Node{ .function_type = .{ .generic_params = &generic_params, .params = &params, .return_type = return_type } },
+            Raw{ .tag = .function_type, .main_token = 0, .data = .{ .lhs = generic_params.len + params.len, .rhs = return_type } },
         },
     };
 
