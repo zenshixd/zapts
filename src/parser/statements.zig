@@ -38,7 +38,7 @@ pub fn parseStatement(self: *Parser) ParserError!AST.Node.Index {
         //try self.parseInterfaceDeclaration() orelse
         try parseExpression(self);
 
-    if (needsSemicolon(self.pool, node)) {
+    if (self.needsSemicolon(node)) {
         _ = try self.consume(TokenType.Semicolon, diagnostics.ARG_expected, .{";"});
     }
     return node;
@@ -70,7 +70,7 @@ pub fn parseBlock(self: *Parser) ParserError!?AST.Node.Index {
         }
     }
 
-    return self.pool.addNode(self.cur_token, AST.Node{ .block = statements.items });
+    return self.addNode(self.cur_token, AST.Node{ .block = statements.items });
 }
 
 pub fn parseDeclaration(self: *Parser) ParserError!?AST.Node.Index {
@@ -94,7 +94,7 @@ pub fn parseDeclaration(self: *Parser) ParserError!?AST.Node.Index {
             value = try parseAssignment(self);
         }
 
-        try nodes.append(self.pool.addNode(self.cur_token, AST.Node{ .decl_binding = .{
+        try nodes.append(self.addNode(self.cur_token, AST.Node{ .decl_binding = .{
             .name = identifier,
             .decl_type = identifier_data_type,
             .value = value,
@@ -104,7 +104,7 @@ pub fn parseDeclaration(self: *Parser) ParserError!?AST.Node.Index {
         }
     }
 
-    return self.pool.addNode(self.cur_token, AST.Node{ .declaration = .{
+    return self.addNode(self.cur_token, AST.Node{ .declaration = .{
         .kind = kind,
         .list = nodes.items,
     } });
@@ -116,10 +116,10 @@ fn parseReturnStatement(self: *Parser) ParserError!?AST.Node.Index {
     }
 
     if (self.peekMatch(TokenType.Semicolon)) {
-        return self.pool.addNode(self.cur_token, .{ .@"return" = AST.Node.Empty });
+        return self.addNode(self.cur_token, .{ .@"return" = AST.Node.Empty });
     }
 
-    return self.pool.addNode(self.cur_token, AST.Node{ .@"return" = try parseExpression(self) });
+    return self.addNode(self.cur_token, AST.Node{ .@"return" = try parseExpression(self) });
 }
 
 fn parseEmptyStatement(self: *Parser) ParserError!?AST.Node.Index {
@@ -142,7 +142,7 @@ fn parseIfStatement(self: *Parser) ParserError!?AST.Node.Index {
 
     const else_node = if (self.match(TokenType.Else)) try parseStatement(self) else AST.Node.Empty;
 
-    return self.pool.addNode(self.cur_token, AST.Node{ .@"if" = AST.Node.If{
+    return self.addNode(self.cur_token, AST.Node{ .@"if" = AST.Node.If{
         .expr = cond,
         .body = then,
         .@"else" = else_node,
@@ -263,7 +263,7 @@ test "should parse declarations" {
     };
 
     inline for (tests) |test_case| {
-        var parser = try Parser.init(std.testing.allocator, test_case[0]);
+        var parser = Parser.init(std.testing.allocator, test_case[0]);
         defer parser.deinit();
 
         _ = try parseDeclaration(&parser);

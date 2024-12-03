@@ -66,7 +66,7 @@ pub fn parseClassStatementExtra(self: *Parser, is_abstract: bool) ParserError!?A
 
         try body.append(try parseClassStaticMember(self));
     }
-    return self.pool.addNode(self.cur_token, AST.Node{ .class = .{
+    return self.addNode(self.cur_token, AST.Node{ .class = .{
         .abstract = is_abstract,
         .name = name orelse AST.Node.Empty,
         .super_class = super_class,
@@ -83,7 +83,7 @@ pub fn parseInterfaceList(self: *Parser) ParserError!std.ArrayList(AST.Node.Inde
         if (!self.match(TokenType.Identifier) and !try parseKeywordAsIdentifier(self)) {
             return self.fail(diagnostics.identifier_expected, .{});
         }
-        try list.append(self.pool.addNode(self.cur_token - 1, AST.Node{
+        try list.append(self.addNode(self.cur_token - 1, AST.Node{
             .simple_value = .{ .kind = .identifier },
         }));
         if (!self.match(TokenType.Comma)) {
@@ -107,12 +107,12 @@ pub fn parseClassStaticMember(self: *Parser) ParserError!AST.Node.Index {
                 try block.append(field);
             }
 
-            return self.pool.addNode(self.cur_token, AST.Node{
+            return self.addNode(self.cur_token, AST.Node{
                 .class_static_block = block.items,
             });
         }
 
-        return self.pool.addNode(self.cur_token, AST.Node{ .class_member = .{
+        return self.addNode(self.cur_token, AST.Node{ .class_member = .{
             .flags = AST.ClassMemberFlags.static,
             .node = try parseClassMember(self),
         } });
@@ -150,7 +150,7 @@ pub fn parseClassMember(self: *Parser) ParserError!AST.Node.Index {
         try parseClassField(self) orelse
         return self.fail(diagnostics.identifier_expected, .{});
 
-    return self.pool.addNode(self.cur_token, AST.Node{
+    return self.addNode(self.cur_token, AST.Node{
         .class_member = .{
             .flags = @intCast(flags),
             .node = node,
@@ -168,7 +168,7 @@ pub fn parseClassField(self: *Parser) ParserError!?AST.Node.Index {
     }
 
     _ = try self.consume(TokenType.Semicolon, diagnostics.ARG_expected, .{";"});
-    return self.pool.addNode(self.cur_token, AST.Node{ .class_field = .{
+    return self.addNode(self.cur_token, AST.Node{ .class_field = .{
         .name = elem_name,
         .decl_type = decl_type,
         .value = value,
@@ -263,7 +263,7 @@ test "should parse class members" {
         \\    a: number = 1;
         \\}
     ;
-    var parser = try Parser.init(std.testing.allocator, text);
+    var parser = Parser.init(std.testing.allocator, text);
     defer parser.deinit();
 
     _ = try parseClassStatement(&parser);
@@ -286,7 +286,7 @@ test "should skip semicolons when parsing class members" {
         \\    ;;;
         \\}
     ;
-    var parser = try Parser.init(std.testing.allocator, text);
+    var parser = Parser.init(std.testing.allocator, text);
     defer parser.deinit();
 
     _ = try parseClassStatement(&parser);

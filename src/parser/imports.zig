@@ -26,7 +26,7 @@ pub fn parseImportStatement(self: *Parser) ParserError!?AST.Node.Index {
         return null;
     }
     if (self.consumeOrNull(TokenType.StringConstant)) |path| {
-        return self.pool.addNode(self.cur_token, .{
+        return self.addNode(self.cur_token, .{
             .import = .{ .simple = path },
         });
     }
@@ -36,7 +36,7 @@ pub fn parseImportStatement(self: *Parser) ParserError!?AST.Node.Index {
 
     const path_token = try parseFromClause(self) orelse return self.fail(diagnostics.ARG_expected, .{"from"});
 
-    return self.pool.addNode(self.cur_token, AST.Node{
+    return self.addNode(self.cur_token, AST.Node{
         .import = .{
             .full = .{
                 .bindings = bindings.items,
@@ -57,7 +57,7 @@ fn parseImportClause(self: *Parser) ParserError!std.ArrayList(AST.Node.Index) {
             return self.fail(diagnostics.declaration_or_statement_expected, .{}),
     ) catch unreachable; // LCOV_EXCL_LINE
 
-    if (self.pool.getNode(bindings.items[0]).import_binding == .default) {
+    if (self.getNode(bindings.items[0]).import_binding == .default) {
         if (self.match(TokenType.Comma)) {
             bindings.append(
                 try parseImportNamespaceBinding(self) orelse
@@ -72,7 +72,7 @@ fn parseImportClause(self: *Parser) ParserError!std.ArrayList(AST.Node.Index) {
 
 fn parseImportDefaultBinding(self: *Parser) !?AST.Node.Index {
     if (self.consumeOrNull(TokenType.Identifier)) |identifier| {
-        return self.pool.addNode(self.cur_token, .{ .import_binding = .{ .default = identifier } });
+        return self.addNode(self.cur_token, .{ .import_binding = .{ .default = identifier } });
     }
 
     return null;
@@ -86,7 +86,7 @@ fn parseImportNamespaceBinding(self: *Parser) !?AST.Node.Index {
     _ = try self.consume(TokenType.As, diagnostics.ARG_expected, .{"as"});
     const identifier = try self.consume(TokenType.Identifier, diagnostics.identifier_expected, .{});
 
-    return self.pool.addNode(self.cur_token, .{ .import_binding = .{ .namespace = identifier } });
+    return self.addNode(self.cur_token, .{ .import_binding = .{ .namespace = identifier } });
 }
 
 fn parseImportNamedBindings(self: *Parser) !?AST.Node.Index {
@@ -103,7 +103,7 @@ fn parseImportNamedBindings(self: *Parser) !?AST.Node.Index {
                 try self.consume(TokenType.Identifier, diagnostics.identifier_expected, .{})
             else
                 AST.Node.Empty;
-            const binding_decl = self.pool.addNode(identifier, AST.Node{
+            const binding_decl = self.addNode(identifier, AST.Node{
                 .binding_decl = .{
                     .name = identifier,
                     .alias = alias,
@@ -118,7 +118,7 @@ fn parseImportNamedBindings(self: *Parser) !?AST.Node.Index {
         _ = try self.consume(TokenType.Comma, diagnostics.ARG_expected, .{","});
     }
 
-    return self.pool.addNode(self.cur_token, .{ .import_binding = .{
+    return self.addNode(self.cur_token, .{ .import_binding = .{
         .named = named_bindings.items,
     } });
 }
@@ -133,7 +133,7 @@ pub fn parseExportStatement(self: *Parser) ParserError!?AST.Node.Index {
     }
 
     if (try parseDefaultExport(self)) |default_export_node| {
-        return self.pool.addNode(self.cur_token, .{ .@"export" = .{ .default = default_export_node } });
+        return self.addNode(self.cur_token, .{ .@"export" = .{ .default = default_export_node } });
     }
 
     const node = try parseDeclaration(self) orelse
@@ -141,7 +141,7 @@ pub fn parseExportStatement(self: *Parser) ParserError!?AST.Node.Index {
         try parseAbstractClassStatement(self) orelse
         return self.fail(diagnostics.declaration_or_statement_expected, .{});
 
-    return self.pool.addNode(self.cur_token, .{ .@"export" = .{
+    return self.addNode(self.cur_token, .{ .@"export" = .{
         .node = node,
     } });
 }
@@ -156,7 +156,7 @@ fn parseExportFromClause(self: *Parser) ParserError!?AST.Node.Index {
         }
 
         const path_token = try parseFromClause(self) orelse return self.fail(diagnostics.ARG_expected, .{"from"});
-        return self.pool.addNode(self.cur_token, AST.Node{ .@"export" = .{
+        return self.addNode(self.cur_token, AST.Node{ .@"export" = .{
             .from_all = .{
                 .alias = namespace,
                 .path = path_token,
@@ -175,7 +175,7 @@ fn parseExportFromClause(self: *Parser) ParserError!?AST.Node.Index {
             else
                 AST.Node.Empty;
 
-            const binding_decl = self.pool.addNode(identifier, AST.Node{
+            const binding_decl = self.addNode(identifier, AST.Node{
                 .binding_decl = .{
                     .name = identifier,
                     .alias = alias,
@@ -190,7 +190,7 @@ fn parseExportFromClause(self: *Parser) ParserError!?AST.Node.Index {
         }
 
         const path = try parseFromClause(self);
-        return self.pool.addNode(self.cur_token, AST.Node{
+        return self.addNode(self.cur_token, AST.Node{
             .@"export" = .{
                 .from = .{
                     .bindings = exports.items,
@@ -234,7 +234,7 @@ test "should parse simple import statement" {
 
 test "should parse default import statement" {
     const text = "import Foo from 'bar'";
-    var parser = try Parser.init(std.testing.allocator, text);
+    var parser = Parser.init(std.testing.allocator, text);
     defer parser.deinit();
 
     const node = try parseImportStatement(&parser);
@@ -243,13 +243,13 @@ test "should parse default import statement" {
         .bindings = @constCast(&[_]AST.Node.Index{1}),
         .path = 3,
     };
-    try expectEqualDeep(AST.Node{ .import = .{ .full = full_import } }, parser.pool.getNode(node.?));
-    try expectEqualDeep(AST.Node{ .import_binding = .{ .default = 1 } }, parser.pool.getNode(full_import.bindings[0]));
+    try expectEqualDeep(AST.Node{ .import = .{ .full = full_import } }, parser.getNode(node.?));
+    try expectEqualDeep(AST.Node{ .import_binding = .{ .default = 1 } }, parser.getNode(full_import.bindings[0]));
 }
 
 test "should parse namespace import statement" {
     const text = "import * as Foo from 'bar'";
-    var parser = try Parser.init(std.testing.allocator, text);
+    var parser = Parser.init(std.testing.allocator, text);
     defer parser.deinit();
 
     const node = try parseImportStatement(&parser);
@@ -258,8 +258,8 @@ test "should parse namespace import statement" {
         .bindings = @constCast(&[_]AST.Node.Index{1}),
         .path = 5,
     };
-    try expectEqualDeep(AST.Node{ .import = .{ .full = full_import } }, parser.pool.getNode(node.?));
-    try expectEqualDeep(AST.Node{ .import_binding = .{ .namespace = 3 } }, parser.pool.getNode(full_import.bindings[0]));
+    try expectEqualDeep(AST.Node{ .import = .{ .full = full_import } }, parser.getNode(node.?));
+    try expectEqualDeep(AST.Node{ .import_binding = .{ .namespace = 3 } }, parser.getNode(full_import.bindings[0]));
 }
 
 test "should return error if \"as\" is missing" {
@@ -270,7 +270,7 @@ test "should return error if \"as\" is missing" {
 
 test "should parse named import statement" {
     const text = "import { foo, bar } from 'bar'";
-    var parser = try Parser.init(std.testing.allocator, text);
+    var parser = Parser.init(std.testing.allocator, text);
     defer parser.deinit();
 
     _ = try parseImportStatement(&parser);
@@ -286,7 +286,7 @@ test "should parse named import statement" {
 
 test "should parse named bindings with aliases in import statement" {
     const text = "import { foo as bar, baz as qux } from 'bar'";
-    var parser = try Parser.init(std.testing.allocator, text);
+    var parser = Parser.init(std.testing.allocator, text);
     defer parser.deinit();
 
     _ = try parseImportStatement(&parser);
@@ -329,7 +329,7 @@ test "should parse default import and namespace binding" {
 
 test "should parse default import and named binding" {
     const text = "import foo, { bar } from 'bar'";
-    var parser = try Parser.init(std.testing.allocator, text);
+    var parser = Parser.init(std.testing.allocator, text);
     defer parser.deinit();
 
     _ = try parseImportStatement(&parser);
@@ -369,7 +369,7 @@ test "should return null if its not export statement" {
 
 test "should parse export statement with named bindings" {
     const text = "export { foo, bar } from './foo';";
-    var parser = try Parser.init(std.testing.allocator, text);
+    var parser = Parser.init(std.testing.allocator, text);
     defer parser.deinit();
 
     _ = try parseExportStatement(&parser);
@@ -384,7 +384,7 @@ test "should parse export statement with named bindings" {
 
 test "should parse export statement with aliased bindings" {
     const text = "export { foo as bar, baz as qux } from './foo';";
-    var parser = try Parser.init(std.testing.allocator, text);
+    var parser = Parser.init(std.testing.allocator, text);
     defer parser.deinit();
 
     _ = try parseExportStatement(&parser);

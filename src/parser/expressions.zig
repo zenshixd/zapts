@@ -18,7 +18,7 @@ const expectSyntaxError = @import("../parser.zig").expectSyntaxError;
 pub fn parseExpression(self: *Parser) ParserError!AST.Node.Index {
     var node = try parseAssignment(self);
     while (self.match(TokenType.Comma)) {
-        const new_node = self.pool.addNode(self.cur_token, AST.Node{
+        const new_node = self.addNode(self.cur_token, AST.Node{
             .comma = .{
                 .left = node,
                 .right = try parseAssignment(self),
@@ -38,7 +38,7 @@ pub fn parseConditionalExpression(self: *Parser) ParserError!AST.Node.Index {
         const true_expr = try parseAssignment(self);
         _ = try self.consume(TokenType.Colon, diagnostics.ARG_expected, .{":"});
         const false_expr = try parseAssignment(self);
-        const new_node = self.pool.addNode(self.cur_token, AST.Node{ .ternary_expr = .{
+        const new_node = self.addNode(self.cur_token, AST.Node{ .ternary_expr = .{
             .expr = node,
             .body = true_expr,
             .@"else" = false_expr,
@@ -65,7 +65,7 @@ const unary_operators = .{
 pub fn parseUnary(self: *Parser) ParserError!AST.Node.Index {
     inline for (unary_operators) |unary_operator| {
         if (self.match(unary_operator.token)) {
-            return self.pool.addNode(self.cur_token, @unionInit(AST.Node, unary_operator.tag, try parseUnary(self)));
+            return self.addNode(self.cur_token, @unionInit(AST.Node, unary_operator.tag, try parseUnary(self)));
         }
     }
 
@@ -74,11 +74,11 @@ pub fn parseUnary(self: *Parser) ParserError!AST.Node.Index {
 
 pub fn parseUpdateExpression(self: *Parser) ParserError!AST.Node.Index {
     if (self.match(TokenType.PlusPlus)) {
-        return self.pool.addNode(self.cur_token, AST.Node{
+        return self.addNode(self.cur_token, AST.Node{
             .plusplus_pre = try parseUnary(self),
         });
     } else if (self.match(TokenType.MinusMinus)) {
-        return self.pool.addNode(self.cur_token, AST.Node{
+        return self.addNode(self.cur_token, AST.Node{
             .minusminus_pre = try parseUnary(self),
         });
     }
@@ -86,11 +86,11 @@ pub fn parseUpdateExpression(self: *Parser) ParserError!AST.Node.Index {
     const node = try parseLeftHandSideExpression(self);
 
     if (self.match(TokenType.PlusPlus)) {
-        return self.pool.addNode(self.cur_token, AST.Node{
+        return self.addNode(self.cur_token, AST.Node{
             .plusplus_post = node,
         });
     } else if (self.match(TokenType.MinusMinus)) {
-        return self.pool.addNode(self.cur_token, AST.Node{
+        return self.addNode(self.cur_token, AST.Node{
             .minusminus_post = node,
         });
     }
@@ -109,7 +109,7 @@ pub fn parseNewExpression(self: *Parser) ParserError!?AST.Node.Index {
 
     const maybe_node = try parseCallableExpression(self);
     if (maybe_node) |node| {
-        return self.pool.addNode(self.cur_token, AST.Node{
+        return self.addNode(self.cur_token, AST.Node{
             .new_expr = node,
         });
     }
@@ -150,7 +150,7 @@ pub fn parseCallableExpression(self: *Parser) ParserError!?AST.Node.Index {
             _ = try self.consume(TokenType.Comma, diagnostics.ARG_expected, .{","});
         }
 
-        const new_node = self.pool.addNode(self.cur_token, AST.Node{
+        const new_node = self.addNode(self.cur_token, AST.Node{
             .call_expr = .{
                 .node = node,
                 .params = nodes.items,
@@ -167,7 +167,7 @@ pub fn parseIndexAccess(self: *Parser, expr: AST.Node.Index) ParserError!?AST.No
         return null;
     }
 
-    const node = self.pool.addNode(self.cur_token, AST.Node{
+    const node = self.addNode(self.cur_token, AST.Node{
         .index_access = .{
             .left = expr,
             .right = try parseExpression(self),
@@ -186,7 +186,7 @@ pub fn parsePropertyAccess(self: *Parser, expr: AST.Node.Index) ParserError!?AST
 
     const identifier = try parseIdentifier(self) orelse return self.fail(diagnostics.identifier_expected, .{});
 
-    return self.pool.addNode(self.cur_token, AST.Node{
+    return self.addNode(self.cur_token, AST.Node{
         .property_access = .{
             .left = expr,
             .right = identifier,
@@ -322,7 +322,7 @@ test "should parse chained member expression" {
     };
 
     inline for (tests) |test_case| {
-        var parser = try Parser.init(std.testing.allocator, test_case[0]);
+        var parser = Parser.init(std.testing.allocator, test_case[0]);
         defer parser.deinit();
 
         _ = try parseMemberExpression(&parser);

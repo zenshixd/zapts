@@ -47,7 +47,7 @@ pub fn compile(opts: CompileOptions) ![]CompileResult {
 }
 
 pub fn compileBuffer(allocator: std.mem.Allocator, filename: []const u8, buffer: [:0]const u8) !CompileResult {
-    var parser = try Parser.init(allocator, buffer);
+    var parser = Parser.init(allocator, buffer);
     defer parser.deinit();
 
     _ = parser.parse() catch |err| {

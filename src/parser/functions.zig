@@ -57,7 +57,7 @@ pub fn parseMethodExtra(self: *Parser, flags: u4) ParserError!?AST.Node.Index {
     const return_type = try parseOptionalDataType(self);
     const body = try parseBlock(self) orelse return self.fail(diagnostics.ARG_expected, .{"{"});
 
-    return self.pool.addNode(cur_token, AST.Node{ .object_method = .{
+    return self.addNode(cur_token, AST.Node{ .object_method = .{
         .flags = flags,
         .name = elem_name,
         .params = args.items,
@@ -82,7 +82,7 @@ pub fn parseMethodGetter(self: *Parser) ParserError!?AST.Node.Index {
     const return_type = try parseOptionalDataType(self);
     const body = try parseBlock(self) orelse return self.fail(diagnostics.ARG_expected, .{"{"});
 
-    return self.pool.addNode(self.cur_token, AST.Node{ .object_method = .{
+    return self.addNode(self.cur_token, AST.Node{ .object_method = .{
         .flags = AST.FunctionFlags.Getter,
         .name = elem_name,
         .params = args.items,
@@ -107,7 +107,7 @@ pub fn parseMethodSetter(self: *Parser) ParserError!?AST.Node.Index {
     const return_type = try parseOptionalDataType(self);
     const body = try parseBlock(self) orelse return self.fail(diagnostics.ARG_expected, .{"{"});
 
-    return self.pool.addNode(self.cur_token, AST.Node{ .object_method = .{
+    return self.addNode(self.cur_token, AST.Node{ .object_method = .{
         .flags = AST.FunctionFlags.Setter,
         .name = elem_name,
         .params = args.items,
@@ -120,29 +120,29 @@ pub fn parseObjectElementName(self: *Parser) ParserError!?AST.Node.Index {
     switch (self.token().type) {
         .Identifier, .PrivateIdentifier => {
             _ = self.advance();
-            return self.pool.addNode(self.cur_token - 1, AST.Node{ .simple_value = .{ .kind = .identifier } });
+            return self.addNode(self.cur_token - 1, AST.Node{ .simple_value = .{ .kind = .identifier } });
         },
         .StringConstant => {
             _ = self.advance();
-            return self.pool.addNode(self.cur_token - 1, AST.Node{ .simple_value = .{ .kind = .string } });
+            return self.addNode(self.cur_token - 1, AST.Node{ .simple_value = .{ .kind = .string } });
         },
         .NumberConstant => {
             _ = self.advance();
-            return self.pool.addNode(self.cur_token - 1, AST.Node{ .simple_value = .{ .kind = .number } });
+            return self.addNode(self.cur_token - 1, AST.Node{ .simple_value = .{ .kind = .number } });
         },
         .BigIntConstant => {
             _ = self.advance();
-            return self.pool.addNode(self.cur_token - 1, AST.Node{ .simple_value = .{ .kind = .bigint } });
+            return self.addNode(self.cur_token - 1, AST.Node{ .simple_value = .{ .kind = .bigint } });
         },
         .OpenSquareBracket => {
             _ = self.advance();
             const node = try parseAssignment(self);
             _ = try self.consume(TokenType.CloseSquareBracket, diagnostics.ARG_expected, .{"]"});
-            return self.pool.addNode(self.cur_token, AST.Node{ .computed_identifier = node });
+            return self.addNode(self.cur_token, AST.Node{ .computed_identifier = node });
         },
         else => {
             if (try parseKeywordAsIdentifier(self)) {
-                return self.pool.addNode(self.cur_token - 1, AST.Node{ .simple_value = .{ .kind = .identifier } });
+                return self.addNode(self.cur_token - 1, AST.Node{ .simple_value = .{ .kind = .identifier } });
             }
             return null;
         },
@@ -181,7 +181,7 @@ pub fn parseFunctionStatementExtra(self: *Parser, flags: u4) ParserError!?AST.No
     const return_type = try parseOptionalDataType(self);
     const body = try parseBlock(self) orelse return self.fail(diagnostics.ARG_expected, .{"{"});
 
-    return self.pool.addNode(self.cur_token, AST.Node{ .function_decl = .{
+    return self.addNode(self.cur_token, AST.Node{ .function_decl = .{
         .flags = fn_flags,
         .name = func_name,
         .params = args.items,
@@ -197,7 +197,7 @@ pub fn parseFunctionArguments(self: *Parser) ParserError!std.ArrayList(AST.Node.
     while (!self.match(TokenType.CloseParen)) {
         const identifier = try self.consume(TokenType.Identifier, diagnostics.identifier_expected, .{});
         const param_type = try parseOptionalDataType(self);
-        try args.append(self.pool.addNode(identifier, AST.Node{
+        try args.append(self.addNode(identifier, AST.Node{
             .function_param = .{
                 .node = identifier,
                 .type = param_type,
@@ -239,7 +239,7 @@ fn parseArrowFunctionWith1Arg(self: *Parser, arrow_type: anytype) ParserError!?A
     args.appendAssumeCapacity(arg);
 
     const body = try parseConciseBody(self);
-    return self.pool.addNode(self.cur_token, AST.Node{ .arrow_function = .{
+    return self.addNode(self.cur_token, AST.Node{ .arrow_function = .{
         .type = arrow_type,
         .params = args.items,
         .body = body,
@@ -263,7 +263,7 @@ fn parseArrowFunctionWithParenthesis(self: *Parser, arrow_type: anytype) ParserE
     }
 
     const body = try parseConciseBody(self);
-    return self.pool.addNode(self.cur_token, AST.Node{ .arrow_function = .{
+    return self.addNode(self.cur_token, AST.Node{ .arrow_function = .{
         .type = arrow_type,
         .params = args.items,
         .body = body,
@@ -284,7 +284,7 @@ test "should return null if its not function statement" {
 
 test "should parse function statement" {
     const text = "function(a: number, b, c: string) {}";
-    var parser = try Parser.init(std.testing.allocator, text);
+    var parser = Parser.init(std.testing.allocator, text);
     defer parser.deinit();
 
     _ = try parseFunctionStatement(&parser);

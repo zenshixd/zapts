@@ -35,7 +35,7 @@ pub fn parseDoWhileStatement(self: *Parser) ParserError!?AST.Node.Index {
     _ = try self.consume(TokenType.CloseParen, diagnostics.ARG_expected, .{")"});
     _ = try self.consume(TokenType.Semicolon, diagnostics.ARG_expected, .{";"});
 
-    return self.pool.addNode(self.cur_token, AST.Node{ .do_while = .{
+    return self.addNode(self.cur_token, AST.Node{ .do_while = .{
         .cond = condition,
         .body = node,
     } });
@@ -50,7 +50,7 @@ pub fn parseWhileStatement(self: *Parser) ParserError!?AST.Node.Index {
     const condition = try parseExpression(self);
     _ = try self.consume(TokenType.CloseParen, diagnostics.ARG_expected, .{")"});
 
-    return self.pool.addNode(self.cur_token, AST.Node{ .@"while" = .{
+    return self.addNode(self.cur_token, AST.Node{ .@"while" = .{
         .cond = condition,
         .body = try parseStatement(self),
     } });
@@ -85,7 +85,7 @@ pub fn parseForClassicStatement(self: *Parser) ParserError!?AST.Node.Index {
     const post_node = if (self.peekMatch(TokenType.CloseParen)) AST.Node.Empty else try parseExpression(self);
     _ = try self.consume(TokenType.CloseParen, diagnostics.ARG_expected, .{")"});
 
-    return self.pool.addNode(self.cur_token, AST.Node{ .@"for" = .{ .classic = .{
+    return self.addNode(self.cur_token, AST.Node{ .@"for" = .{ .classic = .{
         .init = init_node,
         .cond = cond_node,
         .post = post_node,
@@ -104,7 +104,7 @@ pub fn parseForInStatement(self: *Parser) ParserError!?AST.Node.Index {
     const right = try parseExpression(self);
     _ = try self.consume(TokenType.CloseParen, diagnostics.ARG_expected, .{")"});
 
-    return self.pool.addNode(self.cur_token, AST.Node{ .@"for" = .{ .in = .{
+    return self.addNode(self.cur_token, AST.Node{ .@"for" = .{ .in = .{
         .left = init_node,
         .right = right,
         .body = try parseStatement(self),
@@ -122,7 +122,7 @@ pub fn parseForOfStatement(self: *Parser) ParserError!?AST.Node.Index {
     const right = try parseExpression(self);
     _ = try self.consume(TokenType.CloseParen, diagnostics.ARG_expected, .{")"});
 
-    return self.pool.addNode(self.cur_token, AST.Node{ .@"for" = .{ .of = .{
+    return self.addNode(self.cur_token, AST.Node{ .@"for" = .{ .of = .{
         .left = init_node,
         .right = right,
         .body = try parseStatement(self),

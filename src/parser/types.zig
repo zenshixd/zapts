@@ -31,7 +31,7 @@ fn parseSymbolUnionType(self: *Parser) ParserError!?AST.Node.Index {
     var node = try parseSymbolIntersectionType(self) orelse return null;
 
     if (self.match(TokenType.Bar)) {
-        const new_node = self.pool.addNode(self.cur_token, AST.Node{
+        const new_node = self.addNode(self.cur_token, AST.Node{
             .type_union = .{
                 .left = node,
                 .right = try parseSymbolUnionType(self) orelse return self.fail(diagnostics.type_expected, .{}),
@@ -48,7 +48,7 @@ fn parseSymbolIntersectionType(self: *Parser) ParserError!?AST.Node.Index {
     var node = try parseSymbolTypeUnary(self) orelse return null;
 
     if (self.match(TokenType.Ampersand)) {
-        const new_node = self.pool.addNode(self.cur_token, AST.Node{
+        const new_node = self.addNode(self.cur_token, AST.Node{
             .type_intersection = .{
                 .left = node,
                 .right = try parseSymbolIntersectionType(self) orelse return self.fail(diagnostics.type_expected, .{}),
@@ -63,11 +63,11 @@ fn parseSymbolIntersectionType(self: *Parser) ParserError!?AST.Node.Index {
 
 fn parseSymbolTypeUnary(self: *Parser) ParserError!?AST.Node.Index {
     if (self.match(TokenType.Typeof)) {
-        return self.pool.addNode(self.cur_token, AST.Node{
+        return self.addNode(self.cur_token, AST.Node{
             .typeof = try parseSymbolType(self),
         });
     } else if (self.match(TokenType.Keyof)) {
-        return self.pool.addNode(self.cur_token, AST.Node{
+        return self.addNode(self.cur_token, AST.Node{
             .keyof = try parseSymbolType(self),
         });
     }
@@ -80,7 +80,7 @@ fn parseSymbolArrayType(self: *Parser) ParserError!?AST.Node.Index {
 
     if (self.match(TokenType.OpenSquareBracket)) {
         if (self.match(TokenType.CloseSquareBracket)) {
-            return self.pool.addNode(self.cur_token, AST.Node{ .array_type = node });
+            return self.addNode(self.cur_token, AST.Node{ .array_type = node });
         }
         return self.fail(diagnostics.unexpected_token, .{});
     }
@@ -116,7 +116,7 @@ fn parseObjectType(self: *Parser) ParserError!?AST.Node.Index {
         _ = self.consumeOrNull(TokenType.Comma) orelse self.consumeOrNull(TokenType.Semicolon) orelse return self.fail(diagnostics.ARG_expected, .{","});
     }
 
-    return self.pool.addNode(self.cur_token, AST.Node{ .object_type = list.items });
+    return self.addNode(self.cur_token, AST.Node{ .object_type = list.items });
 }
 
 fn parseObjectPropertyType(self: *Parser) ParserError!?AST.Node.Index {
@@ -128,7 +128,7 @@ fn parseObjectPropertyType(self: *Parser) ParserError!?AST.Node.Index {
         right = try parseSymbolType(self);
     }
 
-    return self.pool.addNode(self.cur_token, AST.Node{
+    return self.addNode(self.cur_token, AST.Node{
         .object_type_field = .{
             .name = identifier,
             .type = right,
@@ -159,13 +159,13 @@ fn parseObjectMethodType(self: *Parser) ParserError!?AST.Node.Index {
     defer list.deinit();
 
     const return_type = try parseOptionalDataType(self);
-    const fn_type = self.pool.addNode(start_token, AST.Node{ .function_type = .{
+    const fn_type = self.addNode(start_token, AST.Node{ .function_type = .{
         .generic_params = if (generics) |g| g.items else &[_]AST.Node.Index{},
         .params = list.items,
         .return_type = return_type,
     } });
 
-    return self.pool.addNode(identifier, AST.Node{
+    return self.addNode(identifier, AST.Node{
         .object_type_field = .{
             .name = identifier,
             .type = fn_type,
@@ -194,7 +194,7 @@ fn parseFunctionType(self: *Parser) ParserError!?AST.Node.Index {
 
     const return_type = try parseSymbolType(self);
 
-    return self.pool.addNode(start_token, AST.Node{ .function_type = .{
+    return self.addNode(start_token, AST.Node{ .function_type = .{
         .generic_params = if (generics) |g| g.items else &[_]AST.Node.Index{},
         .params = params.items,
         .return_type = return_type,
@@ -208,7 +208,7 @@ fn parseFunctionArgumentsType(self: *Parser) ParserError!std.ArrayList(AST.Node.
     while (!self.match(TokenType.CloseParen)) {
         const identifier = try self.consume(TokenType.Identifier, diagnostics.identifier_expected, .{});
         const arg_type = try parseOptionalDataType(self);
-        try args.append(self.pool.addNode(identifier, AST.Node{ .function_param = .{
+        try args.append(self.addNode(identifier, AST.Node{ .function_param = .{
             .node = identifier,
             .type = arg_type,
         } }));
@@ -242,7 +242,7 @@ fn parseTupleType(self: *Parser) ParserError!?AST.Node.Index {
         _ = try self.consume(TokenType.Comma, diagnostics.ARG_expected, .{","});
     }
 
-    return self.pool.addNode(self.cur_token, AST.Node{ .tuple_type = list.items });
+    return self.addNode(self.cur_token, AST.Node{ .tuple_type = list.items });
 }
 
 const primitive_types = .{
@@ -261,7 +261,7 @@ const primitive_types = .{
 fn parsePrimitiveType(self: *Parser) ParserError!?AST.Node.Index {
     inline for (primitive_types) |primitive_type| {
         if (self.match(primitive_type[0])) {
-            return self.pool.addNode(self.cur_token - 1, AST.Node{ .simple_type = .{ .kind = primitive_type[1] } });
+            return self.addNode(self.cur_token - 1, AST.Node{ .simple_type = .{ .kind = primitive_type[1] } });
         }
     }
 
@@ -274,7 +274,7 @@ fn parseGenericType(self: *Parser) ParserError!?AST.Node.Index {
         var params = try parseGenericParams(self);
         defer params.deinit();
 
-        node = self.pool.addNode(self.cur_token, AST.Node{ .generic_type = .{
+        node = self.addNode(self.cur_token, AST.Node{ .generic_type = .{
             .name = node,
             .params = params.items,
         } });
@@ -313,11 +313,11 @@ fn parseTypeIdentifier(self: *Parser) ?AST.Node.Index {
     const value = self.tokens[identifier].literal(self.buffer);
     inline for (type_map) |type_item| {
         if (std.mem.eql(u8, type_item[0], value)) {
-            return self.pool.addNode(identifier, AST.Node{ .simple_type = .{ .kind = type_item[1] } });
+            return self.addNode(identifier, AST.Node{ .simple_type = .{ .kind = type_item[1] } });
         }
     }
 
-    return self.pool.addNode(identifier, AST.Node{ .simple_type = .{ .kind = .identifier } });
+    return self.addNode(identifier, AST.Node{ .simple_type = .{ .kind = .identifier } });
 }
 
 fn parseTypeDeclaration(self: *Parser) ParserError!?AST.Node.Index {
@@ -333,7 +333,7 @@ fn parseTypeDeclaration(self: *Parser) ParserError!?AST.Node.Index {
 
     const identifier_data_type = try parseSymbolType(self);
 
-    return self.pool.addNode(self.cur_token, AST.Node{ .type_decl = .{
+    return self.addNode(self.cur_token, AST.Node{ .type_decl = .{
         .left = identifier,
         .right = identifier_data_type,
     } });
@@ -365,7 +365,7 @@ fn parseInterfaceDeclaration(self: *Parser) ParserError!?AST.Node.Index {
         try list.append(node);
         has_comma = self.match(TokenType.Comma) or self.match(TokenType.Semicolon);
     }
-    return self.pool.addNode(self.cur_token, AST.Node{ .interface_decl = .{
+    return self.addNode(self.cur_token, AST.Node{ .interface_decl = .{
         .name = identifier,
         .extends = &[_]AST.Node.Index{},
         .body = list.items,
@@ -380,7 +380,7 @@ test "should parse optional data type" {
 
 test "should return Empty node if no data type" {
     const text = "ident";
-    var parser = try Parser.init(std.testing.allocator, text);
+    var parser = Parser.init(std.testing.allocator, text);
     defer parser.deinit();
 
     const node = try parseOptionalDataType(&parser);
@@ -472,7 +472,7 @@ test "should parse object type" {
     };
 
     inline for (texts) |text| {
-        var parser = try Parser.init(std.testing.allocator, text);
+        var parser = Parser.init(std.testing.allocator, text);
         defer parser.deinit();
 
         _ = try parseObjectType(&parser);
@@ -496,7 +496,7 @@ test "should parse method type" {
     };
 
     inline for (texts, 0..) |text, i| {
-        var parser = try Parser.init(std.testing.allocator, text);
+        var parser = Parser.init(std.testing.allocator, text);
         defer parser.deinit();
 
         _ = try parseObjectMethodType(&parser);
@@ -521,7 +521,7 @@ test "should parse method with generics" {
     };
 
     inline for (texts, 0..) |text, i| {
-        var parser = try Parser.init(std.testing.allocator, text);
+        var parser = Parser.init(std.testing.allocator, text);
         defer parser.deinit();
 
         _ = try parseObjectMethodType(&parser);
@@ -553,7 +553,7 @@ test "should return syntax error if there is no comma between generic params" {
 test "should parse method type with types" {
     const text = "fn(a, b)";
 
-    var parser = try Parser.init(std.testing.allocator, text);
+    var parser = Parser.init(std.testing.allocator, text);
     defer parser.deinit();
 
     _ = try parseObjectMethodType(&parser);

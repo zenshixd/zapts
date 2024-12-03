@@ -1,5 +1,6 @@
 const std = @import("std");
 const Token = @import("consts.zig").Token;
+const Parser = @import("parser.zig");
 const assert = std.debug.assert;
 const expectEqual = std.testing.expectEqual;
 const expectEqualDeep = std.testing.expectEqualDeep;
@@ -606,1227 +607,1199 @@ pub const Node = union(enum) {
     };
 };
 
-pub const Pool = struct {
-    nodes: std.ArrayList(Raw),
-    extra: std.ArrayList(Node.Index),
+pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
+    switch (key) {
+        .root => |root| {
+            const subrange = listToSubrange(self, root);
+            return addRawNode(self, .{
+                .tag = .root,
+                .main_token = main_token,
+                .data = .{ .lhs = subrange.start, .rhs = subrange.end },
+            });
+        },
+        .binding_decl => |binding_decl| {
+            return addRawNode(self, .{
+                .tag = .binding_decl,
+                .main_token = main_token,
+                .data = .{ .lhs = binding_decl.name, .rhs = binding_decl.alias },
+            });
+        },
+        .import => |import| {
+            switch (import) {
+                .simple => |simple| {
+                    return addRawNode(self, .{
+                        .tag = .import,
+                        .main_token = main_token,
+                        .data = .{ .rhs = simple },
+                    });
+                },
+                .full => |full| {
+                    const span = listToSubrange(self, full.bindings);
+                    return addRawNode(self, .{
+                        .tag = .import,
+                        .main_token = main_token,
+                        .data = .{
+                            .lhs = addExtra(self, span),
+                            .rhs = full.path,
+                        },
+                    });
+                },
+            }
+        },
+        .import_binding => |import_binding| {
+            switch (import_binding) {
+                .named => |named| {
+                    const span = listToSubrange(self, named);
+                    return addRawNode(self, .{
+                        .tag = .import_binding_named,
+                        .main_token = main_token,
+                        .data = .{
+                            .lhs = span.start,
+                            .rhs = span.end,
+                        },
+                    });
+                },
+                .default => |default| {
+                    return addRawNode(self, .{
+                        .tag = .import_binding_default,
+                        .main_token = main_token,
+                        .data = .{ .lhs = default },
+                    });
+                },
+                .namespace => |namespace| {
+                    return addRawNode(self, .{
+                        .tag = .import_binding_namespace,
+                        .main_token = main_token,
+                        .data = .{ .lhs = namespace },
+                    });
+                },
+            }
+        },
+        .@"export" => |@"export"| {
+            switch (@"export") {
+                .named => |named| {
+                    const span = listToSubrange(self, named);
+                    return addRawNode(self, .{
+                        .tag = .export_named,
+                        .main_token = main_token,
+                        .data = .{
+                            .lhs = span.start,
+                            .rhs = span.end,
+                        },
+                    });
+                },
+                .from => |from| {
+                    const span = listToSubrange(self, from.bindings);
+                    return addRawNode(self, .{
+                        .tag = .export_from,
+                        .main_token = main_token,
+                        .data = .{
+                            .lhs = addExtra(self, span),
+                            .rhs = from.path,
+                        },
+                    });
+                },
+                .from_all => |from| {
+                    return addRawNode(self, .{
+                        .tag = .export_from_all,
+                        .main_token = main_token,
+                        .data = .{
+                            .lhs = from.alias,
+                            .rhs = from.path,
+                        },
+                    });
+                },
+                .default => |default| {
+                    return addRawNode(self, .{
+                        .tag = .export_default,
+                        .main_token = main_token,
+                        .data = .{ .lhs = default },
+                    });
+                },
+                .node => |node| {
+                    return addRawNode(self, .{
+                        .tag = .export_node,
+                        .main_token = main_token,
+                        .data = .{ .lhs = node },
+                    });
+                },
+            }
+        },
+        .class => |class| {
+            const implements_span = listToSubrange(self, class.implements);
+            const subrange = listToSubrange(self, class.body);
+            return addRawNode(self, .{
+                .tag = if (class.abstract) .abstract_class_decl else .class_decl,
+                .main_token = main_token,
+                .data = .{
+                    .lhs = class.name,
+                    .rhs = addExtra(self, Extra.ClassDeclaration{
+                        .super_class = class.super_class,
+                        .implements_start = implements_span.start,
+                        .implements_end = implements_span.end,
+                        .body_start = subrange.start,
+                        .body_end = subrange.end,
+                    }),
+                },
+            });
+        },
+        .class_static_block => |static_block| {
+            const subrange = listToSubrange(self, static_block);
+            return addRawNode(self, .{
+                .tag = .class_static_block,
+                .main_token = main_token,
+                .data = .{
+                    .lhs = subrange.start,
+                    .rhs = subrange.end,
+                },
+            });
+        },
+        .class_member => |member| {
+            return addRawNode(self, .{
+                .tag = .class_member,
+                .main_token = main_token,
+                .data = .{
+                    .lhs = member.flags,
+                    .rhs = member.node,
+                },
+            });
+        },
+        .class_field => |field| {
+            const binding = addExtra(self, Extra.Declaration{
+                .decl_type = field.decl_type,
+                .value = field.value,
+            });
+            return addRawNode(self, .{
+                .tag = .class_field,
+                .main_token = main_token,
+                .data = .{
+                    .lhs = field.name,
+                    .rhs = binding,
+                },
+            });
+        },
+        .declaration => |declaration| {
+            const tag: Tag = switch (declaration.kind) {
+                .let => .let_decl,
+                .@"var" => .var_decl,
+                .@"const" => .const_decl,
+            };
+            const subrange = listToSubrange(self, declaration.list);
+            return addRawNode(self, .{
+                .tag = tag,
+                .main_token = main_token,
+                .data = .{
+                    .lhs = subrange.start,
+                    .rhs = subrange.end,
+                },
+            });
+        },
+        .decl_binding => |declaration| {
+            return addRawNode(self, .{
+                .tag = .decl_binding,
+                .main_token = main_token,
+                .data = .{
+                    .lhs = declaration.name,
+                    .rhs = addExtra(self, Extra.Declaration{
+                        .decl_type = declaration.decl_type,
+                        .value = declaration.value,
+                    }),
+                },
+            });
+        },
+        .@"if", .ternary_expr => |if_node| {
+            return addRawNode(self, .{
+                .tag = if (key == .@"if") .@"if" else .ternary,
+                .main_token = main_token,
+                .data = .{
+                    .lhs = addExtra(self, Extra.If{
+                        .expr = if_node.expr,
+                        .body = if_node.body,
+                    }),
+                    .rhs = if_node.@"else",
+                },
+            });
+        },
+        .@"switch" => |switch_node| {
+            const cases = listToSubrange(self, switch_node.cases);
+            return addRawNode(self, .{
+                .tag = .@"switch",
+                .main_token = main_token,
+                .data = .{
+                    .lhs = switch_node.expr,
+                    .rhs = addExtra(self, cases),
+                },
+            });
+        },
+        .case => |case_key| {
+            switch (case_key) {
+                .default => |default_node| {
+                    const stmts = listToSubrange(self, default_node);
+                    return addRawNode(self, .{
+                        .tag = .default,
+                        .main_token = main_token,
+                        .data = .{
+                            .lhs = stmts.start,
+                            .rhs = stmts.end,
+                        },
+                    });
+                },
+                .case => |case_node| {
+                    const stmts = listToSubrange(self, case_node.body);
+                    return addRawNode(self, .{
+                        .tag = .case,
+                        .main_token = main_token,
+                        .data = .{
+                            .lhs = case_node.expr,
+                            .rhs = addExtra(self, stmts),
+                        },
+                    });
+                },
+            }
+        },
+        .@"for" => |for_node| {
+            switch (for_node) {
+                .classic => |classic| {
+                    return addRawNode(self, .{
+                        .tag = .@"for",
+                        .main_token = main_token,
+                        .data = .{
+                            .lhs = addExtra(self, Extra.ForThree{
+                                .init = classic.init,
+                                .cond = classic.cond,
+                                .post = classic.post,
+                            }),
+                            .rhs = classic.body,
+                        },
+                    });
+                },
+                .in => |in| {
+                    return addRawNode(self, .{
+                        .tag = .for_in,
+                        .main_token = main_token,
+                        .data = .{
+                            .lhs = addExtra(self, Extra.ForTwo{
+                                .left = in.left,
+                                .right = in.right,
+                            }),
+                            .rhs = in.body,
+                        },
+                    });
+                },
+                .of => |of| {
+                    return addRawNode(self, .{
+                        .tag = .for_of,
+                        .main_token = main_token,
+                        .data = .{
+                            .lhs = addExtra(self, Extra.ForTwo{
+                                .left = of.left,
+                                .right = of.right,
+                            }),
+                            .rhs = of.body,
+                        },
+                    });
+                },
+            }
+        },
+        .@"while", .do_while => |while_node| {
+            return addRawNode(self, .{
+                .tag = if (key == .@"while") .@"while" else .do_while,
+                .main_token = main_token,
+                .data = .{
+                    .lhs = while_node.cond,
+                    .rhs = while_node.body,
+                },
+            });
+        },
+        .block, .array_literal, .object_literal => |nodes| {
+            const subrange = listToSubrange(self, nodes);
+            return addRawNode(self, .{
+                .tag = switch (key) {
+                    .block => .block,
+                    .array_literal => .array_literal,
+                    .object_literal => .object_literal,
+                    else => unreachable, // LCOV_EXCL_LINE
+                },
+                .main_token = main_token,
+                .data = .{ .lhs = subrange.start, .rhs = subrange.end },
+            });
+        },
+        .function_param => |param| {
+            return addRawNode(self, .{
+                .tag = .function_param,
+                .main_token = main_token,
+                .data = .{ .lhs = param.node, .rhs = param.type },
+            });
+        },
+        .function_decl, .function_expr, .class_method, .object_method => |func_decl| {
+            const tag: Tag = switch (key) {
+                .function_decl => .func_decl,
+                .function_expr => .func_expr,
+                .class_method => .class_method,
+                .object_method => .object_method,
+                else => unreachable, // LCOV_EXCL_LINE
+            };
+            const subrange = listToSubrange(self, func_decl.params);
+            return addRawNode(self, .{
+                .tag = tag,
+                .main_token = main_token,
+                .data = .{
+                    .lhs = func_decl.name,
+                    .rhs = addExtra(self, Extra.Function{
+                        .flags = func_decl.flags,
+                        .params_start = subrange.start,
+                        .params_end = subrange.end,
+                        .body = func_decl.body,
+                        .return_type = func_decl.return_type,
+                    }),
+                },
+            });
+        },
+        .arrow_function => |arrow_func| {
+            const subrange = listToSubrange(self, arrow_func.params);
+            return addRawNode(self, .{
+                .tag = if (arrow_func.type == .async_arrow) .async_arrow_function else .arrow_function,
+                .main_token = main_token,
+                .data = .{
+                    .lhs = addExtra(self, Extra.ArrowFunction{
+                        .params_start = subrange.start,
+                        .params_end = subrange.end,
+                        .return_type = arrow_func.return_type,
+                        .body = arrow_func.body,
+                    }),
+                    .rhs = arrow_func.body,
+                },
+            });
+        },
+        .call_expr => |expr| {
+            const subrange = listToSubrange(self, expr.params);
+            return addRawNode(self, .{
+                .tag = .call_expr,
+                .main_token = main_token,
+                .data = .{
+                    .lhs = expr.node,
+                    .rhs = addExtra(self, subrange),
+                },
+            });
+        },
+        .object_type, .tuple_type => |obj_type| {
+            const subrange = listToSubrange(self, obj_type);
+            return addRawNode(self, .{
+                .tag = if (key == .object_type) .object_type else .tuple_type,
+                .main_token = main_token,
+                .data = .{
+                    .lhs = subrange.start,
+                    .rhs = subrange.end,
+                },
+            });
+        },
+        .function_type => |func_type| {
+            const generic_params_subrange = listToSubrange(self, func_type.generic_params);
+            const params_subrange = listToSubrange(self, func_type.params);
+            const extra = addExtra(self, Extra.FunctionType{
+                .generic_params_start = generic_params_subrange.start,
+                .generic_params_end = generic_params_subrange.end,
+                .params_start = params_subrange.start,
+                .params_end = params_subrange.end,
+            });
+            return addRawNode(self, .{
+                .tag = .function_type,
+                .main_token = main_token,
+                .data = .{
+                    .lhs = extra,
+                    .rhs = func_type.return_type,
+                },
+            });
+        },
 
-    pub fn init(gpa: std.mem.Allocator) Pool {
-        var pool = .{
-            .nodes = std.ArrayList(Raw).init(gpa),
-            .extra = std.ArrayList(Node.Index).init(gpa),
-        };
+        .assignment,
+        .comma,
+        .lt,
+        .gt,
+        .lte,
+        .gte,
+        .eq,
+        .eqq,
+        .neq,
+        .neqq,
+        .@"and",
+        .@"or",
+        .coalesce,
+        .plus_expr,
+        .minus_expr,
+        .multiply_expr,
+        .exp_expr,
+        .div_expr,
+        .modulo_expr,
+        .bitwise_and,
+        .bitwise_or,
+        .bitwise_xor,
+        .bitwise_shift_left,
+        .bitwise_shift_right,
+        .bitwise_unsigned_right_shift,
+        .plus_assign,
+        .minus_assign,
+        .multiply_assign,
+        .modulo_assign,
+        .div_assign,
+        .exp_assign,
+        .and_assign,
+        .or_assign,
+        .coalesce_assign,
+        .bitwise_and_assign,
+        .bitwise_or_assign,
+        .bitwise_xor_assign,
+        .bitwise_shift_left_assign,
+        .bitwise_shift_right_assign,
+        .bitwise_unsigned_right_shift_assign,
+        .instanceof,
+        .in,
+        .object_literal_field,
+        .property_access,
+        .optional_property_access,
+        .index_access,
+        .type_intersection,
+        .type_union,
+        .type_decl,
+        => |binary| {
+            const tag: Tag = switch (key) {
+                .assignment => .assignment,
+                .comma => .comma,
+                .lt => .lt,
+                .gt => .gt,
+                .lte => .lte,
+                .gte => .gte,
+                .eq => .eq,
+                .eqq => .eqq,
+                .neq => .neq,
+                .neqq => .neqq,
+                .@"and" => .@"and",
+                .@"or" => .@"or",
+                .coalesce => .coalesce,
+                .plus_expr => .plus_expr,
+                .minus_expr => .minus_expr,
+                .multiply_expr => .multiply_expr,
+                .exp_expr => .exp_expr,
+                .div_expr => .div_expr,
+                .modulo_expr => .modulo_expr,
+                .bitwise_and => .bitwise_and,
+                .bitwise_or => .bitwise_or,
+                .bitwise_xor => .bitwise_xor,
+                .bitwise_shift_left => .bitwise_shift_left,
+                .bitwise_shift_right => .bitwise_shift_right,
+                .bitwise_unsigned_right_shift => .bitwise_unsigned_right_shift,
+                .plus_assign => .plus_assign,
+                .minus_assign => .minus_assign,
+                .multiply_assign => .multiply_assign,
+                .modulo_assign => .modulo_assign,
+                .div_assign => .div_assign,
+                .exp_assign => .exp_assign,
+                .and_assign => .and_assign,
+                .or_assign => .or_assign,
+                .coalesce_assign => .coalesce_assign,
+                .bitwise_and_assign => .bitwise_and_assign,
+                .bitwise_or_assign => .bitwise_or_assign,
+                .bitwise_xor_assign => .bitwise_xor_assign,
+                .bitwise_shift_left_assign => .bitwise_shift_left_assign,
+                .bitwise_shift_right_assign => .bitwise_shift_right_assign,
+                .bitwise_unsigned_right_shift_assign => .bitwise_unsigned_right_shift_assign,
+                .instanceof => .instanceof,
+                .in => .in,
+                .object_literal_field => .object_literal_field,
+                .property_access => .property_access,
+                .optional_property_access => .optional_property_access,
+                .index_access => .index_access,
+                .type_intersection => .type_intersection,
+                .type_union => .type_union,
+                .type_decl => .type_decl,
+                else => unreachable, // LCOV_EXCL_LINE
+            };
+            return addRawNode(self, .{
+                .tag = tag,
+                .main_token = main_token,
+                .data = .{
+                    .lhs = binary.left,
+                    .rhs = binary.right,
+                },
+            });
+        },
 
-        pool.nodes.append(.{
-            .tag = .root,
-            .main_token = 0,
-            .data = .{},
-        }) catch @panic("out of memory"); // LCOV_EXCL_LINE
+        .@"return",
+        .new_expr,
+        .grouping,
+        .plus,
+        .plusplus_pre,
+        .plusplus_post,
+        .minus,
+        .minusminus_pre,
+        .minusminus_post,
+        .not,
+        .bitwise_negate,
+        .spread,
+        .typeof,
+        .keyof,
+        .void,
+        .delete,
+        .computed_identifier,
+        .object_literal_field_shorthand,
+        .array_type,
+        => |node| {
+            const tag: Tag = switch (key) {
+                .@"return" => .@"return",
+                .new_expr => .new_expr,
+                .grouping => .grouping,
+                .plus => .plus,
+                .plusplus_pre => .plusplus_pre,
+                .plusplus_post => .plusplus_post,
+                .minus => .minus,
+                .minusminus_pre => .minusminus_pre,
+                .minusminus_post => .minusminus_post,
+                .not => .not,
+                .bitwise_negate => .bitwise_negate,
+                .spread => .spread,
+                .typeof => .typeof,
+                .keyof => .keyof,
+                .void => .void,
+                .delete => .delete,
+                .computed_identifier => .computed_identifier,
+                .object_literal_field_shorthand => .object_literal_field_shorthand,
+                .array_type => .array_type,
+                else => unreachable, // LCOV_EXCL_LINE
+            };
+            return addRawNode(self, .{
+                .tag = tag,
+                .main_token = main_token,
+                .data = .{ .lhs = node },
+            });
+        },
 
-        return pool;
+        .@"break",
+        .@"continue",
+        => {
+            const tag: Tag = switch (key) {
+                .@"break" => .@"break",
+                .@"continue" => .@"continue",
+                else => unreachable, // LCOV_EXCL_LINE
+            };
+            return addRawNode(self, .{
+                .tag = tag,
+                .main_token = main_token,
+                .data = .{},
+            });
+        },
+        .simple_value, .simple_type => |simple_value| {
+            return addRawNode(self, .{
+                .tag = if (key == .simple_value) .simple_value else .simple_type,
+                .main_token = main_token,
+                .data = .{ .lhs = @intFromEnum(simple_value.kind) },
+            });
+        },
+        .object_type_field => |obj_field_type| {
+            return addRawNode(self, .{
+                .tag = .object_type_field,
+                .main_token = main_token,
+                .data = .{ .lhs = obj_field_type.name, .rhs = obj_field_type.type },
+            });
+        },
+        .generic_type => |generic_type| {
+            const span = listToSubrange(self, generic_type.params);
+            return addRawNode(self, .{
+                .tag = .generic_type,
+                .main_token = main_token,
+                .data = .{
+                    .lhs = generic_type.name,
+                    .rhs = addExtra(self, span),
+                },
+            });
+        },
+        .interface_decl => |interface_decl| {
+            const extends_span = listToSubrange(self, interface_decl.extends);
+            const body_span = listToSubrange(self, interface_decl.body);
+            return addRawNode(self, .{
+                .tag = .interface_decl,
+                .main_token = main_token,
+                .data = .{
+                    .lhs = interface_decl.name,
+                    .rhs = addExtra(self, Extra.Interface{
+                        .extends_start = extends_span.start,
+                        .extends_end = extends_span.end,
+                        .body_start = body_span.start,
+                        .body_end = body_span.end,
+                    }),
+                },
+            });
+        },
     }
+}
 
-    pub fn deinit(self: *Pool) void {
-        self.nodes.deinit();
-        self.extra.deinit();
-    }
+pub fn getNode(self: Parser, index: Node.Index) Node {
+    const node = self.nodes.items[index];
 
-    pub fn addNode(self: *Pool, main_token: Token.Index, key: Node) Node.Index {
-        switch (key) {
-            .root => |root| {
-                const subrange = self.listToSubrange(root);
-                return self.addRawNode(.{
-                    .tag = .root,
-                    .main_token = main_token,
-                    .data = .{ .lhs = subrange.start, .rhs = subrange.end },
-                });
-            },
-            .binding_decl => |binding_decl| {
-                return self.addRawNode(.{
-                    .tag = .binding_decl,
-                    .main_token = main_token,
-                    .data = .{ .lhs = binding_decl.name, .rhs = binding_decl.alias },
-                });
-            },
-            .import => |import| {
-                switch (import) {
-                    .simple => |simple| {
-                        return self.addRawNode(.{
-                            .tag = .import,
-                            .main_token = main_token,
-                            .data = .{ .rhs = simple },
-                        });
+    switch (node.tag) {
+        .root => {
+            return .{
+                .root = self.extra.items[node.data.lhs..node.data.rhs],
+            };
+        },
+        .import => {
+            if (node.data.lhs == Node.Empty) {
+                return .{
+                    .import = .{
+                        .simple = node.data.rhs,
                     },
-                    .full => |full| {
-                        const span = self.listToSubrange(full.bindings);
-                        return self.addRawNode(.{
-                            .tag = .import,
-                            .main_token = main_token,
-                            .data = .{
-                                .lhs = self.addExtra(span),
-                                .rhs = full.path,
-                            },
-                        });
+                };
+            }
+
+            const subrange = getExtra(self, Extra.Subrange, node.data.lhs);
+            return .{
+                .import = .{ .full = .{
+                    .bindings = self.extra.items[subrange.start..subrange.end],
+                    .path = node.data.rhs,
+                } },
+            };
+        },
+        .import_binding_named => {
+            return .{
+                .import_binding = .{
+                    .named = self.extra.items[node.data.lhs..node.data.rhs],
+                },
+            };
+        },
+        .import_binding_default => {
+            return .{
+                .import_binding = .{
+                    .default = node.data.lhs,
+                },
+            };
+        },
+        .import_binding_namespace => {
+            return .{
+                .import_binding = .{
+                    .namespace = node.data.lhs,
+                },
+            };
+        },
+        .binding_decl => {
+            return .{
+                .binding_decl = .{
+                    .name = node.data.lhs,
+                    .alias = node.data.rhs,
+                },
+            };
+        },
+        .export_named => {
+            return .{
+                .@"export" = .{
+                    .named = self.extra.items[node.data.lhs..node.data.rhs],
+                },
+            };
+        },
+        .export_from => {
+            const span = getExtra(self, Extra.Subrange, node.data.lhs);
+            return .{
+                .@"export" = .{
+                    .from = .{
+                        .bindings = self.extra.items[span.start..span.end],
+                        .path = node.data.rhs,
                     },
-                }
-            },
-            .import_binding => |import_binding| {
-                switch (import_binding) {
-                    .named => |named| {
-                        const span = self.listToSubrange(named);
-                        return self.addRawNode(.{
-                            .tag = .import_binding_named,
-                            .main_token = main_token,
-                            .data = .{
-                                .lhs = span.start,
-                                .rhs = span.end,
-                            },
-                        });
+                },
+            };
+        },
+        .export_from_all => {
+            return .{
+                .@"export" = .{
+                    .from_all = .{
+                        .alias = node.data.lhs,
+                        .path = node.data.rhs,
                     },
-                    .default => |default| {
-                        return self.addRawNode(.{
-                            .tag = .import_binding_default,
-                            .main_token = main_token,
-                            .data = .{ .lhs = default },
-                        });
-                    },
-                    .namespace => |namespace| {
-                        return self.addRawNode(.{
-                            .tag = .import_binding_namespace,
-                            .main_token = main_token,
-                            .data = .{ .lhs = namespace },
-                        });
-                    },
-                }
-            },
-            .@"export" => |@"export"| {
-                switch (@"export") {
-                    .named => |named| {
-                        const span = self.listToSubrange(named);
-                        return self.addRawNode(.{
-                            .tag = .export_named,
-                            .main_token = main_token,
-                            .data = .{
-                                .lhs = span.start,
-                                .rhs = span.end,
-                            },
-                        });
-                    },
-                    .from => |from| {
-                        const span = self.listToSubrange(from.bindings);
-                        return self.addRawNode(.{
-                            .tag = .export_from,
-                            .main_token = main_token,
-                            .data = .{
-                                .lhs = self.addExtra(span),
-                                .rhs = from.path,
-                            },
-                        });
-                    },
-                    .from_all => |from| {
-                        return self.addRawNode(.{
-                            .tag = .export_from_all,
-                            .main_token = main_token,
-                            .data = .{
-                                .lhs = from.alias,
-                                .rhs = from.path,
-                            },
-                        });
-                    },
-                    .default => |default| {
-                        return self.addRawNode(.{
-                            .tag = .export_default,
-                            .main_token = main_token,
-                            .data = .{ .lhs = default },
-                        });
-                    },
-                    .node => |node| {
-                        return self.addRawNode(.{
-                            .tag = .export_node,
-                            .main_token = main_token,
-                            .data = .{ .lhs = node },
-                        });
-                    },
-                }
-            },
-            .class => |class| {
-                const implements_span = self.listToSubrange(class.implements);
-                const subrange = self.listToSubrange(class.body);
-                return self.addRawNode(.{
-                    .tag = if (class.abstract) .abstract_class_decl else .class_decl,
-                    .main_token = main_token,
-                    .data = .{
-                        .lhs = class.name,
-                        .rhs = self.addExtra(Extra.ClassDeclaration{
-                            .super_class = class.super_class,
-                            .implements_start = implements_span.start,
-                            .implements_end = implements_span.end,
-                            .body_start = subrange.start,
-                            .body_end = subrange.end,
-                        }),
-                    },
-                });
-            },
-            .class_static_block => |static_block| {
-                const subrange = self.listToSubrange(static_block);
-                return self.addRawNode(.{
-                    .tag = .class_static_block,
-                    .main_token = main_token,
-                    .data = .{
-                        .lhs = subrange.start,
-                        .rhs = subrange.end,
-                    },
-                });
-            },
-            .class_member => |member| {
-                return self.addRawNode(.{
-                    .tag = .class_member,
-                    .main_token = main_token,
-                    .data = .{
-                        .lhs = member.flags,
-                        .rhs = member.node,
-                    },
-                });
-            },
-            .class_field => |field| {
-                const binding = self.addExtra(Extra.Declaration{
+                },
+            };
+        },
+        .export_default => {
+            return .{
+                .@"export" = .{
+                    .default = node.data.lhs,
+                },
+            };
+        },
+        .export_node => {
+            return .{
+                .@"export" = .{
+                    .node = node.data.lhs,
+                },
+            };
+        },
+        .abstract_class_decl, .class_decl => {
+            const class = getExtra(self, Extra.ClassDeclaration, node.data.rhs);
+            return .{
+                .class = .{
+                    .abstract = node.tag == .abstract_class_decl,
+                    .name = node.data.lhs,
+                    .super_class = class.super_class,
+                    .implements = self.extra.items[class.implements_start..class.implements_end],
+                    .body = self.extra.items[class.body_start..class.body_end],
+                },
+            };
+        },
+        .class_member => {
+            return .{
+                .class_member = .{
+                    .flags = @intCast(node.data.lhs),
+                    .node = node.data.rhs,
+                },
+            };
+        },
+        .class_field => {
+            const field = getExtra(self, Extra.Declaration, node.data.rhs);
+            return .{
+                .class_field = .{
+                    .name = node.data.lhs,
                     .decl_type = field.decl_type,
                     .value = field.value,
-                });
-                return self.addRawNode(.{
-                    .tag = .class_field,
-                    .main_token = main_token,
-                    .data = .{
-                        .lhs = field.name,
-                        .rhs = binding,
-                    },
-                });
-            },
-            .declaration => |declaration| {
-                const tag: Tag = switch (declaration.kind) {
-                    .let => .let_decl,
-                    .@"var" => .var_decl,
-                    .@"const" => .const_decl,
-                };
-                const subrange = self.listToSubrange(declaration.list);
-                return self.addRawNode(.{
-                    .tag = tag,
-                    .main_token = main_token,
-                    .data = .{
-                        .lhs = subrange.start,
-                        .rhs = subrange.end,
-                    },
-                });
-            },
-            .decl_binding => |declaration| {
-                return self.addRawNode(.{
-                    .tag = .decl_binding,
-                    .main_token = main_token,
-                    .data = .{
-                        .lhs = declaration.name,
-                        .rhs = self.addExtra(Extra.Declaration{
-                            .decl_type = declaration.decl_type,
-                            .value = declaration.value,
-                        }),
-                    },
-                });
-            },
-            .@"if", .ternary_expr => |if_node| {
-                return self.addRawNode(.{
-                    .tag = if (key == .@"if") .@"if" else .ternary,
-                    .main_token = main_token,
-                    .data = .{
-                        .lhs = self.addExtra(Extra.If{
-                            .expr = if_node.expr,
-                            .body = if_node.body,
-                        }),
-                        .rhs = if_node.@"else",
-                    },
-                });
-            },
-            .@"switch" => |switch_node| {
-                const cases = self.listToSubrange(switch_node.cases);
-                return self.addRawNode(.{
-                    .tag = .@"switch",
-                    .main_token = main_token,
-                    .data = .{
-                        .lhs = switch_node.expr,
-                        .rhs = self.addExtra(cases),
-                    },
-                });
-            },
-            .case => |case_key| {
-                switch (case_key) {
-                    .default => |default_node| {
-                        const stmts = self.listToSubrange(default_node);
-                        return self.addRawNode(.{
-                            .tag = .default,
-                            .main_token = main_token,
-                            .data = .{
-                                .lhs = stmts.start,
-                                .rhs = stmts.end,
-                            },
-                        });
-                    },
-                    .case => |case_node| {
-                        const stmts = self.listToSubrange(case_node.body);
-                        return self.addRawNode(.{
-                            .tag = .case,
-                            .main_token = main_token,
-                            .data = .{
-                                .lhs = case_node.expr,
-                                .rhs = self.addExtra(stmts),
-                            },
-                        });
-                    },
-                }
-            },
-            .@"for" => |for_node| {
-                switch (for_node) {
-                    .classic => |classic| {
-                        return self.addRawNode(.{
-                            .tag = .@"for",
-                            .main_token = main_token,
-                            .data = .{
-                                .lhs = self.addExtra(Extra.ForThree{
-                                    .init = classic.init,
-                                    .cond = classic.cond,
-                                    .post = classic.post,
-                                }),
-                                .rhs = classic.body,
-                            },
-                        });
-                    },
-                    .in => |in| {
-                        return self.addRawNode(.{
-                            .tag = .for_in,
-                            .main_token = main_token,
-                            .data = .{
-                                .lhs = self.addExtra(Extra.ForTwo{
-                                    .left = in.left,
-                                    .right = in.right,
-                                }),
-                                .rhs = in.body,
-                            },
-                        });
-                    },
-                    .of => |of| {
-                        return self.addRawNode(.{
-                            .tag = .for_of,
-                            .main_token = main_token,
-                            .data = .{
-                                .lhs = self.addExtra(Extra.ForTwo{
-                                    .left = of.left,
-                                    .right = of.right,
-                                }),
-                                .rhs = of.body,
-                            },
-                        });
-                    },
-                }
-            },
-            .@"while", .do_while => |while_node| {
-                return self.addRawNode(.{
-                    .tag = if (key == .@"while") .@"while" else .do_while,
-                    .main_token = main_token,
-                    .data = .{
-                        .lhs = while_node.cond,
-                        .rhs = while_node.body,
-                    },
-                });
-            },
-            .block, .array_literal, .object_literal => |nodes| {
-                const subrange = self.listToSubrange(nodes);
-                return self.addRawNode(.{
-                    .tag = switch (key) {
-                        .block => .block,
-                        .array_literal => .array_literal,
-                        .object_literal => .object_literal,
+                },
+            };
+        },
+        .var_decl, .const_decl, .let_decl => {
+            return .{
+                .declaration = .{
+                    .kind = switch (node.tag) {
+                        .var_decl => .@"var",
+                        .const_decl => .@"const",
+                        .let_decl => .let,
                         else => unreachable, // LCOV_EXCL_LINE
                     },
-                    .main_token = main_token,
-                    .data = .{ .lhs = subrange.start, .rhs = subrange.end },
-                });
-            },
-            .function_param => |param| {
-                return self.addRawNode(.{
-                    .tag = .function_param,
-                    .main_token = main_token,
-                    .data = .{ .lhs = param.node, .rhs = param.type },
-                });
-            },
-            .function_decl, .function_expr, .class_method, .object_method => |func_decl| {
-                const tag: Tag = switch (key) {
-                    .function_decl => .func_decl,
-                    .function_expr => .func_expr,
-                    .class_method => .class_method,
-                    .object_method => .object_method,
-                    else => unreachable, // LCOV_EXCL_LINE
-                };
-                const subrange = self.listToSubrange(func_decl.params);
-                return self.addRawNode(.{
-                    .tag = tag,
-                    .main_token = main_token,
-                    .data = .{
-                        .lhs = func_decl.name,
-                        .rhs = self.addExtra(Extra.Function{
-                            .flags = func_decl.flags,
-                            .params_start = subrange.start,
-                            .params_end = subrange.end,
-                            .body = func_decl.body,
-                            .return_type = func_decl.return_type,
-                        }),
-                    },
-                });
-            },
-            .arrow_function => |arrow_func| {
-                const subrange = self.listToSubrange(arrow_func.params);
-                return self.addRawNode(.{
-                    .tag = if (arrow_func.type == .async_arrow) .async_arrow_function else .arrow_function,
-                    .main_token = main_token,
-                    .data = .{
-                        .lhs = self.addExtra(Extra.ArrowFunction{
-                            .params_start = subrange.start,
-                            .params_end = subrange.end,
-                            .return_type = arrow_func.return_type,
-                            .body = arrow_func.body,
-                        }),
-                        .rhs = arrow_func.body,
-                    },
-                });
-            },
-            .call_expr => |expr| {
-                const subrange = self.listToSubrange(expr.params);
-                return self.addRawNode(.{
-                    .tag = .call_expr,
-                    .main_token = main_token,
-                    .data = .{
-                        .lhs = expr.node,
-                        .rhs = self.addExtra(subrange),
-                    },
-                });
-            },
-            .object_type, .tuple_type => |obj_type| {
-                const subrange = self.listToSubrange(obj_type);
-                return self.addRawNode(.{
-                    .tag = if (key == .object_type) .object_type else .tuple_type,
-                    .main_token = main_token,
-                    .data = .{
-                        .lhs = subrange.start,
-                        .rhs = subrange.end,
-                    },
-                });
-            },
-            .function_type => |func_type| {
-                const generic_params_subrange = self.listToSubrange(func_type.generic_params);
-                const params_subrange = self.listToSubrange(func_type.params);
-                const extra = self.addExtra(Extra.FunctionType{
-                    .generic_params_start = generic_params_subrange.start,
-                    .generic_params_end = generic_params_subrange.end,
-                    .params_start = params_subrange.start,
-                    .params_end = params_subrange.end,
-                });
-                return self.addRawNode(.{
-                    .tag = .function_type,
-                    .main_token = main_token,
-                    .data = .{
-                        .lhs = extra,
-                        .rhs = func_type.return_type,
-                    },
-                });
-            },
-
-            .assignment,
-            .comma,
-            .lt,
-            .gt,
-            .lte,
-            .gte,
-            .eq,
-            .eqq,
-            .neq,
-            .neqq,
-            .@"and",
-            .@"or",
-            .coalesce,
-            .plus_expr,
-            .minus_expr,
-            .multiply_expr,
-            .exp_expr,
-            .div_expr,
-            .modulo_expr,
-            .bitwise_and,
-            .bitwise_or,
-            .bitwise_xor,
-            .bitwise_shift_left,
-            .bitwise_shift_right,
-            .bitwise_unsigned_right_shift,
-            .plus_assign,
-            .minus_assign,
-            .multiply_assign,
-            .modulo_assign,
-            .div_assign,
-            .exp_assign,
-            .and_assign,
-            .or_assign,
-            .coalesce_assign,
-            .bitwise_and_assign,
-            .bitwise_or_assign,
-            .bitwise_xor_assign,
-            .bitwise_shift_left_assign,
-            .bitwise_shift_right_assign,
-            .bitwise_unsigned_right_shift_assign,
-            .instanceof,
-            .in,
-            .object_literal_field,
-            .property_access,
-            .optional_property_access,
-            .index_access,
-            .type_intersection,
-            .type_union,
-            .type_decl,
-            => |binary| {
-                const tag: Tag = switch (key) {
-                    .assignment => .assignment,
-                    .comma => .comma,
-                    .lt => .lt,
-                    .gt => .gt,
-                    .lte => .lte,
-                    .gte => .gte,
-                    .eq => .eq,
-                    .eqq => .eqq,
-                    .neq => .neq,
-                    .neqq => .neqq,
-                    .@"and" => .@"and",
-                    .@"or" => .@"or",
-                    .coalesce => .coalesce,
-                    .plus_expr => .plus_expr,
-                    .minus_expr => .minus_expr,
-                    .multiply_expr => .multiply_expr,
-                    .exp_expr => .exp_expr,
-                    .div_expr => .div_expr,
-                    .modulo_expr => .modulo_expr,
-                    .bitwise_and => .bitwise_and,
-                    .bitwise_or => .bitwise_or,
-                    .bitwise_xor => .bitwise_xor,
-                    .bitwise_shift_left => .bitwise_shift_left,
-                    .bitwise_shift_right => .bitwise_shift_right,
-                    .bitwise_unsigned_right_shift => .bitwise_unsigned_right_shift,
-                    .plus_assign => .plus_assign,
-                    .minus_assign => .minus_assign,
-                    .multiply_assign => .multiply_assign,
-                    .modulo_assign => .modulo_assign,
-                    .div_assign => .div_assign,
-                    .exp_assign => .exp_assign,
-                    .and_assign => .and_assign,
-                    .or_assign => .or_assign,
-                    .coalesce_assign => .coalesce_assign,
-                    .bitwise_and_assign => .bitwise_and_assign,
-                    .bitwise_or_assign => .bitwise_or_assign,
-                    .bitwise_xor_assign => .bitwise_xor_assign,
-                    .bitwise_shift_left_assign => .bitwise_shift_left_assign,
-                    .bitwise_shift_right_assign => .bitwise_shift_right_assign,
-                    .bitwise_unsigned_right_shift_assign => .bitwise_unsigned_right_shift_assign,
-                    .instanceof => .instanceof,
-                    .in => .in,
-                    .object_literal_field => .object_literal_field,
-                    .property_access => .property_access,
-                    .optional_property_access => .optional_property_access,
-                    .index_access => .index_access,
-                    .type_intersection => .type_intersection,
-                    .type_union => .type_union,
-                    .type_decl => .type_decl,
-                    else => unreachable, // LCOV_EXCL_LINE
-                };
-                return self.addRawNode(.{
-                    .tag = tag,
-                    .main_token = main_token,
-                    .data = .{
-                        .lhs = binary.left,
-                        .rhs = binary.right,
-                    },
-                });
-            },
-
-            .@"return",
-            .new_expr,
-            .grouping,
-            .plus,
-            .plusplus_pre,
-            .plusplus_post,
-            .minus,
-            .minusminus_pre,
-            .minusminus_post,
-            .not,
-            .bitwise_negate,
-            .spread,
-            .typeof,
-            .keyof,
-            .void,
-            .delete,
-            .computed_identifier,
-            .object_literal_field_shorthand,
-            .array_type,
-            => |node| {
-                const tag: Tag = switch (key) {
-                    .@"return" => .@"return",
-                    .new_expr => .new_expr,
-                    .grouping => .grouping,
-                    .plus => .plus,
-                    .plusplus_pre => .plusplus_pre,
-                    .plusplus_post => .plusplus_post,
-                    .minus => .minus,
-                    .minusminus_pre => .minusminus_pre,
-                    .minusminus_post => .minusminus_post,
-                    .not => .not,
-                    .bitwise_negate => .bitwise_negate,
-                    .spread => .spread,
-                    .typeof => .typeof,
-                    .keyof => .keyof,
-                    .void => .void,
-                    .delete => .delete,
-                    .computed_identifier => .computed_identifier,
-                    .object_literal_field_shorthand => .object_literal_field_shorthand,
-                    .array_type => .array_type,
-                    else => unreachable, // LCOV_EXCL_LINE
-                };
-                return self.addRawNode(.{
-                    .tag = tag,
-                    .main_token = main_token,
-                    .data = .{ .lhs = node },
-                });
-            },
-
-            .@"break",
-            .@"continue",
-            => {
-                const tag: Tag = switch (key) {
-                    .@"break" => .@"break",
-                    .@"continue" => .@"continue",
-                    else => unreachable, // LCOV_EXCL_LINE
-                };
-                return self.addRawNode(.{
-                    .tag = tag,
-                    .main_token = main_token,
-                    .data = .{},
-                });
-            },
-            .simple_value, .simple_type => |simple_value| {
-                return self.addRawNode(.{
-                    .tag = if (key == .simple_value) .simple_value else .simple_type,
-                    .main_token = main_token,
-                    .data = .{ .lhs = @intFromEnum(simple_value.kind) },
-                });
-            },
-            .object_type_field => |obj_field_type| {
-                return self.addRawNode(.{
-                    .tag = .object_type_field,
-                    .main_token = main_token,
-                    .data = .{ .lhs = obj_field_type.name, .rhs = obj_field_type.type },
-                });
-            },
-            .generic_type => |generic_type| {
-                const span = self.listToSubrange(generic_type.params);
-                return self.addRawNode(.{
-                    .tag = .generic_type,
-                    .main_token = main_token,
-                    .data = .{
-                        .lhs = generic_type.name,
-                        .rhs = self.addExtra(span),
-                    },
-                });
-            },
-            .interface_decl => |interface_decl| {
-                const extends_span = self.listToSubrange(interface_decl.extends);
-                const body_span = self.listToSubrange(interface_decl.body);
-                return self.addRawNode(.{
-                    .tag = .interface_decl,
-                    .main_token = main_token,
-                    .data = .{
-                        .lhs = interface_decl.name,
-                        .rhs = self.addExtra(Extra.Interface{
-                            .extends_start = extends_span.start,
-                            .extends_end = extends_span.end,
-                            .body_start = body_span.start,
-                            .body_end = body_span.end,
-                        }),
-                    },
-                });
-            },
-        }
-    }
-
-    pub fn getNode(self: Pool, index: Node.Index) Node {
-        const node = self.nodes.items[index];
-
-        switch (node.tag) {
-            .root => {
-                return .{
-                    .root = self.extra.items[node.data.lhs..node.data.rhs],
-                };
-            },
-            .import => {
-                if (node.data.lhs == Node.Empty) {
-                    return .{
-                        .import = .{
-                            .simple = node.data.rhs,
-                        },
-                    };
-                }
-
-                const subrange = self.getExtra(Extra.Subrange, node.data.lhs);
-                return .{
-                    .import = .{ .full = .{
-                        .bindings = self.extra.items[subrange.start..subrange.end],
-                        .path = node.data.rhs,
-                    } },
-                };
-            },
-            .import_binding_named => {
-                return .{
-                    .import_binding = .{
-                        .named = self.extra.items[node.data.lhs..node.data.rhs],
-                    },
-                };
-            },
-            .import_binding_default => {
-                return .{
-                    .import_binding = .{
-                        .default = node.data.lhs,
-                    },
-                };
-            },
-            .import_binding_namespace => {
-                return .{
-                    .import_binding = .{
-                        .namespace = node.data.lhs,
-                    },
-                };
-            },
-            .binding_decl => {
-                return .{
-                    .binding_decl = .{
-                        .name = node.data.lhs,
-                        .alias = node.data.rhs,
-                    },
-                };
-            },
-            .export_named => {
-                return .{
-                    .@"export" = .{
-                        .named = self.extra.items[node.data.lhs..node.data.rhs],
-                    },
-                };
-            },
-            .export_from => {
-                const span = self.getExtra(Extra.Subrange, node.data.lhs);
-                return .{
-                    .@"export" = .{
-                        .from = .{
-                            .bindings = self.extra.items[span.start..span.end],
-                            .path = node.data.rhs,
-                        },
-                    },
-                };
-            },
-            .export_from_all => {
-                return .{
-                    .@"export" = .{
-                        .from_all = .{
-                            .alias = node.data.lhs,
-                            .path = node.data.rhs,
-                        },
-                    },
-                };
-            },
-            .export_default => {
-                return .{
-                    .@"export" = .{
-                        .default = node.data.lhs,
-                    },
-                };
-            },
-            .export_node => {
-                return .{
-                    .@"export" = .{
-                        .node = node.data.lhs,
-                    },
-                };
-            },
-            .abstract_class_decl, .class_decl => {
-                const class = self.getExtra(Extra.ClassDeclaration, node.data.rhs);
-                return .{
-                    .class = .{
-                        .abstract = node.tag == .abstract_class_decl,
-                        .name = node.data.lhs,
-                        .super_class = class.super_class,
-                        .implements = self.extra.items[class.implements_start..class.implements_end],
-                        .body = self.extra.items[class.body_start..class.body_end],
-                    },
-                };
-            },
-            .class_member => {
-                return .{
-                    .class_member = .{
-                        .flags = @intCast(node.data.lhs),
-                        .node = node.data.rhs,
-                    },
-                };
-            },
-            .class_field => {
-                const field = self.getExtra(Extra.Declaration, node.data.rhs);
-                return .{
-                    .class_field = .{
-                        .name = node.data.lhs,
-                        .decl_type = field.decl_type,
-                        .value = field.value,
-                    },
-                };
-            },
-            .var_decl, .const_decl, .let_decl => {
-                return .{
-                    .declaration = .{
-                        .kind = switch (node.tag) {
-                            .var_decl => .@"var",
-                            .const_decl => .@"const",
-                            .let_decl => .let,
-                            else => unreachable, // LCOV_EXCL_LINE
-                        },
-                        .list = self.extra.items[node.data.lhs..node.data.rhs],
-                    },
-                };
-            },
-            .decl_binding => {
-                const extra = self.getExtra(Extra.Declaration, node.data.rhs);
-                return .{
-                    .decl_binding = .{
-                        .name = node.data.lhs,
-                        .decl_type = extra.decl_type,
-                        .value = extra.value,
-                    },
-                };
-            },
-            .@"if", .ternary => {
-                const if_extra = self.getExtra(Extra.If, node.data.lhs);
-                const data = .{
-                    .expr = if_extra.expr,
-                    .body = if_extra.body,
-                    .@"else" = node.data.rhs,
-                };
-                return switch (node.tag) {
-                    .@"if" => .{ .@"if" = data },
-                    .ternary => .{ .ternary_expr = data },
-                    else => unreachable, // LCOV_EXCL_LINE
-                };
-            },
-            .@"switch" => {
-                const subrange = self.getExtra(Extra.Subrange, node.data.rhs);
-                return .{
-                    .@"switch" = .{
-                        .expr = node.data.lhs,
-                        .cases = self.extra.items[subrange.start..subrange.end],
-                    },
-                };
-            },
-            .case => {
-                const expr = node.data.lhs;
-                const subrange = self.getExtra(Extra.Subrange, node.data.rhs);
-                return .{
-                    .case = .{
-                        .case = .{
-                            .expr = expr,
-                            .body = self.extra.items[subrange.start..subrange.end],
-                        },
-                    },
-                };
-            },
-            .default => {
-                return .{
-                    .case = .{
-                        .default = self.extra.items[node.data.lhs..node.data.rhs],
-                    },
-                };
-            },
-            .@"for" => {
-                const for_extra = self.getExtra(Extra.ForThree, node.data.lhs);
-                return Node{
-                    .@"for" = .{
-                        .classic = .{
-                            .init = for_extra.init,
-                            .cond = for_extra.cond,
-                            .post = for_extra.post,
-                            .body = node.data.rhs,
-                        },
-                    },
-                };
-            },
-            .for_in => {
-                const for_extra = self.getExtra(Extra.ForTwo, node.data.lhs);
-                return .{
-                    .@"for" = .{
-                        .in = .{
-                            .left = for_extra.left,
-                            .right = for_extra.right,
-                            .body = node.data.rhs,
-                        },
-                    },
-                };
-            },
-            .for_of => {
-                const for_extra = self.getExtra(Extra.ForTwo, node.data.lhs);
-                return .{
-                    .@"for" = .{
-                        .of = .{
-                            .left = for_extra.left,
-                            .right = for_extra.right,
-                            .body = node.data.rhs,
-                        },
-                    },
-                };
-            },
-            .@"while" => {
-                return .{
-                    .@"while" = .{
-                        .cond = node.data.lhs,
-                        .body = node.data.rhs,
-                    },
-                };
-            },
-            .do_while => {
-                return .{
-                    .do_while = .{
-                        .cond = node.data.lhs,
-                        .body = node.data.rhs,
-                    },
-                };
-            },
-            .function_param => {
-                return .{
-                    .function_param = .{
-                        .node = node.data.lhs,
-                        .type = node.data.rhs,
-                    },
-                };
-            },
-            .func_decl,
-            .func_expr,
-            .class_method,
-            .object_method,
-            => {
-                const extra = self.getExtra(Extra.Function, node.data.rhs);
-                const decl: Node.FunctionDeclaration = .{
-                    .flags = @truncate(extra.flags),
+                    .list = self.extra.items[node.data.lhs..node.data.rhs],
+                },
+            };
+        },
+        .decl_binding => {
+            const extra = getExtra(self, Extra.Declaration, node.data.rhs);
+            return .{
+                .decl_binding = .{
                     .name = node.data.lhs,
-                    .params = self.extra.items[extra.params_start..extra.params_end],
-                    .body = extra.body,
-                    .return_type = extra.return_type,
-                };
-                return switch (node.tag) {
-                    .func_decl => .{ .function_decl = decl },
-                    .func_expr => .{ .function_expr = decl },
-                    .class_method => .{ .class_method = decl },
-                    .object_method => .{ .object_method = decl },
-                    else => unreachable, // LCOV_EXCL_LINE
-                };
-            },
-            .async_arrow_function, .arrow_function => {
-                const extra = self.getExtra(Extra.ArrowFunction, node.data.lhs);
-                return Node{
-                    .arrow_function = .{
-                        .type = switch (node.tag) {
-                            .async_arrow_function => .async_arrow,
-                            .arrow_function => .arrow,
-                            else => unreachable, // LCOV_EXCL_LINE
-                        },
-                        .params = self.extra.items[extra.params_start..extra.params_end],
-                        .body = node.data.rhs,
-                        .return_type = extra.return_type,
+                    .decl_type = extra.decl_type,
+                    .value = extra.value,
+                },
+            };
+        },
+        .@"if", .ternary => {
+            const if_extra = getExtra(self, Extra.If, node.data.lhs);
+            const data = .{
+                .expr = if_extra.expr,
+                .body = if_extra.body,
+                .@"else" = node.data.rhs,
+            };
+            return switch (node.tag) {
+                .@"if" => .{ .@"if" = data },
+                .ternary => .{ .ternary_expr = data },
+                else => unreachable, // LCOV_EXCL_LINE
+            };
+        },
+        .@"switch" => {
+            const subrange = getExtra(self, Extra.Subrange, node.data.rhs);
+            return .{
+                .@"switch" = .{
+                    .expr = node.data.lhs,
+                    .cases = self.extra.items[subrange.start..subrange.end],
+                },
+            };
+        },
+        .case => {
+            const expr = node.data.lhs;
+            const subrange = getExtra(self, Extra.Subrange, node.data.rhs);
+            return .{
+                .case = .{
+                    .case = .{
+                        .expr = expr,
+                        .body = self.extra.items[subrange.start..subrange.end],
                     },
-                };
-            },
-            .call_expr => {
-                const extra = self.getExtra(Extra.Subrange, node.data.rhs);
-                const data = .{
+                },
+            };
+        },
+        .default => {
+            return .{
+                .case = .{
+                    .default = self.extra.items[node.data.lhs..node.data.rhs],
+                },
+            };
+        },
+        .@"for" => {
+            const for_extra = getExtra(self, Extra.ForThree, node.data.lhs);
+            return Node{
+                .@"for" = .{
+                    .classic = .{
+                        .init = for_extra.init,
+                        .cond = for_extra.cond,
+                        .post = for_extra.post,
+                        .body = node.data.rhs,
+                    },
+                },
+            };
+        },
+        .for_in => {
+            const for_extra = getExtra(self, Extra.ForTwo, node.data.lhs);
+            return .{
+                .@"for" = .{
+                    .in = .{
+                        .left = for_extra.left,
+                        .right = for_extra.right,
+                        .body = node.data.rhs,
+                    },
+                },
+            };
+        },
+        .for_of => {
+            const for_extra = getExtra(self, Extra.ForTwo, node.data.lhs);
+            return .{
+                .@"for" = .{
+                    .of = .{
+                        .left = for_extra.left,
+                        .right = for_extra.right,
+                        .body = node.data.rhs,
+                    },
+                },
+            };
+        },
+        .@"while" => {
+            return .{
+                .@"while" = .{
+                    .cond = node.data.lhs,
+                    .body = node.data.rhs,
+                },
+            };
+        },
+        .do_while => {
+            return .{
+                .do_while = .{
+                    .cond = node.data.lhs,
+                    .body = node.data.rhs,
+                },
+            };
+        },
+        .function_param => {
+            return .{
+                .function_param = .{
                     .node = node.data.lhs,
-                    .params = self.extra.items[extra.start..extra.end],
-                };
-                return .{ .call_expr = data };
-            },
-            .block, .array_literal, .object_literal, .class_static_block => {
-                const nodes = self.extra.items[node.data.lhs..node.data.rhs];
-                return switch (node.tag) {
-                    .block => .{ .block = nodes },
-                    .array_literal => .{ .array_literal = nodes },
-                    .object_literal => .{ .object_literal = nodes },
-                    .class_static_block => .{ .class_static_block = nodes },
-                    else => unreachable, // LCOV_EXCL_LINE
-                };
-            },
-            .comma,
-            .assignment,
-            .lt,
-            .gt,
-            .lte,
-            .gte,
-            .eq,
-            .eqq,
-            .neq,
-            .neqq,
-            .@"and",
-            .@"or",
-            .coalesce,
-            .plus_expr,
-            .minus_expr,
-            .multiply_expr,
-            .exp_expr,
-            .div_expr,
-            .modulo_expr,
-            .bitwise_and,
-            .bitwise_or,
-            .bitwise_xor,
-            .bitwise_shift_left,
-            .bitwise_shift_right,
-            .bitwise_unsigned_right_shift,
-            .plus_assign,
-            .minus_assign,
-            .multiply_assign,
-            .modulo_assign,
-            .div_assign,
-            .exp_assign,
-            .and_assign,
-            .or_assign,
-            .coalesce_assign,
-            .bitwise_and_assign,
-            .bitwise_or_assign,
-            .bitwise_xor_assign,
-            .bitwise_shift_left_assign,
-            .bitwise_shift_right_assign,
-            .bitwise_unsigned_right_shift_assign,
-            .instanceof,
-            .in,
-            .object_literal_field,
-            .property_access,
-            .optional_property_access,
-            .index_access,
-            .type_intersection,
-            .type_union,
-            .type_decl,
-            => {
-                const data = Node.Binary{
-                    .left = node.data.lhs,
-                    .right = node.data.rhs,
-                };
-                return switch (node.tag) {
-                    .comma => .{ .comma = data },
-                    .assignment => .{ .assignment = data },
-                    .lt => .{ .lt = data },
-                    .gt => .{ .gt = data },
-                    .lte => .{ .lte = data },
-                    .gte => .{ .gte = data },
-                    .eq => .{ .eq = data },
-                    .eqq => .{ .eqq = data },
-                    .neq => .{ .neq = data },
-                    .neqq => .{ .neqq = data },
-                    .@"and" => .{ .@"and" = data },
-                    .@"or" => .{ .@"or" = data },
-                    .coalesce => .{ .coalesce = data },
-                    .plus_expr => .{ .plus_expr = data },
-                    .minus_expr => .{ .minus_expr = data },
-                    .multiply_expr => .{ .multiply_expr = data },
-                    .exp_expr => .{ .exp_expr = data },
-                    .div_expr => .{ .div_expr = data },
-                    .modulo_expr => .{ .modulo_expr = data },
-                    .bitwise_and => .{ .bitwise_and = data },
-                    .bitwise_or => .{ .bitwise_or = data },
-                    .bitwise_xor => .{ .bitwise_xor = data },
-                    .bitwise_shift_left => .{ .bitwise_shift_left = data },
-                    .bitwise_shift_right => .{ .bitwise_shift_right = data },
-                    .bitwise_unsigned_right_shift => .{ .bitwise_unsigned_right_shift = data },
-                    .plus_assign => .{ .plus_assign = data },
-                    .minus_assign => .{ .minus_assign = data },
-                    .multiply_assign => .{ .multiply_assign = data },
-                    .modulo_assign => .{ .modulo_assign = data },
-                    .div_assign => .{ .div_assign = data },
-                    .exp_assign => .{ .exp_assign = data },
-                    .and_assign => .{ .and_assign = data },
-                    .or_assign => .{ .or_assign = data },
-                    .coalesce_assign => .{ .coalesce_assign = data },
-                    .bitwise_and_assign => .{ .bitwise_and_assign = data },
-                    .bitwise_or_assign => .{ .bitwise_or_assign = data },
-                    .bitwise_xor_assign => .{ .bitwise_xor_assign = data },
-                    .bitwise_shift_left_assign => .{ .bitwise_shift_left_assign = data },
-                    .bitwise_shift_right_assign => .{ .bitwise_shift_right_assign = data },
-                    .bitwise_unsigned_right_shift_assign => .{ .bitwise_unsigned_right_shift_assign = data },
-                    .instanceof => .{ .instanceof = data },
-                    .in => .{ .in = data },
-                    .object_literal_field => .{ .object_literal_field = data },
-                    .property_access => .{ .property_access = data },
-                    .optional_property_access => .{ .optional_property_access = data },
-                    .index_access => .{ .index_access = data },
-                    .type_intersection => .{ .type_intersection = data },
-                    .type_union => .{ .type_union = data },
-                    .type_decl => .{ .type_decl = data },
-                    else => unreachable, // LCOV_EXCL_LINE
-                };
-            },
-
-            .@"return",
-            .new_expr,
-            .grouping,
-            .plus,
-            .plusplus_pre,
-            .plusplus_post,
-            .minus,
-            .minusminus_pre,
-            .minusminus_post,
-            .not,
-            .bitwise_negate,
-            .spread,
-            .typeof,
-            .keyof,
-            .void,
-            .delete,
-            .computed_identifier,
-            .object_literal_field_shorthand,
-            .array_type,
-            => {
-                return switch (node.tag) {
-                    .@"return" => .{ .@"return" = node.data.lhs },
-                    .new_expr => .{ .new_expr = node.data.lhs },
-                    .grouping => .{ .grouping = node.data.lhs },
-                    .plus => .{ .plus = node.data.lhs },
-                    .plusplus_pre => .{ .plusplus_pre = node.data.lhs },
-                    .plusplus_post => .{ .plusplus_post = node.data.lhs },
-                    .minus => .{ .minus = node.data.lhs },
-                    .minusminus_pre => .{ .minusminus_pre = node.data.lhs },
-                    .minusminus_post => .{ .minusminus_post = node.data.lhs },
-                    .not => .{ .not = node.data.lhs },
-                    .bitwise_negate => .{ .bitwise_negate = node.data.lhs },
-                    .spread => .{ .spread = node.data.lhs },
-                    .typeof => .{ .typeof = node.data.lhs },
-                    .keyof => .{ .keyof = node.data.lhs },
-                    .void => .{ .void = node.data.lhs },
-                    .delete => .{ .delete = node.data.lhs },
-                    .computed_identifier => .{ .computed_identifier = node.data.lhs },
-                    .object_literal_field_shorthand => .{ .object_literal_field_shorthand = node.data.lhs },
-                    .array_type => .{ .array_type = node.data.lhs },
-                    else => unreachable, // LCOV_EXCL_LINE
-                };
-            },
-
-            .@"break",
-            .@"continue",
-            => {
-                return switch (node.tag) {
-                    .@"break" => .{ .@"break" = {} },
-                    .@"continue" => .{ .@"continue" = {} },
-                    else => unreachable, // LCOV_EXCL_LINE
-                };
-            },
-
-            .simple_type, .simple_value => {
-                const data = Node.SimpleValue{
-                    .kind = @enumFromInt(node.data.lhs),
-                };
-                return switch (node.tag) {
-                    .simple_type => .{ .simple_type = data },
-                    .simple_value => .{ .simple_value = data },
-                    else => unreachable, // LCOV_EXCL_LINE
-                };
-            },
-
-            .function_type => {
-                const extra = self.getExtra(Extra.FunctionType, node.data.lhs);
-                return .{ .function_type = .{
-                    .generic_params = self.extra.items[extra.generic_params_start..extra.generic_params_end],
-                    .params = self.extra.items[extra.params_start..extra.params_end],
-                    .return_type = node.data.rhs,
-                } };
-            },
-
-            .object_type, .tuple_type => {
-                return switch (node.tag) {
-                    .object_type => .{ .object_type = self.extra.items[node.data.lhs..node.data.rhs] },
-                    .tuple_type => .{ .tuple_type = self.extra.items[node.data.lhs..node.data.rhs] },
-                    else => unreachable, // LCOV_EXCL_LINE
-                };
-            },
-
-            .object_type_field => {
-                return .{ .object_type_field = .{
-                    .name = node.data.lhs,
                     .type = node.data.rhs,
-                } };
-            },
-
-            .generic_type => {
-                const span = self.getExtra(Extra.Subrange, node.data.rhs);
-                return .{ .generic_type = .{
-                    .name = node.data.lhs,
-                    .params = self.extra.items[span.start..span.end],
-                } };
-            },
-
-            .interface_decl => {
-                const interface = self.getExtra(Extra.Interface, node.data.rhs);
-                return .{
-                    .interface_decl = .{
-                        .name = node.data.lhs,
-                        .extends = self.extra.items[interface.extends_start..interface.extends_end],
-                        .body = self.extra.items[interface.body_start..interface.body_end],
+                },
+            };
+        },
+        .func_decl,
+        .func_expr,
+        .class_method,
+        .object_method,
+        => {
+            const extra = getExtra(self, Extra.Function, node.data.rhs);
+            const decl: Node.FunctionDeclaration = .{
+                .flags = @truncate(extra.flags),
+                .name = node.data.lhs,
+                .params = self.extra.items[extra.params_start..extra.params_end],
+                .body = extra.body,
+                .return_type = extra.return_type,
+            };
+            return switch (node.tag) {
+                .func_decl => .{ .function_decl = decl },
+                .func_expr => .{ .function_expr = decl },
+                .class_method => .{ .class_method = decl },
+                .object_method => .{ .object_method = decl },
+                else => unreachable, // LCOV_EXCL_LINE
+            };
+        },
+        .async_arrow_function, .arrow_function => {
+            const extra = getExtra(self, Extra.ArrowFunction, node.data.lhs);
+            return Node{
+                .arrow_function = .{
+                    .type = switch (node.tag) {
+                        .async_arrow_function => .async_arrow,
+                        .arrow_function => .arrow,
+                        else => unreachable, // LCOV_EXCL_LINE
                     },
-                };
-            },
-        }
-    }
+                    .params = self.extra.items[extra.params_start..extra.params_end],
+                    .body = node.data.rhs,
+                    .return_type = extra.return_type,
+                },
+            };
+        },
+        .call_expr => {
+            const extra = getExtra(self, Extra.Subrange, node.data.rhs);
+            const data = .{
+                .node = node.data.lhs,
+                .params = self.extra.items[extra.start..extra.end],
+            };
+            return .{ .call_expr = data };
+        },
+        .block, .array_literal, .object_literal, .class_static_block => {
+            const nodes = self.extra.items[node.data.lhs..node.data.rhs];
+            return switch (node.tag) {
+                .block => .{ .block = nodes },
+                .array_literal => .{ .array_literal = nodes },
+                .object_literal => .{ .object_literal = nodes },
+                .class_static_block => .{ .class_static_block = nodes },
+                else => unreachable, // LCOV_EXCL_LINE
+            };
+        },
+        .comma,
+        .assignment,
+        .lt,
+        .gt,
+        .lte,
+        .gte,
+        .eq,
+        .eqq,
+        .neq,
+        .neqq,
+        .@"and",
+        .@"or",
+        .coalesce,
+        .plus_expr,
+        .minus_expr,
+        .multiply_expr,
+        .exp_expr,
+        .div_expr,
+        .modulo_expr,
+        .bitwise_and,
+        .bitwise_or,
+        .bitwise_xor,
+        .bitwise_shift_left,
+        .bitwise_shift_right,
+        .bitwise_unsigned_right_shift,
+        .plus_assign,
+        .minus_assign,
+        .multiply_assign,
+        .modulo_assign,
+        .div_assign,
+        .exp_assign,
+        .and_assign,
+        .or_assign,
+        .coalesce_assign,
+        .bitwise_and_assign,
+        .bitwise_or_assign,
+        .bitwise_xor_assign,
+        .bitwise_shift_left_assign,
+        .bitwise_shift_right_assign,
+        .bitwise_unsigned_right_shift_assign,
+        .instanceof,
+        .in,
+        .object_literal_field,
+        .property_access,
+        .optional_property_access,
+        .index_access,
+        .type_intersection,
+        .type_union,
+        .type_decl,
+        => {
+            const data = Node.Binary{
+                .left = node.data.lhs,
+                .right = node.data.rhs,
+            };
+            return switch (node.tag) {
+                .comma => .{ .comma = data },
+                .assignment => .{ .assignment = data },
+                .lt => .{ .lt = data },
+                .gt => .{ .gt = data },
+                .lte => .{ .lte = data },
+                .gte => .{ .gte = data },
+                .eq => .{ .eq = data },
+                .eqq => .{ .eqq = data },
+                .neq => .{ .neq = data },
+                .neqq => .{ .neqq = data },
+                .@"and" => .{ .@"and" = data },
+                .@"or" => .{ .@"or" = data },
+                .coalesce => .{ .coalesce = data },
+                .plus_expr => .{ .plus_expr = data },
+                .minus_expr => .{ .minus_expr = data },
+                .multiply_expr => .{ .multiply_expr = data },
+                .exp_expr => .{ .exp_expr = data },
+                .div_expr => .{ .div_expr = data },
+                .modulo_expr => .{ .modulo_expr = data },
+                .bitwise_and => .{ .bitwise_and = data },
+                .bitwise_or => .{ .bitwise_or = data },
+                .bitwise_xor => .{ .bitwise_xor = data },
+                .bitwise_shift_left => .{ .bitwise_shift_left = data },
+                .bitwise_shift_right => .{ .bitwise_shift_right = data },
+                .bitwise_unsigned_right_shift => .{ .bitwise_unsigned_right_shift = data },
+                .plus_assign => .{ .plus_assign = data },
+                .minus_assign => .{ .minus_assign = data },
+                .multiply_assign => .{ .multiply_assign = data },
+                .modulo_assign => .{ .modulo_assign = data },
+                .div_assign => .{ .div_assign = data },
+                .exp_assign => .{ .exp_assign = data },
+                .and_assign => .{ .and_assign = data },
+                .or_assign => .{ .or_assign = data },
+                .coalesce_assign => .{ .coalesce_assign = data },
+                .bitwise_and_assign => .{ .bitwise_and_assign = data },
+                .bitwise_or_assign => .{ .bitwise_or_assign = data },
+                .bitwise_xor_assign => .{ .bitwise_xor_assign = data },
+                .bitwise_shift_left_assign => .{ .bitwise_shift_left_assign = data },
+                .bitwise_shift_right_assign => .{ .bitwise_shift_right_assign = data },
+                .bitwise_unsigned_right_shift_assign => .{ .bitwise_unsigned_right_shift_assign = data },
+                .instanceof => .{ .instanceof = data },
+                .in => .{ .in = data },
+                .object_literal_field => .{ .object_literal_field = data },
+                .property_access => .{ .property_access = data },
+                .optional_property_access => .{ .optional_property_access = data },
+                .index_access => .{ .index_access = data },
+                .type_intersection => .{ .type_intersection = data },
+                .type_union => .{ .type_union = data },
+                .type_decl => .{ .type_decl = data },
+                else => unreachable, // LCOV_EXCL_LINE
+            };
+        },
 
-    pub fn getRawNode(self: Pool, index: Node.Index) Raw {
-        return self.nodes.items[index];
-    }
+        .@"return",
+        .new_expr,
+        .grouping,
+        .plus,
+        .plusplus_pre,
+        .plusplus_post,
+        .minus,
+        .minusminus_pre,
+        .minusminus_post,
+        .not,
+        .bitwise_negate,
+        .spread,
+        .typeof,
+        .keyof,
+        .void,
+        .delete,
+        .computed_identifier,
+        .object_literal_field_shorthand,
+        .array_type,
+        => {
+            return switch (node.tag) {
+                .@"return" => .{ .@"return" = node.data.lhs },
+                .new_expr => .{ .new_expr = node.data.lhs },
+                .grouping => .{ .grouping = node.data.lhs },
+                .plus => .{ .plus = node.data.lhs },
+                .plusplus_pre => .{ .plusplus_pre = node.data.lhs },
+                .plusplus_post => .{ .plusplus_post = node.data.lhs },
+                .minus => .{ .minus = node.data.lhs },
+                .minusminus_pre => .{ .minusminus_pre = node.data.lhs },
+                .minusminus_post => .{ .minusminus_post = node.data.lhs },
+                .not => .{ .not = node.data.lhs },
+                .bitwise_negate => .{ .bitwise_negate = node.data.lhs },
+                .spread => .{ .spread = node.data.lhs },
+                .typeof => .{ .typeof = node.data.lhs },
+                .keyof => .{ .keyof = node.data.lhs },
+                .void => .{ .void = node.data.lhs },
+                .delete => .{ .delete = node.data.lhs },
+                .computed_identifier => .{ .computed_identifier = node.data.lhs },
+                .object_literal_field_shorthand => .{ .object_literal_field_shorthand = node.data.lhs },
+                .array_type => .{ .array_type = node.data.lhs },
+                else => unreachable, // LCOV_EXCL_LINE
+            };
+        },
 
-    pub fn addRawNode(self: *Pool, node: Raw) Node.Index {
-        const index = self.nodes.items.len;
-        self.nodes.append(node) catch @panic("Out of memory");
-        return @intCast(index);
-    }
+        .@"break",
+        .@"continue",
+        => {
+            return switch (node.tag) {
+                .@"break" => .{ .@"break" = {} },
+                .@"continue" => .{ .@"continue" = {} },
+                else => unreachable, // LCOV_EXCL_LINE
+            };
+        },
 
-    pub fn getExtra(self: Pool, ty: type, index: Node.Index) ty {
-        const fields = std.meta.fields(ty);
-        var result: [fields.len]Node.Index = undefined;
-        @memcpy(&result, self.extra.items[index .. index + fields.len]);
-        return @as(*ty, @ptrCast(&result)).*;
-    }
+        .simple_type, .simple_value => {
+            const data = Node.SimpleValue{
+                .kind = @enumFromInt(node.data.lhs),
+            };
+            return switch (node.tag) {
+                .simple_type => .{ .simple_type = data },
+                .simple_value => .{ .simple_value = data },
+                else => unreachable, // LCOV_EXCL_LINE
+            };
+        },
 
-    pub fn addExtra(self: *Pool, extra: anytype) Node.Index {
-        const fields = std.meta.fields(@TypeOf(extra));
-        self.extra.ensureUnusedCapacity(fields.len) catch @panic("Out of memory");
-        const result = self.extra.items.len;
-        inline for (fields) |field| {
-            comptime assert(field.type == Node.Index);
-            self.extra.appendAssumeCapacity(@field(extra, field.name));
-        }
-        return @intCast(result);
-    }
+        .function_type => {
+            const extra = getExtra(self, Extra.FunctionType, node.data.lhs);
+            return .{ .function_type = .{
+                .generic_params = self.extra.items[extra.generic_params_start..extra.generic_params_end],
+                .params = self.extra.items[extra.params_start..extra.params_end],
+                .return_type = node.data.rhs,
+            } };
+        },
 
-    pub fn listToSubrange(self: *Pool, list: []Node.Index) Extra.Subrange {
-        self.extra.appendSlice(list) catch @panic("Out of memory");
-        return .{
-            .start = @intCast(self.extra.items.len - list.len),
-            .end = @intCast(self.extra.items.len),
-        };
+        .object_type, .tuple_type => {
+            return switch (node.tag) {
+                .object_type => .{ .object_type = self.extra.items[node.data.lhs..node.data.rhs] },
+                .tuple_type => .{ .tuple_type = self.extra.items[node.data.lhs..node.data.rhs] },
+                else => unreachable, // LCOV_EXCL_LINE
+            };
+        },
+
+        .object_type_field => {
+            return .{ .object_type_field = .{
+                .name = node.data.lhs,
+                .type = node.data.rhs,
+            } };
+        },
+
+        .generic_type => {
+            const span = getExtra(self, Extra.Subrange, node.data.rhs);
+            return .{ .generic_type = .{
+                .name = node.data.lhs,
+                .params = self.extra.items[span.start..span.end],
+            } };
+        },
+
+        .interface_decl => {
+            const interface = getExtra(self, Extra.Interface, node.data.rhs);
+            return .{
+                .interface_decl = .{
+                    .name = node.data.lhs,
+                    .extends = self.extra.items[interface.extends_start..interface.extends_end],
+                    .body = self.extra.items[interface.body_start..interface.body_end],
+                },
+            };
+        },
     }
-};
+}
+
+pub fn getRawNode(self: Parser, index: Node.Index) Raw {
+    return self.nodes.items[index];
+}
+
+pub fn addRawNode(self: *Parser, node: Raw) Node.Index {
+    const index = self.nodes.items.len;
+    self.nodes.append(node) catch @panic("Out of memory");
+    return @intCast(index);
+}
+
+pub fn getExtra(self: Parser, ty: type, index: Node.Index) ty {
+    const fields = std.meta.fields(ty);
+    var result: [fields.len]Node.Index = undefined;
+    @memcpy(&result, self.extra.items[index .. index + fields.len]);
+    return @as(*ty, @ptrCast(&result)).*;
+}
+
+pub fn addExtra(self: *Parser, extra: anytype) Node.Index {
+    const fields = std.meta.fields(@TypeOf(extra));
+    self.extra.ensureUnusedCapacity(fields.len) catch @panic("Out of memory");
+    const result = self.extra.items.len;
+    inline for (fields) |field| {
+        comptime assert(field.type == Node.Index);
+        self.extra.appendAssumeCapacity(@field(extra, field.name));
+    }
+    return @intCast(result);
+}
+
+pub fn listToSubrange(self: *Parser, list: []Node.Index) Extra.Subrange {
+    self.extra.appendSlice(list) catch @panic("Out of memory");
+    return .{
+        .start = @intCast(self.extra.items.len - list.len),
+        .end = @intCast(self.extra.items.len),
+    };
+}
 
 fn expectRawNode(expected_raw: Raw, node: Node) !void {
-    var pool = Pool{
-        .nodes = std.ArrayList(Raw).init(std.testing.allocator),
-        .extra = std.ArrayList(Node.Index).init(std.testing.allocator),
-    };
-    defer pool.deinit();
+    var parser = Parser.init(std.testing.allocator, "1");
+    defer parser.deinit();
 
-    const node_idx = pool.addNode(0, node);
+    const node_idx = addNode(&parser, 0, node);
 
-    try expectEqualDeep(expected_raw, pool.getRawNode(node_idx));
-    try expectEqualDeep(node, pool.getNode(node_idx));
+    try expectEqualDeep(expected_raw, getRawNode(parser, node_idx));
+    try expectEqualDeep(node, getNode(parser, node_idx));
 }
 
 test "Pool root" {

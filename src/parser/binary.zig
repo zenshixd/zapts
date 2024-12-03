@@ -42,7 +42,7 @@ pub fn parseAssignment(parser: *Parser) ParserError!AST.Node.Index {
     inline for (assignment_map) |assignment| {
         if (parser.match(assignment[0])) {
             const tag = assignment[1];
-            return parser.pool.addNode(parser.cur_token, @unionInit(AST.Node, tag, .{
+            return parser.addNode(parser.cur_token, @unionInit(AST.Node, tag, .{
                 .left = node,
                 .right = try parseAssignment(parser),
             }));
@@ -86,7 +86,7 @@ pub fn parseBinaryExpression(parser: *Parser, operator_index: comptime_int) Pars
         try parseUnary(parser);
 
     while (parser.match(binary_operators[operator_index].token)) {
-        const new_node = parser.pool.addNode(parser.cur_token, @unionInit(AST.Node, binary_operators[operator_index].tag, .{
+        const new_node = parser.addNode(parser.cur_token, @unionInit(AST.Node, binary_operators[operator_index].tag, .{
             .left = node,
             .right = if (operator_index + 1 < binary_operators.len)
                 try parseBinaryExpression(parser, operator_index + 1)
@@ -129,11 +129,11 @@ test "should parse binary expression" {
 
     try expectEqual(test_cases.len, binary_operators.len);
     inline for (test_cases, 0..) |test_case, i| {
-        var parser = try Parser.init(std.testing.allocator, test_case);
+        var parser = Parser.init(std.testing.allocator, test_case);
         defer parser.deinit();
 
         const node = try parseBinaryExpression(&parser, 0);
-        try expectEqualDeep(@unionInit(AST.Node, binary_operators[i].tag, .{ .left = 1, .right = 2 }), parser.pool.getNode(node));
+        try expectEqualDeep(@unionInit(AST.Node, binary_operators[i].tag, .{ .left = 1, .right = 2 }), parser.getNode(node));
     }
 }
 
@@ -166,10 +166,10 @@ test "should parse assignment expression" {
 
     try expectEqual(test_cases.len, assignment_map.len);
     inline for (test_cases, 0..) |test_case, i| {
-        var parser = try Parser.init(std.testing.allocator, test_case);
+        var parser = Parser.init(std.testing.allocator, test_case);
         defer parser.deinit();
 
         const node = try parseAssignment(&parser);
-        try expectEqualDeep(@unionInit(AST.Node, assignment_map[i][1], .{ .left = 2, .right = 4 }), parser.pool.getNode(node));
+        try expectEqualDeep(@unionInit(AST.Node, assignment_map[i][1], .{ .left = 2, .right = 4 }), parser.getNode(node));
     }
 }

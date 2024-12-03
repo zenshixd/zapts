@@ -23,27 +23,36 @@ gpa: std.mem.Allocator,
 buffer: [:0]const u8,
 tokens: []const Token,
 cur_token: Token.Index,
-pool: AST.Pool,
+nodes: std.ArrayList(AST.Raw),
+extra: std.ArrayList(AST.Node.Index),
 errors: std.ArrayList(u8),
 
-pub fn init(gpa: std.mem.Allocator, buffer: [:0]const u8) !Self {
+pub fn init(gpa: std.mem.Allocator, buffer: [:0]const u8) Self {
     var lexer = Lexer.init(gpa, buffer);
+    var nodes = std.ArrayList(AST.Raw).init(gpa);
+    nodes.append(AST.Raw{ .tag = .root, .main_token = 0, .data = .{ .lhs = 0, .rhs = 0 } }) catch unreachable;
 
     return Self{
         .cur_token = 0,
         .gpa = gpa,
         .buffer = buffer,
         .tokens = lexer.tokenize(),
-        .pool = AST.Pool.init(gpa),
+        .nodes = nodes,
+        .extra = std.ArrayList(AST.Node.Index).init(gpa),
         .errors = std.ArrayList(u8).init(gpa),
     };
 }
 
 pub fn deinit(self: *Self) void {
     self.errors.deinit();
-    self.pool.deinit();
+    self.nodes.deinit();
+    self.extra.deinit();
     self.gpa.free(self.tokens);
 }
+
+pub const getNode = AST.getNode;
+pub const getRawNode = AST.getRawNode;
+pub const addNode = AST.addNode;
 
 pub fn parse(self: *Self) ParserError!AST.Node.Index {
     var nodes = std.ArrayList(AST.Node.Index).init(self.gpa);
@@ -57,10 +66,10 @@ pub fn parse(self: *Self) ParserError!AST.Node.Index {
         try nodes.append(try parseStatement(self));
     }
 
-    const subrange = self.pool.listToSubrange(nodes.items);
+    const subrange = self.listToSubrange(nodes.items);
 
-    assert(self.pool.nodes.items[0].tag == .root);
-    self.pool.nodes.items[0].data = .{ .lhs = subrange.start, .rhs = subrange.end };
+    assert(self.nodes.items[0].tag == .root);
+    self.nodes.items[0].data = .{ .lhs = subrange.start, .rhs = subrange.end };
     return 0;
 }
 
@@ -135,14 +144,14 @@ pub fn emitError(self: *Self, comptime error_msg: diagnostics.DiagnosticMessage,
     std.fmt.format(self.errors.writer(), "Token: {}\n", .{self.token()}) catch unreachable;
 }
 
-pub fn needsSemicolon(pool: AST.Pool, node: AST.Node.Index) bool {
+pub fn needsSemicolon(self: Self, node: AST.Node.Index) bool {
     if (node == AST.Node.Empty) {
         return false;
     }
-    const nodeRaw = pool.getRawNode(node);
+    const nodeRaw = self.getRawNode(node);
     var tag = nodeRaw.tag;
     if (tag == .export_node or tag == .export_default) {
-        tag = pool.getRawNode(nodeRaw.data.lhs).tag;
+        tag = self.getRawNode(nodeRaw.data.lhs).tag;
     }
 
     return switch (tag) {
@@ -164,15 +173,15 @@ pub fn needsSemicolon(pool: AST.Pool, node: AST.Node.Index) bool {
 }
 
 pub fn expectAST(fn_ptr: fn (parser: *Self) ParserError!AST.Node.Index, expected: AST.Node, text: [:0]const u8) !void {
-    var parser = try Self.init(std.testing.allocator, text);
+    var parser = Self.init(std.testing.allocator, text);
     defer parser.deinit();
 
     const node = try fn_ptr(&parser);
-    try std.testing.expectEqualDeep(expected, parser.pool.getNode(node));
+    try std.testing.expectEqualDeep(expected, parser.getNode(node));
 }
 
 pub fn expectMaybeAST(fn_ptr: fn (parser: *Self) ParserError!?AST.Node.Index, expected: ?AST.Node, text: [:0]const u8) !void {
-    var parser = try Self.init(std.testing.allocator, text);
+    var parser = Self.init(std.testing.allocator, text);
     defer parser.deinit();
 
     const maybe_node = try fn_ptr(&parser);
@@ -182,20 +191,20 @@ pub fn expectMaybeAST(fn_ptr: fn (parser: *Self) ParserError!?AST.Node.Index, ex
             return error.TestExpectedEqual;
         }
 
-        try std.testing.expectEqualDeep(expected_node, parser.pool.getNode(maybe_node.?));
+        try std.testing.expectEqualDeep(expected_node, parser.getNode(maybe_node.?));
     } else {
         try expectEqual(null, maybe_node);
     }
 }
 
 pub fn expectASTAndToken(fn_ptr: fn (parser: *Self) ParserError!?AST.Node.Index, expected: ?AST.Node, tok_type: TokenType, token_value: []const u8, text: [:0]const u8) !void {
-    var parser = try Self.init(std.testing.allocator, text);
+    var parser = Self.init(std.testing.allocator, text);
     defer parser.deinit();
 
     const maybe_node = try fn_ptr(&parser);
     if (expected) |expected_node| {
         if (maybe_node) |node| {
-            try std.testing.expectEqualDeep(expected_node, parser.pool.getNode(node));
+            try std.testing.expectEqualDeep(expected_node, parser.getNode(node));
             try parser.expectToken(tok_type, node);
             try parser.expectTokenValue(token_value, node);
         } else if (expected != null) {
@@ -213,7 +222,7 @@ pub fn expectSyntaxError(
     comptime expected_error: diagnostics.DiagnosticMessage,
     args: anytype,
 ) !void {
-    var parser = try Self.init(std.testing.allocator, text);
+    var parser = Self.init(std.testing.allocator, text);
     defer parser.deinit();
 
     const nodeOrError = fn_ptr(&parser);
@@ -225,26 +234,26 @@ pub fn expectSyntaxError(
 }
 
 pub fn expectToken(self: *Self, tok_type: TokenType, node: AST.Node.Index) !void {
-    const raw = self.pool.getRawNode(node);
+    const raw = self.getRawNode(node);
     try expectEqual(tok_type, self.tokens[raw.main_token].type);
 }
 
 pub fn expectTokenValue(self: *Self, expected_value: []const u8, node: AST.Node.Index) !void {
-    const raw = self.pool.getRawNode(node);
+    const raw = self.getRawNode(node);
     try expectEqualStrings(expected_value, self.tokens[raw.main_token].literal(self.buffer));
 }
 
 pub fn expectSimpleMethod(parser: Self, node_idx: AST.Node.Index, expected_flags: anytype, expected_name: []const u8) !void {
-    const node = parser.pool.getNode(node_idx);
+    const node = parser.getNode(node_idx);
     try expectEqual(expected_flags, node.object_method.flags);
 
-    const name_node = parser.pool.getRawNode(node.object_method.name);
+    const name_node = parser.getRawNode(node.object_method.name);
     const name_token = parser.tokens[name_node.main_token].literal(parser.buffer);
     try expectEqualStrings(expected_name, name_token);
 }
 
 pub fn expectNodesToEqual(parser: Self, expected_nodes: []const AST.Raw) !void {
-    try expectEqualSlices(AST.Raw, expected_nodes, parser.pool.nodes.items[1..]);
+    try expectEqualSlices(AST.Raw, expected_nodes, parser.nodes.items[1..]);
 }
 
 pub fn expectTSError(parser: Self, comptime expected_error: diagnostics.DiagnosticMessage, comptime args: anytype) !void {

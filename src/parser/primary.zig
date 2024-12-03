@@ -43,7 +43,7 @@ pub fn parsePrimaryExpression(parser: *Parser) ParserError!?AST.Node.Index {
 
 pub fn parseIdentifier(parser: *Parser) ParserError!?AST.Node.Index {
     if (parser.match(TokenType.Identifier) or try parseKeywordAsIdentifier(parser)) {
-        return parser.pool.addNode(parser.cur_token - 1, AST.Node{ .simple_value = .{ .kind = .identifier } });
+        return parser.addNode(parser.cur_token - 1, AST.Node{ .simple_value = .{ .kind = .identifier } });
     }
 
     return null;
@@ -76,7 +76,7 @@ const literal_map = .{
 pub fn parseLiteral(parser: *Parser) ParserError!?AST.Node.Index {
     inline for (literal_map) |literal| {
         if (parser.match(literal[0])) {
-            return parser.pool.addNode(parser.cur_token - 1, AST.Node{ .simple_value = .{ .kind = literal[1] } });
+            return parser.addNode(parser.cur_token - 1, AST.Node{ .simple_value = .{ .kind = literal[1] } });
         }
     }
 
@@ -110,7 +110,7 @@ pub fn parseArrayLiteral(parser: *Parser) ParserError!?AST.Node.Index {
         }
     }
 
-    return parser.pool.addNode(parser.cur_token, AST.Node{
+    return parser.addNode(parser.cur_token, AST.Node{
         .array_literal = values.items,
     });
 }
@@ -135,7 +135,7 @@ pub fn parseObjectLiteral(parser: *Parser) ParserError!?AST.Node.Index {
         _ = try parser.consume(TokenType.Comma, diagnostics.ARG_expected, .{","});
     }
 
-    return parser.pool.addNode(parser.cur_token, AST.Node{
+    return parser.addNode(parser.cur_token, AST.Node{
         .object_literal = nodes.items,
     });
 }
@@ -157,7 +157,7 @@ pub fn parseObjectField(parser: *Parser) ParserError!?AST.Node.Index {
     }
 
     if (parser.match(TokenType.Colon)) {
-        return parser.pool.addNode(parser.cur_token, AST.Node{
+        return parser.addNode(parser.cur_token, AST.Node{
             .object_literal_field = .{
                 .left = identifier.?,
                 .right = try parseAssignment(parser),
@@ -165,7 +165,7 @@ pub fn parseObjectField(parser: *Parser) ParserError!?AST.Node.Index {
         });
     } else if (parser.peekMatch(TokenType.Comma) or parser.peekMatch(TokenType.CloseCurlyBrace)) {
         _ = parser.advance();
-        return parser.pool.addNode(parser.cur_token, AST.Node{
+        return parser.addNode(parser.cur_token, AST.Node{
             .object_literal_field_shorthand = identifier.?,
         });
     }
@@ -175,7 +175,7 @@ pub fn parseObjectField(parser: *Parser) ParserError!?AST.Node.Index {
 
 pub fn parseGroupingExpression(parser: *Parser) ParserError!?AST.Node.Index {
     if (parser.match(TokenType.OpenParen)) {
-        const node = parser.pool.addNode(parser.cur_token, AST.Node{
+        const node = parser.addNode(parser.cur_token, AST.Node{
             .grouping = try parseExpression(parser),
         });
 
@@ -199,7 +199,7 @@ test "should parse primary expression" {
         \\async function*() {}
         \\(a, b)
     ;
-    var parser = try Parser.init(std.testing.allocator, text);
+    var parser = Parser.init(std.testing.allocator, text);
     defer parser.deinit();
 
     const expected_nodes = .{
@@ -217,7 +217,7 @@ test "should parse primary expression" {
 
     inline for (expected_nodes) |expected_node| {
         const node = try parsePrimaryExpression(&parser);
-        try expectEqualDeep(expected_node, parser.pool.getNode(node.?));
+        try expectEqualDeep(expected_node, parser.getNode(node.?));
     }
 }
 
@@ -330,12 +330,12 @@ test "should parse methods on object literal" {
         \\    set e(a) {},
         \\}
     ;
-    var parser = try Parser.init(std.testing.allocator, text);
+    var parser = Parser.init(std.testing.allocator, text);
     defer parser.deinit();
 
     const node = try parseObjectLiteral(&parser);
-    try expectEqualStrings("object_literal", @tagName(parser.pool.getNode(node.?)));
-    try expectEqual(6, parser.pool.getNode(node.?).object_literal.len);
+    try expectEqualStrings("object_literal", @tagName(parser.getNode(node.?)));
+    try expectEqual(6, parser.getNode(node.?).object_literal.len);
 
     const expected_methods = .{
         .{ AST.FunctionFlags.None, "a" },
@@ -347,7 +347,7 @@ test "should parse methods on object literal" {
     };
 
     inline for (expected_methods, 0..) |expected_method, i| {
-        try parser.expectSimpleMethod(parser.pool.getNode(node.?).object_literal[i], expected_method[0], expected_method[1]);
+        try parser.expectSimpleMethod(parser.getNode(node.?).object_literal[i], expected_method[0], expected_method[1]);
     }
 }
 
