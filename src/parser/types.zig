@@ -443,15 +443,14 @@ test "should parse generic type with multiple params" {
     } }, text);
 }
 
-// TODO: one day i will fix this case, too much trouble for now
-//test "should parse nested generic type" {
-//    const text = "Array<Array<number>>";
-//
-//    try expectAST(parseSymbolType, AST.Node{ .generic_type = .{
-//        .name = 1,
-//        .params = @constCast(&[_]AST.Node.Index{4}),
-//    } }, text);
-//}
+test "should parse nested generic type" {
+    const text = "Array<Array<number>>";
+
+    try expectAST(parseSymbolType, AST.Node{ .generic_type = .{
+        .name = 1,
+        .params = @constCast(&[_]AST.Node.Index{4}),
+    } }, text);
+}
 
 test "should parse array type" {
     const text = "number[]";
