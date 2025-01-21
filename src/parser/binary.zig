@@ -17,22 +17,22 @@ const expectAST = Parser.expectAST;
 const expectMaybeAST = Parser.expectMaybeAST;
 
 const assignment_map = .{
-    .{ .Equal, "assignment" },
-    .{ .PlusEqual, "plus_assign" },
-    .{ .MinusEqual, "minus_assign" },
-    .{ .StarEqual, "multiply_assign" },
-    .{ .StarStarEqual, "exp_assign" },
-    .{ .SlashEqual, "div_assign" },
-    .{ .PercentEqual, "modulo_assign" },
-    .{ .AmpersandEqual, "bitwise_and_assign" },
-    .{ .BarEqual, "bitwise_or_assign" },
-    .{ .CaretEqual, "bitwise_xor_assign" },
-    .{ .BarBarEqual, "or_assign" },
-    .{ .AmpersandAmpersandEqual, "and_assign" },
-    .{ .GreaterThanGreaterThanEqual, "bitwise_shift_right_assign" },
-    .{ .GreaterThanGreaterThanGreaterThanEqual, "bitwise_unsigned_right_shift_assign" },
-    .{ .LessThanLessThanEqual, "bitwise_shift_left_assign" },
-    .{ .QuestionMarkQuestionMarkEqual, "coalesce_assign" },
+    .{ TokenType.Equal, "assignment" },
+    .{ TokenType.PlusEqual, "plus_assign" },
+    .{ TokenType.MinusEqual, "minus_assign" },
+    .{ TokenType.StarEqual, "multiply_assign" },
+    .{ TokenType.StarStarEqual, "exp_assign" },
+    .{ TokenType.SlashEqual, "div_assign" },
+    .{ TokenType.PercentEqual, "modulo_assign" },
+    .{ TokenType.AmpersandEqual, "bitwise_and_assign" },
+    .{ TokenType.BarEqual, "bitwise_or_assign" },
+    .{ TokenType.CaretEqual, "bitwise_xor_assign" },
+    .{ TokenType.BarBarEqual, "or_assign" },
+    .{ TokenType.AmpersandAmpersandEqual, "and_assign" },
+    .{ [_]TokenType{ TokenType.GreaterThan, TokenType.GreaterThanEqual }, "bitwise_shift_right_assign" },
+    .{ [_]TokenType{ TokenType.GreaterThan, TokenType.GreaterThan, TokenType.GreaterThanEqual }, "bitwise_unsigned_right_shift_assign" },
+    .{ TokenType.LessThanLessThanEqual, "bitwise_shift_left_assign" },
+    .{ TokenType.QuestionMarkQuestionMarkEqual, "coalesce_assign" },
 };
 pub fn parseAssignment(parser: *Parser) ParserError!AST.Node.Index {
     const node = try parseAsyncArrowFunction(parser) orelse
@@ -53,40 +53,69 @@ pub fn parseAssignment(parser: *Parser) ParserError!AST.Node.Index {
 }
 
 pub const binary_operators = .{
-    .{ .token = TokenType.QuestionMarkQuestionMark, .tag = "coalesce" },
-    .{ .token = TokenType.BarBar, .tag = "or" },
-    .{ .token = TokenType.AmpersandAmpersand, .tag = "and" },
-    .{ .token = TokenType.Bar, .tag = "bitwise_or" },
-    .{ .token = TokenType.Caret, .tag = "bitwise_xor" },
-    .{ .token = TokenType.Ampersand, .tag = "bitwise_and" },
-    .{ .token = TokenType.EqualEqual, .tag = "eq" },
-    .{ .token = TokenType.ExclamationMarkEqual, .tag = "neq" },
-    .{ .token = TokenType.EqualEqualEqual, .tag = "eqq" },
-    .{ .token = TokenType.ExclamationMarkEqualEqual, .tag = "neqq" },
-    .{ .token = TokenType.LessThan, .tag = "lt" },
-    .{ .token = TokenType.GreaterThan, .tag = "gt" },
-    .{ .token = TokenType.LessThanEqual, .tag = "lte" },
-    .{ .token = TokenType.GreaterThanEqual, .tag = "gte" },
-    .{ .token = TokenType.Instanceof, .tag = "instanceof" },
-    .{ .token = TokenType.In, .tag = "in" },
-    .{ .token = TokenType.LessThanLessThan, .tag = "bitwise_shift_left" },
-    .{ .token = TokenType.GreaterThanGreaterThan, .tag = "bitwise_shift_right" },
-    .{ .token = TokenType.GreaterThanGreaterThanGreaterThan, .tag = "bitwise_unsigned_right_shift" },
-    .{ .token = TokenType.Plus, .tag = "plus_expr" },
-    .{ .token = TokenType.Minus, .tag = "minus_expr" },
-    .{ .token = TokenType.Star, .tag = "multiply_expr" },
-    .{ .token = TokenType.Slash, .tag = "div_expr" },
-    .{ .token = TokenType.Percent, .tag = "modulo_expr" },
-    .{ .token = TokenType.StarStar, .tag = "exp_expr" },
+    .{ TokenType.QuestionMarkQuestionMark, "coalesce" },
+    .{ TokenType.BarBar, "or" },
+    .{ TokenType.AmpersandAmpersand, "and" },
+    .{ TokenType.Bar, "bitwise_or" },
+    .{ TokenType.Caret, "bitwise_xor" },
+    .{ TokenType.Ampersand, "bitwise_and" },
+    .{ TokenType.EqualEqual, "eq" },
+    .{ TokenType.ExclamationMarkEqual, "neq" },
+    .{ TokenType.EqualEqualEqual, "eqq" },
+    .{ TokenType.ExclamationMarkEqualEqual, "neqq" },
+    .{ TokenType.LessThan, "lt" },
+    .{ TokenType.GreaterThan, "gt" },
+    .{ TokenType.LessThanEqual, "lte" },
+    .{ TokenType.GreaterThanEqual, "gte" },
+    .{ TokenType.Instanceof, "instanceof" },
+    .{ TokenType.In, "in" },
+    .{ TokenType.LessThanLessThan, "bitwise_shift_left" },
+    .{ [_]TokenType{ TokenType.GreaterThan, TokenType.GreaterThan }, "bitwise_shift_right" },
+    .{ [_]TokenType{ TokenType.GreaterThan, TokenType.GreaterThan, TokenType.GreaterThan }, "bitwise_unsigned_right_shift" },
+    .{ TokenType.Plus, "plus_expr" },
+    .{ TokenType.Minus, "minus_expr" },
+    .{ TokenType.Star, "multiply_expr" },
+    .{ TokenType.Slash, "div_expr" },
+    .{ TokenType.Percent, "modulo_expr" },
+    .{ TokenType.StarStar, "exp_expr" },
 };
+
+fn binaryOperatorMatches(parser: *Parser, operator_index: comptime_int) bool {
+    if (@TypeOf(binary_operators[operator_index][0]) == TokenType and binary_operators[operator_index][0] == TokenType.GreaterThan) {
+        const is_match = parser.peekMatch(TokenType.GreaterThan) and
+            !parser.peekMatchMany(.{ TokenType.GreaterThan, TokenType.GreaterThan }) and
+            !parser.peekMatchMany(.{ TokenType.GreaterThan, TokenType.GreaterThanEqual });
+
+        if (is_match) {
+            _ = parser.advance();
+        }
+
+        return is_match;
+    }
+
+    if (@TypeOf(binary_operators[operator_index][0]) == [2]TokenType and std.meta.eql(binary_operators[operator_index][0], .{ TokenType.GreaterThan, TokenType.GreaterThan })) {
+        const is_match = parser.peekMatchMany(.{ TokenType.GreaterThan, TokenType.GreaterThan }) and
+            !parser.peekMatchMany(.{ TokenType.GreaterThan, TokenType.GreaterThan, TokenType.GreaterThan }) and
+            !parser.peekMatchMany(.{ TokenType.GreaterThan, TokenType.GreaterThan, TokenType.GreaterThanEqual });
+
+        if (is_match) {
+            parser.cur_token += @intCast(binary_operators[operator_index][0].len);
+        }
+
+        return is_match;
+    }
+
+    return parser.match(binary_operators[operator_index][0]);
+}
+
 pub fn parseBinaryExpression(parser: *Parser, operator_index: comptime_int) ParserError!AST.Node.Index {
     var node = if (operator_index + 1 < binary_operators.len)
         try parseBinaryExpression(parser, operator_index + 1)
     else
         try parseUnary(parser);
 
-    while (parser.match(binary_operators[operator_index].token)) {
-        const new_node = parser.addNode(parser.cur_token, @unionInit(AST.Node, binary_operators[operator_index].tag, .{
+    while (binaryOperatorMatches(parser, operator_index)) {
+        const new_node = parser.addNode(parser.cur_token, @unionInit(AST.Node, binary_operators[operator_index][1], .{
             .left = node,
             .right = if (operator_index + 1 < binary_operators.len)
                 try parseBinaryExpression(parser, operator_index + 1)
@@ -133,7 +162,7 @@ test "should parse binary expression" {
         defer parser.deinit();
 
         const node = try parseBinaryExpression(&parser, 0);
-        try expectEqualDeep(@unionInit(AST.Node, binary_operators[i].tag, .{ .left = 1, .right = 2 }), parser.getNode(node));
+        try expectEqualDeep(@unionInit(AST.Node, binary_operators[i][1], .{ .left = 1, .right = 2 }), parser.getNode(node));
     }
 }
 

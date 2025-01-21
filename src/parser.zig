@@ -86,11 +86,22 @@ pub fn advance(self: *Self) Token.Index {
     return self.cur_token;
 }
 
-pub fn match(self: *Self, token_type: TokenType) bool {
-    if (self.peekMatch(token_type)) {
+pub fn match(self: *Self, comptime token_type: anytype) bool {
+    const tinfo = @typeInfo(@TypeOf(token_type));
+    const is_token_type = @TypeOf(token_type) == TokenType;
+    const is_array_of_token_type = tinfo == .Array and tinfo.Array.child == TokenType;
+    assert(is_token_type or is_array_of_token_type);
+
+    if (is_token_type and self.peekMatch(token_type)) {
         _ = self.advance();
         return true;
     }
+
+    if (is_array_of_token_type and self.peekMatchMany(token_type)) {
+        self.cur_token += @intCast(token_type.len);
+        return true;
+    }
+
     return false;
 }
 

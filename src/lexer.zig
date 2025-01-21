@@ -51,8 +51,6 @@ const State = enum {
     less_than,
     less_than_less_than,
     greater_than,
-    greater_than_greater_than,
-    greater_than_greater_than_greater_than,
     question_mark,
     question_mark_question_mark,
     hash,
@@ -415,33 +413,9 @@ pub fn next(self: *Self) Token {
                     result.type = .GreaterThanEqual;
                     break;
                 },
-                '>' => state = .greater_than_greater_than,
                 else => {
                     self.index -= 1;
                     result.type = .GreaterThan;
-                    break;
-                },
-            },
-            .greater_than_greater_than => switch (self.buffer[self.index]) {
-                '=' => {
-                    result.type = .GreaterThanGreaterThanEqual;
-                    break;
-                },
-                '>' => state = .greater_than_greater_than_greater_than,
-                else => {
-                    self.index -= 1;
-                    result.type = .GreaterThanGreaterThan;
-                    break;
-                },
-            },
-            .greater_than_greater_than_greater_than => switch (self.buffer[self.index]) {
-                '=' => {
-                    result.type = .GreaterThanGreaterThanGreaterThanEqual;
-                    break;
-                },
-                else => {
-                    self.index -= 1;
-                    result.type = .GreaterThanGreaterThanGreaterThan;
                     break;
                 },
             },
@@ -809,10 +783,6 @@ test "should tokenize operators" {
         \\===
         \\>
         \\>=
-        \\>>
-        \\>>=
-        \\>>>
-        \\>>>=
         \\<
         \\<=
         \\<<
@@ -869,10 +839,6 @@ test "should tokenize operators" {
         .{ TokenType.EqualEqualEqual, "===" },
         .{ TokenType.GreaterThan, ">" },
         .{ TokenType.GreaterThanEqual, ">=" },
-        .{ TokenType.GreaterThanGreaterThan, ">>" },
-        .{ TokenType.GreaterThanGreaterThanEqual, ">>=" },
-        .{ TokenType.GreaterThanGreaterThanGreaterThan, ">>>" },
-        .{ TokenType.GreaterThanGreaterThanGreaterThanEqual, ">>>=" },
         .{ TokenType.LessThan, "<" },
         .{ TokenType.LessThanEqual, "<=" },
         .{ TokenType.LessThanLessThan, "<<" },
