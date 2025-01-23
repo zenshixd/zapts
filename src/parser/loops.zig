@@ -13,8 +13,7 @@ const expectEqual = std.testing.expectEqual;
 const expectEqualDeep = std.testing.expectEqualDeep;
 const expectEqualStrings = std.testing.expectEqualStrings;
 const expectError = std.testing.expectError;
-const expectMaybeAST = Parser.expectMaybeAST;
-const expectASTAndToken = Parser.expectASTAndToken;
+const expectAST = Parser.expectAST;
 const expectSyntaxError = Parser.expectSyntaxError;
 
 pub fn parseBreakableStatement(parser: *Parser) ParserError!?AST.Node.Index {
@@ -137,98 +136,131 @@ test "should parse breakable statement" {
     };
 
     inline for (test_cases) |test_case| {
-        try expectMaybeAST(parseBreakableStatement, test_case[1], test_case[0]);
+        var parser, const node = try Parser.once(test_case[0], parseBreakableStatement);
+        defer parser.deinit();
+
+        try parser.expectAST(node, test_case[1]);
     }
 }
 
 test "should return null if while loop is empty" {
     const text = "identifier";
 
-    try expectMaybeAST(parseWhileStatement, null, text);
+    var parser, const node = try Parser.once(text, parseWhileStatement);
+    defer parser.deinit();
+
+    try parser.expectAST(node, null);
 }
 
 test "should parse while loop" {
     const text = "while (true) {}";
 
-    try expectMaybeAST(parseWhileStatement, AST.Node{ .@"while" = .{
+    var parser, const node = try Parser.once(text, parseWhileStatement);
+    defer parser.deinit();
+
+    try parser.expectAST(node, AST.Node{ .@"while" = .{
         .cond = 1,
         .body = 2,
-    } }, text);
+    } });
 }
 
 test "should return null if do while loop is empty" {
     const text = "identifier";
 
-    try expectMaybeAST(parseDoWhileStatement, null, text);
+    var parser, const node = try Parser.once(text, parseDoWhileStatement);
+    defer parser.deinit();
+
+    try parser.expectAST(node, null);
 }
 
 test "should parse do while loop" {
     const text = "do {} while (true);";
 
-    try expectMaybeAST(parseDoWhileStatement, AST.Node{ .do_while = .{
+    var parser, const node = try Parser.once(text, parseDoWhileStatement);
+    defer parser.deinit();
+
+    try parser.expectAST(node, AST.Node{ .do_while = .{
         .cond = 2,
         .body = 1,
-    } }, text);
+    } });
 }
 
 test "should return null if for loop is not a for loop" {
     const text = "identifier";
 
-    try expectMaybeAST(parseForStatement, null, text);
+    var parser, const node = try Parser.once(text, parseForStatement);
+    defer parser.deinit();
+
+    try parser.expectAST(node, null);
 }
 
 test "should parse classic for loops" {
     const text = "for (let i = 0; i < 10; i++) {}";
 
-    try expectMaybeAST(parseForStatement, AST.Node{ .@"for" = .{
+    var parser, const node = try Parser.once(text, parseForStatement);
+    defer parser.deinit();
+
+    try parser.expectAST(node, AST.Node{ .@"for" = .{
         .classic = .{
             .init = 3,
             .cond = 7,
             .post = 10,
             .body = 11,
         },
-    } }, text);
+    } });
 }
 
 test "should parse empty for loops" {
     const text = "for (;;) {}";
 
-    try expectMaybeAST(parseForStatement, AST.Node{ .@"for" = .{
+    var parser, const node = try Parser.once(text, parseForStatement);
+    defer parser.deinit();
+
+    try parser.expectAST(node, AST.Node{ .@"for" = .{
         .classic = .{
             .init = 0,
             .cond = 0,
             .post = 0,
             .body = 1,
         },
-    } }, text);
+    } });
 }
 
 test "should parse in for loops" {
     const text = "for (let i in [1, 2, 3]) {}";
 
-    try expectMaybeAST(parseForStatement, AST.Node{ .@"for" = .{
+    var parser, const node = try Parser.once(text, parseForStatement);
+    defer parser.deinit();
+
+    try parser.expectAST(node, AST.Node{ .@"for" = .{
         .in = .{
             .left = 4,
             .right = 8,
             .body = 9,
         },
-    } }, text);
+    } });
 }
 
 test "should parse of for loops" {
     const text = "for (let i of [1, 2, 3]) {}";
 
-    try expectMaybeAST(parseForStatement, AST.Node{ .@"for" = .{
+    var parser, const node = try Parser.once(text, parseForStatement);
+    defer parser.deinit();
+
+    try parser.expectAST(node, AST.Node{ .@"for" = .{
         .of = .{
             .left = 6,
             .right = 10,
             .body = 11,
         },
-    } }, text);
+    } });
 }
 
 test "should throw SyntaxError if for loop if its not of or in loop" {
     const text = "for (let i as [1, 2, 3]) {}";
 
-    try expectSyntaxError(parseForStatement, text, diagnostics.declaration_or_statement_expected, .{});
+    var parser, const node = try Parser.onceAny(text, parseForStatement);
+    defer parser.deinit();
+
+    try parser.expectSyntaxError(node, diagnostics.declaration_or_statement_expected, .{});
 }

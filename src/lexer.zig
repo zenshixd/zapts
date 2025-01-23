@@ -17,6 +17,7 @@ const expectEqualStrings = std.testing.expectEqualStrings;
 
 const Self = @This();
 const Lexer = @This();
+const LexerError = error{SyntaxError};
 
 allocator: Allocator,
 buffer: [:0]const u8,
@@ -62,14 +63,23 @@ const State = enum {
     number_dot,
     number_exponent,
     number_exponent_sign,
+    escape_sequence,
+    escape_sequence_unicode,
+    escape_sequence_hex,
+    escape_sequence_code_point,
     identifier,
 };
 
-pub fn tokenize(self: *Self) []const Token {
+pub fn fail(comptime error_msg: []const u8, args: anytype) LexerError {
+    std.debug.print(error_msg ++ "\n", args);
+    return error.SyntaxError;
+}
+
+pub fn tokenize(self: *Self) ![]const Token {
     var tokens = std.ArrayList(Token).init(self.allocator);
 
     while (true) {
-        const tok = self.next();
+        const tok = try self.next();
         tokens.append(tok) catch unreachable;
         if (tok.type == .Eof) {
             break;
@@ -79,7 +89,7 @@ pub fn tokenize(self: *Self) []const Token {
     return tokens.toOwnedSlice() catch unreachable;
 }
 
-pub fn next(self: *Self) Token {
+pub fn next(self: *Self) LexerError!Token {
     var result: Token = .{
         .type = undefined,
         .start = self.index,
@@ -163,6 +173,7 @@ pub fn next(self: *Self) Token {
                 '0'...'9' => state = .number,
                 '\'' => state = .string_single_quote,
                 '"' => state = .string_double_quote,
+                '\\' => state = .escape_sequence,
                 else => state = .identifier,
             },
             .ampersand => switch (self.buffer[self.index]) {
@@ -520,8 +531,34 @@ pub fn next(self: *Self) Token {
                 },
                 else => {},
             },
+            .escape_sequence => switch (self.buffer[self.index]) {
+                'u' => state = .escape_sequence_unicode,
+                else => return fail("Invalid escape sequence", .{}),
+            },
+            .escape_sequence_unicode => switch (self.buffer[self.index]) {
+                '0'...'9', 'a'...'f', 'A'...'F' => state = .escape_sequence_hex,
+                '{' => state = .escape_sequence_code_point,
+                else => return fail("Invalid escape sequence", .{}),
+            },
+            .escape_sequence_hex => switch (self.buffer[self.index]) {
+                '0'...'9', 'a'...'f', 'A'...'F' => {
+                    const len = self.index - result.start;
+                    if (len >= 4) {
+                        state = .identifier;
+                    }
+                },
+                else => return fail("Invalid escape sequence", .{}),
+            },
+            .escape_sequence_code_point => switch (self.buffer[self.index]) {
+                '0'...'9', 'a'...'f', 'A'...'F' => {},
+                '}' => {
+                    state = .identifier;
+                },
+                else => return fail("Invalid escape sequence", .{}),
+            },
             .identifier => switch (self.buffer[self.index]) {
                 'a'...'z', 'A'...'Z', '_', '$', '0'...'9' => {},
+                '\\' => state = .escape_sequence,
                 else => {
                     if (keywords_map.get(self.buffer[result.start..self.index])) |token_type| {
                         result.type = token_type;
@@ -557,7 +594,7 @@ const ExpectedToken = struct { TokenType, []const u8 };
 
 fn expectTokens(text: [:0]const u8, expected: []const ExpectedToken) !void {
     var lexer = Lexer.init(std.testing.allocator, text);
-    const tokens = lexer.tokenize();
+    const tokens = try lexer.tokenize();
     defer std.testing.allocator.free(tokens);
 
     for (expected, 0..) |expected_token, i| {
@@ -732,11 +769,14 @@ test "should tokenize keywords" {
 }
 
 test "should tokenize identifiers" {
-    const text = "foo bar baz";
+    const text = "foo bar baz \\u00FFfoo \\u{FF}foo goo\\uAABBcc\\u{AA}dd";
     const expected_tokens = [_]ExpectedToken{
         .{ TokenType.Identifier, "foo" },
         .{ TokenType.Identifier, "bar" },
         .{ TokenType.Identifier, "baz" },
+        .{ TokenType.Identifier, "\\u00FFfoo" },
+        .{ TokenType.Identifier, "\\u{FF}foo" },
+        .{ TokenType.Identifier, "goo\\uAABBcc\\u{AA}dd" },
         .{ TokenType.Eof, "" },
     };
 

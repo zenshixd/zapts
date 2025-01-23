@@ -12,7 +12,6 @@ const parsePrimaryExpression = @import("primary.zig").parsePrimaryExpression;
 const parseIdentifier = @import("primary.zig").parseIdentifier;
 
 const expectAST = @import("../parser.zig").expectAST;
-const expectMaybeAST = @import("../parser.zig").expectMaybeAST;
 const expectSyntaxError = @import("../parser.zig").expectSyntaxError;
 
 pub fn parseExpression(self: *Parser) ParserError!AST.Node.Index {
@@ -197,34 +196,47 @@ pub fn parsePropertyAccess(self: *Parser, expr: AST.Node.Index) ParserError!?AST
 test "should parse comma expression" {
     const text = "a = b, c";
 
-    try expectAST(parseExpression, AST.Node{ .comma = .{
+    var parser, const node = try Parser.once(text, parseExpression);
+    defer parser.deinit();
+
+    try parser.expectAST(node, AST.Node{ .comma = .{
         .left = 5,
         .right = 7,
-    } }, text);
+    } });
 }
 
 test "should parse conditional expression" {
     const text = "a ? b : c";
 
-    try expectAST(parseExpression, AST.Node{ .ternary_expr = .{
+    var parser, const node = try Parser.once(text, parseExpression);
+    defer parser.deinit();
+
+    try parser.expectAST(node, AST.Node{ .ternary_expr = .{
         .expr = 2,
         .body = 4,
         .@"else" = 6,
-    } }, text);
+    } });
 }
 
 test "should return syntax error if short circuit expression is missing" {
     const text = "a ? b";
 
-    try expectSyntaxError(parseExpression, text, diagnostics.ARG_expected, .{":"});
+    var parser, const nodeOrError = try Parser.onceAny(text, parseExpression);
+    defer parser.deinit();
+
+    try parser.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{":"});
 }
 
 test "should parse short circuit expression" {
     const text = "a ?? b";
-    try expectAST(parseExpression, AST.Node{ .coalesce = .{
+
+    var parser, const node = try Parser.once(text, parseExpression);
+    defer parser.deinit();
+
+    try parser.expectAST(node, AST.Node{ .coalesce = .{
         .left = 2,
         .right = 3,
-    } }, text);
+    } });
 }
 
 test "should parse unary expression" {
@@ -239,7 +251,10 @@ test "should parse unary expression" {
     };
 
     inline for (tests) |test_case| {
-        try expectAST(parseUnary, test_case[1], test_case[0]);
+        var parser, const node = try Parser.once(test_case[0], parseUnary);
+        defer parser.deinit();
+
+        try parser.expectAST(node, test_case[1]);
     }
 }
 
@@ -252,32 +267,47 @@ test "should parse update expression" {
     };
 
     inline for (tests) |test_case| {
-        try expectAST(parseUnary, test_case[1], test_case[0]);
+        var parser, const node = try Parser.once(test_case[0], parseUnary);
+        defer parser.deinit();
+
+        try parser.expectAST(node, test_case[1]);
     }
 }
 
 test "should parse left hand side expression" {
     const text = "a()";
 
-    try expectAST(parseLeftHandSideExpression, AST.Node{ .call_expr = .{ .node = 1, .params = &.{} } }, text);
+    var parser, const node = try Parser.once(text, parseLeftHandSideExpression);
+    defer parser.deinit();
+
+    try parser.expectAST(node, AST.Node{ .call_expr = .{ .node = 1, .params = &.{} } });
 }
 
 test "should return syntax error if left hand side expression is missing" {
     const text = "()";
 
-    try expectSyntaxError(parseLeftHandSideExpression, text, diagnostics.identifier_expected, .{});
+    var parser, const nodeOrError = try Parser.onceAny(text, parseLeftHandSideExpression);
+    defer parser.deinit();
+
+    try parser.expectSyntaxError(nodeOrError, diagnostics.identifier_expected, .{});
 }
 
 test "should parse new expression" {
     const text = "new a";
 
-    try expectMaybeAST(parseNewExpression, AST.Node{ .new_expr = 1 }, text);
+    var parser, const node = try Parser.once(text, parseNewExpression);
+    defer parser.deinit();
+
+    try parser.expectAST(node, AST.Node{ .new_expr = 1 });
 }
 
 test "should return null if new expression is missing" {
     const text = "a";
 
-    try expectMaybeAST(parseNewExpression, null, text);
+    var parser, const node = try Parser.once(text, parseNewExpression);
+    defer parser.deinit();
+
+    try parser.expectAST(node, null);
 }
 
 test "should parse member expression" {
@@ -289,14 +319,20 @@ test "should parse member expression" {
     };
 
     inline for (tests) |test_case| {
-        try expectMaybeAST(parseMemberExpression, test_case[1], test_case[0]);
+        var parser, const node = try Parser.once(test_case[0], parseMemberExpression);
+        defer parser.deinit();
+
+        try parser.expectAST(node, test_case[1]);
     }
 }
 
 test "should return syntax error if property access key is not identifier" {
     const text = "a.'123'";
 
-    try expectSyntaxError(parseMemberExpression, text, diagnostics.identifier_expected, .{});
+    var parser, const nodeOrError = try Parser.onceAny(text, parseMemberExpression);
+    defer parser.deinit();
+
+    try parser.expectSyntaxError(nodeOrError, diagnostics.identifier_expected, .{});
 }
 
 test "should parse chained member expression" {
@@ -322,7 +358,7 @@ test "should parse chained member expression" {
     };
 
     inline for (tests) |test_case| {
-        var parser = Parser.init(std.testing.allocator, test_case[0]);
+        var parser = try Parser.init(std.testing.allocator, test_case[0]);
         defer parser.deinit();
 
         _ = try parseMemberExpression(&parser);
@@ -340,12 +376,18 @@ test "should parse callable expression" {
     };
 
     inline for (tests) |test_case| {
-        try expectMaybeAST(parseCallableExpression, test_case[1], test_case[0]);
+        var parser, const node = try Parser.once(test_case[0], parseCallableExpression);
+        defer parser.deinit();
+
+        try parser.expectAST(node, test_case[1]);
     }
 }
 
 test "should return syntax error if comma is missing between params" {
     const text = "a(b c)";
 
-    try expectSyntaxError(parseCallableExpression, text, diagnostics.ARG_expected, .{","});
+    var parser, const nodeOrError = try Parser.onceAny(text, parseCallableExpression);
+    defer parser.deinit();
+
+    try parser.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{","});
 }

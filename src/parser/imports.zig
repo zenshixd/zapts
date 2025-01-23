@@ -18,7 +18,7 @@ const expectEqual = std.testing.expectEqual;
 const expectEqualStrings = std.testing.expectEqualStrings;
 const expectEqualDeep = std.testing.expectEqualDeep;
 const expectError = std.testing.expectError;
-const expectMaybeAST = Parser.expectMaybeAST;
+const expectAST = Parser.expectAST;
 const expectSyntaxError = Parser.expectSyntaxError;
 
 pub fn parseImportStatement(self: *Parser) ParserError!?AST.Node.Index {
@@ -223,184 +223,301 @@ fn parseFromClause(self: *Parser) ParserError!?Token.Index {
 test "should return null if its not import statement" {
     const text = "identifier";
 
-    try expectMaybeAST(parseImportStatement, null, text);
+    var parser, const node = try Parser.once(text, parseImportStatement);
+    defer parser.deinit();
+
+    try parser.expectAST(node, null);
 }
 
 test "should parse simple import statement" {
     const text = "import 'bar'";
 
-    try expectMaybeAST(parseImportStatement, AST.Node{ .import = .{ .simple = 1 } }, text);
+    var parser, const node = try Parser.once(text, parseImportStatement);
+    defer parser.deinit();
+
+    try parser.expectAST(node, AST.Node{ .import = .{ .simple = 1 } });
 }
 
 test "should parse default import statement" {
     const text = "import Foo from 'bar'";
-    var parser = Parser.init(std.testing.allocator, text);
+
+    var parser, const node = try Parser.once(text, parseImportStatement);
     defer parser.deinit();
 
-    const node = try parseImportStatement(&parser);
-
-    const full_import = .{
+    const full_import = AST.Node.ImportFull{
         .bindings = @constCast(&[_]AST.Node.Index{1}),
         .path = 3,
     };
-    try expectEqualDeep(AST.Node{ .import = .{ .full = full_import } }, parser.getNode(node.?));
-    try expectEqualDeep(AST.Node{ .import_binding = .{ .default = 1 } }, parser.getNode(full_import.bindings[0]));
+    try parser.expectAST(node, AST.Node{
+        .import = AST.Node.Import{ .full = full_import },
+    });
+    try parser.expectAST(full_import.bindings[0], AST.Node{
+        .import_binding = AST.Node.ImportBinding{
+            .default = 1,
+        },
+    });
 }
 
 test "should parse namespace import statement" {
     const text = "import * as Foo from 'bar'";
-    var parser = Parser.init(std.testing.allocator, text);
+    var parser, const node = try Parser.once(text, parseImportStatement);
     defer parser.deinit();
 
-    const node = try parseImportStatement(&parser);
-
-    const full_import = .{
+    const full_import = AST.Node.ImportFull{
         .bindings = @constCast(&[_]AST.Node.Index{1}),
         .path = 5,
     };
-    try expectEqualDeep(AST.Node{ .import = .{ .full = full_import } }, parser.getNode(node.?));
-    try expectEqualDeep(AST.Node{ .import_binding = .{ .namespace = 3 } }, parser.getNode(full_import.bindings[0]));
+    try parser.expectAST(node, AST.Node{
+        .import = AST.Node.Import{ .full = full_import },
+    });
+    try parser.expectAST(full_import.bindings[0], AST.Node{
+        .import_binding = AST.Node.ImportBinding{
+            .namespace = 3,
+        },
+    });
 }
 
 test "should return error if \"as\" is missing" {
     const text = "import * foo from 'bar'";
 
-    try expectSyntaxError(parseImportStatement, text, diagnostics.ARG_expected, .{"as"});
+    var parser, const nodeOrError = try Parser.onceAny(text, parseImportStatement);
+    defer parser.deinit();
+
+    try parser.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{"as"});
 }
 
 test "should parse named import statement" {
     const text = "import { foo, bar } from 'bar'";
-    var parser = Parser.init(std.testing.allocator, text);
+    var parser, const node = try Parser.once(text, parseImportStatement);
     defer parser.deinit();
 
-    _ = try parseImportStatement(&parser);
-
-    var expected_nodes = [_]AST.Raw{
-        AST.Raw{ .tag = .binding_decl, .main_token = 2, .data = .{ .lhs = 2, .rhs = 0 } },
-        AST.Raw{ .tag = .binding_decl, .main_token = 4, .data = .{ .lhs = 4, .rhs = 0 } },
-        AST.Raw{ .tag = .import_binding_named, .main_token = 6, .data = .{ .lhs = 0, .rhs = 2 } },
-        AST.Raw{ .tag = .import, .main_token = 8, .data = .{ .lhs = 3, .rhs = 7 } },
+    const full_import = AST.Node.ImportFull{
+        .bindings = @constCast(&[_]AST.Node.Index{3}),
+        .path = 7,
     };
-    try parser.expectNodesToEqual(&expected_nodes);
+    try parser.expectAST(node, AST.Node{
+        .import = AST.Node.Import{
+            .full = full_import,
+        },
+    });
+
+    const binding = AST.Node.ImportBinding{
+        .named = @constCast(&[_]AST.Node.Index{ 1, 2 }),
+    };
+    try parser.expectAST(full_import.bindings[0], AST.Node{ .import_binding = binding });
+    try parser.expectAST(binding.named[0], AST.Node{
+        .binding_decl = AST.Node.BindingDecl{
+            .alias = AST.Node.Empty,
+            .name = 2,
+        },
+    });
+    try parser.expectAST(binding.named[1], AST.Node{
+        .binding_decl = AST.Node.BindingDecl{
+            .alias = AST.Node.Empty,
+            .name = 4,
+        },
+    });
 }
 
 test "should parse named bindings with aliases in import statement" {
     const text = "import { foo as bar, baz as qux } from 'bar'";
-    var parser = Parser.init(std.testing.allocator, text);
+
+    var parser, const node = try Parser.once(text, parseImportStatement);
     defer parser.deinit();
 
-    _ = try parseImportStatement(&parser);
-
-    var expected_nodes = [_]AST.Raw{
-        AST.Raw{ .tag = .binding_decl, .main_token = 2, .data = .{ .lhs = 2, .rhs = 4 } },
-        AST.Raw{ .tag = .binding_decl, .main_token = 6, .data = .{ .lhs = 6, .rhs = 8 } },
-        AST.Raw{ .tag = .import_binding_named, .main_token = 10, .data = .{ .lhs = 0, .rhs = 2 } },
-        AST.Raw{ .tag = .import, .main_token = 12, .data = .{ .lhs = 3, .rhs = 11 } },
+    const full_import = AST.Node.ImportFull{
+        .bindings = @constCast(&[_]AST.Node.Index{3}),
+        .path = 11,
     };
-    try parser.expectNodesToEqual(&expected_nodes);
+    try parser.expectAST(node, AST.Node{
+        .import = AST.Node.Import{
+            .full = full_import,
+        },
+    });
+
+    const binding = AST.Node.ImportBinding{
+        .named = @constCast(&[_]AST.Node.Index{ 1, 2 }),
+    };
+    try parser.expectAST(full_import.bindings[0], AST.Node{ .import_binding = binding });
+    try parser.expectAST(binding.named[0], AST.Node{
+        .binding_decl = AST.Node.BindingDecl{
+            .alias = 4,
+            .name = 2,
+        },
+    });
+    try parser.expectAST(binding.named[1], AST.Node{
+        .binding_decl = AST.Node.BindingDecl{
+            .alias = 8,
+            .name = 6,
+        },
+    });
 }
 
 test "should return syntax error if alias in import binding is not a string" {
     const text = "import { foo as 123 } from 'bar'";
 
-    try expectSyntaxError(parseImportStatement, text, diagnostics.identifier_expected, .{});
+    var parser, const nodeOrError = try Parser.onceAny(text, parseImportStatement);
+    defer parser.deinit();
+
+    try parser.expectSyntaxError(nodeOrError, diagnostics.identifier_expected, .{});
 }
 
 test "should return error if comma is missing" {
     const text = "import {foo bar} from 'bar'";
 
-    try expectSyntaxError(parseImportStatement, text, diagnostics.ARG_expected, .{","});
+    var parser, const nodeOrError = try Parser.onceAny(text, parseImportStatement);
+    defer parser.deinit();
+
+    try parser.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{","});
 }
 
 test "should return error if its not binding" {
     const text = "import + from 'bar'";
 
-    try expectSyntaxError(parseImportStatement, text, diagnostics.declaration_or_statement_expected, .{});
+    var parser, const nodeOrError = try Parser.onceAny(text, parseImportStatement);
+    defer parser.deinit();
+
+    try parser.expectSyntaxError(nodeOrError, diagnostics.declaration_or_statement_expected, .{});
 }
 
 test "should parse default import and namespace binding" {
     const text = "import foo, * as bar from 'bar'";
 
-    try expectMaybeAST(parseImportStatement, AST.Node{ .import = .{ .full = .{
+    var parser, const node = try Parser.once(text, parseImportStatement);
+    defer parser.deinit();
+
+    const full_import = AST.Node.ImportFull{
         .bindings = @constCast(&[_]AST.Node.Index{ 1, 2 }),
         .path = 7,
-    } } }, text);
+    };
+    try parser.expectAST(node, AST.Node{
+        .import = AST.Node.Import{
+            .full = full_import,
+        },
+    });
 }
 
 test "should parse default import and named binding" {
     const text = "import foo, { bar } from 'bar'";
-    var parser = Parser.init(std.testing.allocator, text);
+
+    var parser, const node = try Parser.once(text, parseImportStatement);
     defer parser.deinit();
 
-    _ = try parseImportStatement(&parser);
-
-    var expected_nodes = [_]AST.Raw{
-        AST.Raw{ .tag = .import_binding_default, .main_token = 2, .data = .{ .lhs = 1, .rhs = 0 } },
-        AST.Raw{ .tag = .binding_decl, .main_token = 4, .data = .{ .lhs = 4, .rhs = 0 } },
-        AST.Raw{ .tag = .import_binding_named, .main_token = 6, .data = .{ .lhs = 0, .rhs = 1 } },
-        AST.Raw{ .tag = .import, .main_token = 8, .data = .{ .lhs = 3, .rhs = 7 } },
+    const full_import = AST.Node.ImportFull{
+        .bindings = @constCast(&[_]AST.Node.Index{ 1, 3 }),
+        .path = 7,
     };
-    try parser.expectNodesToEqual(&expected_nodes);
+    try parser.expectAST(node, AST.Node{
+        .import = AST.Node.Import{
+            .full = full_import,
+        },
+    });
+    try parser.expectAST(full_import.bindings[0], AST.Node{
+        .import_binding = AST.Node.ImportBinding{
+            .default = 1,
+        },
+    });
+    try parser.expectAST(full_import.bindings[1], AST.Node{
+        .import_binding = AST.Node.ImportBinding{
+            .named = @constCast(&[_]AST.Node.Index{2}),
+        },
+    });
 }
 
 test "should return error if second binding list is not valid binding" {
     const text = "import foo, + from 'bar'";
+    var parser, const nodeOrError = try Parser.onceAny(text, parseImportStatement);
+    defer parser.deinit();
 
-    try expectSyntaxError(parseImportStatement, text, diagnostics.ARG_expected, .{"{"});
+    try parser.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{"{"});
 }
 
 test "should return error if path is missing" {
     const text = "import foo";
 
-    try expectSyntaxError(parseImportStatement, text, diagnostics.ARG_expected, .{"from"});
+    var parser, const nodeOrError = try Parser.onceAny(text, parseImportStatement);
+    defer parser.deinit();
+
+    try parser.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{"from"});
 }
 
 test "should return error if path is not a string" {
     const text = "import foo from 123";
 
-    try expectSyntaxError(parseImportStatement, text, diagnostics.string_literal_expected, .{});
+    var parser, const nodeOrError = try Parser.onceAny(text, parseImportStatement);
+    defer parser.deinit();
+
+    try parser.expectSyntaxError(nodeOrError, diagnostics.string_literal_expected, .{});
 }
 
 test "should return null if its not export statement" {
     const text = "identifier";
 
-    try expectMaybeAST(parseExportStatement, null, text);
+    var parser, const node = try Parser.once(text, parseExportStatement);
+    defer parser.deinit();
+
+    try parser.expectAST(node, null);
 }
 
 test "should parse export statement with named bindings" {
     const text = "export { foo, bar } from './foo';";
-    var parser = Parser.init(std.testing.allocator, text);
+    var parser, const node = try Parser.once(text, parseExportStatement);
     defer parser.deinit();
 
-    _ = try parseExportStatement(&parser);
-
-    var expected_nodes = [_]AST.Raw{
-        AST.Raw{ .tag = .binding_decl, .main_token = 2, .data = .{ .lhs = 2, .rhs = 0 } },
-        AST.Raw{ .tag = .binding_decl, .main_token = 4, .data = .{ .lhs = 4, .rhs = 0 } },
-        AST.Raw{ .tag = .export_from, .main_token = 8, .data = .{ .lhs = 2, .rhs = 7 } },
+    const export_from = AST.Node.Export{
+        .from = .{
+            .bindings = @constCast(&[_]AST.Node.Index{ 1, 2 }),
+            .path = 7,
+        },
     };
-    try parser.expectNodesToEqual(&expected_nodes);
+    try parser.expectAST(node, AST.Node{ .@"export" = export_from });
+    try parser.expectAST(export_from.from.bindings[0], AST.Node{
+        .binding_decl = AST.Node.BindingDecl{
+            .name = 2,
+            .alias = AST.Node.Empty,
+        },
+    });
+    try parser.expectAST(export_from.from.bindings[1], AST.Node{
+        .binding_decl = AST.Node.BindingDecl{
+            .name = 4,
+            .alias = AST.Node.Empty,
+        },
+    });
 }
 
 test "should parse export statement with aliased bindings" {
     const text = "export { foo as bar, baz as qux } from './foo';";
-    var parser = Parser.init(std.testing.allocator, text);
+    var parser, const node = try Parser.once(text, parseExportStatement);
     defer parser.deinit();
 
-    _ = try parseExportStatement(&parser);
-
-    var expected_nodes = [_]AST.Raw{
-        AST.Raw{ .tag = .binding_decl, .main_token = 2, .data = .{ .lhs = 2, .rhs = 4 } },
-        AST.Raw{ .tag = .binding_decl, .main_token = 6, .data = .{ .lhs = 6, .rhs = 8 } },
-        AST.Raw{ .tag = .export_from, .main_token = 12, .data = .{ .lhs = 2, .rhs = 11 } },
+    const export_from = AST.Node.Export{
+        .from = .{
+            .bindings = @constCast(&[_]AST.Node.Index{ 1, 2 }),
+            .path = 11,
+        },
     };
-    try parser.expectNodesToEqual(&expected_nodes);
+    try parser.expectAST(node, AST.Node{ .@"export" = export_from });
+    try parser.expectAST(export_from.from.bindings[0], AST.Node{
+        .binding_decl = AST.Node.BindingDecl{
+            .name = 2,
+            .alias = 4,
+        },
+    });
+    try parser.expectAST(export_from.from.bindings[1], AST.Node{
+        .binding_decl = AST.Node.BindingDecl{
+            .name = 6,
+            .alias = 8,
+        },
+    });
 }
 
 test "should return syntax error if path is not a string" {
     const text = "export { foo, bar } from 123;";
 
-    try expectSyntaxError(parseExportStatement, text, diagnostics.string_literal_expected, .{});
+    var parser, const nodeOrError = try Parser.onceAny(text, parseExportStatement);
+    defer parser.deinit();
+
+    try parser.expectSyntaxError(nodeOrError, diagnostics.string_literal_expected, .{});
 }
 
 test "should parse export statement without path" {
@@ -426,68 +543,97 @@ test "should parse export statement without path" {
     };
 
     inline for (tests) |test_case| {
-        try expectMaybeAST(parseExportStatement, test_case[1], test_case[0]);
+        var parser, const node = try Parser.once(test_case[0], parseExportStatement);
+        defer parser.deinit();
+
+        try parser.expectAST(node, test_case[1]);
     }
 }
 
 test "should return syntax error if comma is missing" {
     const text = "export { foo bar } from './foo';";
 
-    try expectSyntaxError(parseExportStatement, text, diagnostics.ARG_expected, .{","});
+    var parser, const nodeOrError = try Parser.onceAny(text, parseExportStatement);
+    defer parser.deinit();
+
+    try parser.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{","});
 }
 
 test "should return syntax error if binding is not identifier" {
     const text = "export { 123 }";
 
-    try expectSyntaxError(parseExportStatement, text, diagnostics.identifier_expected, .{});
+    var parser, const nodeOrError = try Parser.onceAny(text, parseExportStatement);
+    defer parser.deinit();
+
+    try parser.expectSyntaxError(nodeOrError, diagnostics.identifier_expected, .{});
 }
 
 test "should parse from all export statement" {
     const text = "export * from './foo';";
 
-    try expectMaybeAST(parseExportStatement, AST.Node{ .@"export" = .{
-        .from_all = .{
-            .alias = 0,
+    var parser, const node = try Parser.once(text, parseExportStatement);
+    defer parser.deinit();
+
+    try parser.expectAST(node, AST.Node{ .@"export" = AST.Node.Export{
+        .from_all = AST.Node.ExportAll{
+            .alias = AST.Node.Empty,
             .path = 3,
         },
-    } }, text);
+    } });
 }
 
 test "should return syntax error if from clause is missing" {
     const text = "export * as alias";
 
-    try expectSyntaxError(parseExportStatement, text, diagnostics.ARG_expected, .{"from"});
+    var parser, const nodeOrError = try Parser.onceAny(text, parseExportStatement);
+    defer parser.deinit();
+
+    try parser.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{"from"});
 }
 
 test "should return syntax error for from all clause if path is not a string" {
     const text = "export * as alias from 123";
 
-    try expectSyntaxError(parseExportStatement, text, diagnostics.string_literal_expected, .{});
+    var parser, const nodeOrError = try Parser.onceAny(text, parseExportStatement);
+    defer parser.deinit();
+
+    try parser.expectSyntaxError(nodeOrError, diagnostics.string_literal_expected, .{});
 }
 
 test "should parse from all export statement with alias" {
     const text = "export * as alias from './foo'";
 
-    try expectMaybeAST(parseExportStatement, AST.Node{ .@"export" = .{
-        .from_all = .{
+    var parser, const node = try Parser.once(text, parseExportStatement);
+    defer parser.deinit();
+
+    try parser.expectAST(node, AST.Node{ .@"export" = .{
+        .from_all = AST.Node.ExportAll{
             .alias = 3,
             .path = 5,
         },
-    } }, text);
+    } });
 }
 
 test "should return syntax error if alias is not a string" {
     const text = "export * as 123 from './foo'";
 
-    try expectSyntaxError(parseExportStatement, text, diagnostics.identifier_expected, .{});
+    var parser, const nodeOrError = try Parser.onceAny(text, parseExportStatement);
+    defer parser.deinit();
+
+    try parser.expectSyntaxError(nodeOrError, diagnostics.identifier_expected, .{});
 }
 
 test "should parse export statement with default bindings" {
     const text = "export default identifier";
 
-    try expectMaybeAST(parseExportStatement, AST.Node{
-        .@"export" = .{ .default = 2 },
-    }, text);
+    var parser, const node = try Parser.once(text, parseExportStatement);
+    defer parser.deinit();
+
+    try parser.expectAST(node, AST.Node{
+        .@"export" = AST.Node.Export{
+            .default = 2,
+        },
+    });
 }
 
 test "should parse export node statement" {
@@ -515,12 +661,18 @@ test "should parse export node statement" {
     };
 
     inline for (tests) |test_case| {
-        try expectMaybeAST(parseExportStatement, test_case[1], test_case[0]);
+        var parser, const node = try Parser.once(test_case[0], parseExportStatement);
+        defer parser.deinit();
+
+        try parser.expectAST(node, test_case[1]);
     }
 }
 
 test "should return syntax error if export statement is not a statement" {
     const text = "export 123";
 
-    try expectSyntaxError(parseExportStatement, text, diagnostics.declaration_or_statement_expected, .{});
+    var parser, const nodeOrError = try Parser.onceAny(text, parseExportStatement);
+    defer parser.deinit();
+
+    try parser.expectSyntaxError(nodeOrError, diagnostics.declaration_or_statement_expected, .{});
 }

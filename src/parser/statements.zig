@@ -20,7 +20,6 @@ const parseExpression = @import("expressions.zig").parseExpression;
 const parseOptionalDataType = @import("types.zig").parseOptionalDataType;
 
 const expectAST = Parser.expectAST;
-const expectMaybeAST = Parser.expectMaybeAST;
 const expectSyntaxError = Parser.expectSyntaxError;
 
 pub fn parseStatement(self: *Parser) ParserError!AST.Node.Index {
@@ -189,25 +188,29 @@ test "should parse statements" {
     };
 
     inline for (tests) |test_case| {
-        // LCOV_EXCL_START
-        expectAST(parseStatement, test_case[1], test_case[0]) catch |err| {
-            std.debug.print("Test case: {s}\n", .{test_case[0]});
-            return err;
-        };
-        // LCOV_EXCL_STOP
+        var parser, const node = try Parser.once(test_case[0], parseStatement);
+        defer parser.deinit();
+
+        try parser.expectAST(node, test_case[1]);
     }
 }
 
 test "should parse block" {
     const text = "{ a; b; c; }";
 
-    try expectMaybeAST(parseBlock, AST.Node{ .block = @constCast(&[_]AST.Node.Index{ 2, 4, 6 }) }, text);
+    var parser, const node = try Parser.once(text, parseBlock);
+    defer parser.deinit();
+
+    try parser.expectAST(node, AST.Node{ .block = @constCast(&[_]AST.Node.Index{ 2, 4, 6 }) });
 }
 
 test "should return syntax error if block is missing" {
     const text = "{a; ";
 
-    try expectSyntaxError(parseBlock, text, diagnostics.ARG_expected, .{"}"});
+    var parser, const node = try Parser.onceAny(text, parseBlock);
+    defer parser.deinit();
+
+    try parser.expectSyntaxError(node, diagnostics.ARG_expected, .{"}"});
 }
 
 test "should parse declarations" {
@@ -263,58 +266,72 @@ test "should parse declarations" {
     };
 
     inline for (tests) |test_case| {
-        var parser = Parser.init(std.testing.allocator, test_case[0]);
+        var parser, _ = try Parser.once(test_case[0], parseDeclaration);
         defer parser.deinit();
 
-        _ = try parseDeclaration(&parser);
-
-        // LCOV_EXCL_START
-        parser.expectNodesToEqual(test_case[1]) catch |err| {
-            std.debug.print("Test case: {s}\n", .{test_case[0]});
-            return err;
-        };
-        // LCOV_EXCL_STOP
+        try parser.expectNodesToEqual(test_case[1]);
     }
 }
 
 test "should parse empty return statement" {
     const text = "return;";
 
-    try expectMaybeAST(parseReturnStatement, AST.Node{ .@"return" = AST.Node.Empty }, text);
+    var parser, const node = try Parser.once(text, parseReturnStatement);
+    defer parser.deinit();
+
+    try parser.expectAST(node, AST.Node{ .@"return" = AST.Node.Empty });
 }
 
 test "should parse return statement" {
     const text = "return a;";
 
-    try expectMaybeAST(parseReturnStatement, AST.Node{ .@"return" = 2 }, text);
+    var parser, const node = try Parser.once(text, parseReturnStatement);
+    defer parser.deinit();
+
+    try parser.expectAST(node, AST.Node{ .@"return" = 2 });
 }
 
 test "should parse if statement" {
     const text = "if (a) {}";
 
-    try expectMaybeAST(parseIfStatement, AST.Node{ .@"if" = AST.Node.If{ .expr = 2, .body = 3, .@"else" = AST.Node.Empty } }, text);
+    var parser, const node = try Parser.once(text, parseIfStatement);
+    defer parser.deinit();
+
+    try parser.expectAST(node, AST.Node{ .@"if" = AST.Node.If{ .expr = 2, .body = 3, .@"else" = AST.Node.Empty } });
 }
 
 test "should parse if statement with else" {
     const text = "if (a) {} else {}";
 
-    try expectMaybeAST(parseIfStatement, AST.Node{ .@"if" = AST.Node.If{ .expr = 2, .body = 3, .@"else" = 4 } }, text);
+    var parser, const node = try Parser.once(text, parseIfStatement);
+    defer parser.deinit();
+
+    try parser.expectAST(node, AST.Node{ .@"if" = AST.Node.If{ .expr = 2, .body = 3, .@"else" = 4 } });
 }
 
 test "should return syntax error if open paren is missing" {
     const text = "if a) {} else";
 
-    try expectSyntaxError(parseIfStatement, text, diagnostics.ARG_expected, .{"("});
+    var parser, const node = try Parser.onceAny(text, parseIfStatement);
+    defer parser.deinit();
+
+    try parser.expectSyntaxError(node, diagnostics.ARG_expected, .{"("});
 }
 
 test "should return syntax error if close paren is missing" {
     const text = "if (a {}";
 
-    try expectSyntaxError(parseIfStatement, text, diagnostics.ARG_expected, .{")"});
+    var parser, const node = try Parser.onceAny(text, parseIfStatement);
+    defer parser.deinit();
+
+    try parser.expectSyntaxError(node, diagnostics.ARG_expected, .{")"});
 }
 
 test "should return syntax error if body is missing" {
     const text = "if (a)";
 
-    try expectSyntaxError(parseIfStatement, text, diagnostics.identifier_expected, .{});
+    var parser, const node = try Parser.onceAny(text, parseIfStatement);
+    defer parser.deinit();
+
+    try parser.expectSyntaxError(node, diagnostics.identifier_expected, .{});
 }

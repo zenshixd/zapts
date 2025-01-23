@@ -433,10 +433,12 @@ pub const Node = union(enum) {
 
     pub const Import = union(enum) {
         simple: Token.Index,
-        full: struct {
-            bindings: []Node.Index,
-            path: Token.Index,
-        },
+        full: ImportFull,
+    };
+
+    pub const ImportFull = struct {
+        bindings: []Node.Index,
+        path: Token.Index,
     };
 
     pub const ImportBinding = union(enum) {
@@ -1384,7 +1386,7 @@ pub fn getNode(self: Parser, index: Node.Index) Node {
         },
         .@"if", .ternary => {
             const if_extra = getExtra(self, Extra.If, node.data.lhs);
-            const data = .{
+            const data = Node.If{
                 .expr = if_extra.expr,
                 .body = if_extra.body,
                 .@"else" = node.data.rhs,
@@ -1522,7 +1524,7 @@ pub fn getNode(self: Parser, index: Node.Index) Node {
         },
         .call_expr => {
             const extra = getExtra(self, Extra.Subrange, node.data.rhs);
-            const data = .{
+            const data = Node.CallExpression{
                 .node = node.data.lhs,
                 .params = self.extra.items[extra.start..extra.end],
             };
@@ -1793,7 +1795,7 @@ pub fn listToSubrange(self: *Parser, list: []Node.Index) Extra.Subrange {
 }
 
 fn expectRawNode(expected_raw: Raw, node: Node) !void {
-    var parser = Parser.init(std.testing.allocator, "1");
+    var parser = try Parser.init(std.testing.allocator, "1");
     defer parser.deinit();
 
     const node_idx = addNode(&parser, 0, node);
@@ -2088,7 +2090,7 @@ test "Pool function expressions" {
     const name_node = 3;
     const body_node = 4;
     const return_type = 5;
-    const async_func_data = .{ .flags = FunctionFlags.Async, .name = name_node, .params = &params, .body = body_node, .return_type = return_type };
+    const async_func_data = Node.FunctionDeclaration{ .flags = FunctionFlags.Async, .name = name_node, .params = &params, .body = body_node, .return_type = return_type };
 
     const tests = .{
         .{
@@ -2153,7 +2155,7 @@ test "Pool binary" {
     const left_node = 1;
     const right_node = 2;
 
-    const data = .{
+    const data = Node.Binary{
         .left = left_node,
         .right = right_node,
     };

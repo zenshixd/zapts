@@ -14,7 +14,6 @@ const parseConditionalExpression = @import("expressions.zig").parseConditionalEx
 const expectEqual = std.testing.expectEqual;
 const expectEqualDeep = std.testing.expectEqualDeep;
 const expectAST = Parser.expectAST;
-const expectMaybeAST = Parser.expectMaybeAST;
 
 const assignment_map = .{
     .{ TokenType.Equal, "assignment" },
@@ -158,7 +157,7 @@ test "should parse binary expression" {
 
     try expectEqual(test_cases.len, binary_operators.len);
     inline for (test_cases, 0..) |test_case, i| {
-        var parser = Parser.init(std.testing.allocator, test_case);
+        var parser = try Parser.init(std.testing.allocator, test_case);
         defer parser.deinit();
 
         const node = try parseBinaryExpression(&parser, 0);
@@ -195,7 +194,7 @@ test "should parse assignment expression" {
 
     try expectEqual(test_cases.len, assignment_map.len);
     inline for (test_cases, 0..) |test_case, i| {
-        var parser = Parser.init(std.testing.allocator, test_case);
+        var parser = try Parser.init(std.testing.allocator, test_case);
         defer parser.deinit();
 
         const node = try parseAssignment(&parser);

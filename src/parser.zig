@@ -1,4 +1,8 @@
 const std = @import("std");
+
+const ErrorUnionOf = @import("meta.zig").ErrorUnionOf;
+const ReturnTypeOf = @import("meta.zig").ReturnTypeOf;
+
 const assert = std.debug.assert;
 const expectEqual = std.testing.expectEqual;
 const expectEqualStrings = std.testing.expectEqualStrings;
@@ -27,7 +31,7 @@ nodes: std.ArrayList(AST.Raw),
 extra: std.ArrayList(AST.Node.Index),
 errors: std.ArrayList(u8),
 
-pub fn init(gpa: std.mem.Allocator, buffer: [:0]const u8) Self {
+pub fn init(gpa: std.mem.Allocator, buffer: [:0]const u8) !Self {
     var lexer = Lexer.init(gpa, buffer);
     var nodes = std.ArrayList(AST.Raw).init(gpa);
     nodes.append(AST.Raw{ .tag = .root, .main_token = 0, .data = .{ .lhs = 0, .rhs = 0 } }) catch unreachable;
@@ -36,7 +40,7 @@ pub fn init(gpa: std.mem.Allocator, buffer: [:0]const u8) Self {
         .cur_token = 0,
         .gpa = gpa,
         .buffer = buffer,
-        .tokens = lexer.tokenize(),
+        .tokens = try lexer.tokenize(),
         .nodes = nodes,
         .extra = std.ArrayList(AST.Node.Index).init(gpa),
         .errors = std.ArrayList(u8).init(gpa),
@@ -87,9 +91,9 @@ pub fn advance(self: *Self) Token.Index {
 }
 
 pub fn match(self: *Self, comptime token_type: anytype) bool {
-    const tinfo = @typeInfo(@TypeOf(token_type));
+    const typeInfo = @typeInfo(@TypeOf(token_type));
     const is_token_type = @TypeOf(token_type) == TokenType;
-    const is_array_of_token_type = tinfo == .Array and tinfo.Array.child == TokenType;
+    const is_array_of_token_type = typeInfo == .array and typeInfo.array.child == TokenType;
     assert(is_token_type or is_array_of_token_type);
 
     if (is_token_type and self.peekMatch(token_type)) {
@@ -183,74 +187,58 @@ pub fn needsSemicolon(self: Self, node: AST.Node.Index) bool {
     };
 }
 
-pub fn expectAST(fn_ptr: fn (parser: *Self) ParserError!AST.Node.Index, expected: AST.Node, text: [:0]const u8) !void {
-    var parser = Self.init(std.testing.allocator, text);
-    defer parser.deinit();
-
+pub fn once(comptime text: [:0]const u8, fn_ptr: anytype) !struct { Self, ReturnTypeOf(fn_ptr) } {
+    var parser = try Self.init(std.testing.allocator, text);
     const node = try fn_ptr(&parser);
-    try std.testing.expectEqualDeep(expected, parser.getNode(node));
+
+    return .{ parser, node };
 }
 
-pub fn expectMaybeAST(fn_ptr: fn (parser: *Self) ParserError!?AST.Node.Index, expected: ?AST.Node, text: [:0]const u8) !void {
-    var parser = Self.init(std.testing.allocator, text);
-    defer parser.deinit();
+pub fn onceAny(comptime text: [:0]const u8, fn_ptr: anytype) !struct { Self, ErrorUnionOf(fn_ptr) } {
+    var parser = try Self.init(std.testing.allocator, text);
+    const nodeOrError = fn_ptr(&parser);
 
-    const maybe_node = try fn_ptr(&parser);
-    if (expected) |expected_node| {
-        if (maybe_node == null) {
-            std.debug.print("expected {any}, got null\n", .{expected});
-            return error.TestExpectedEqual;
-        }
-
-        try std.testing.expectEqualDeep(expected_node, parser.getNode(maybe_node.?));
-    } else {
-        try expectEqual(null, maybe_node);
-    }
+    return .{ parser, nodeOrError };
 }
 
-pub fn expectASTAndToken(fn_ptr: fn (parser: *Self) ParserError!?AST.Node.Index, expected: ?AST.Node, tok_type: TokenType, token_value: []const u8, text: [:0]const u8) !void {
-    var parser = Self.init(std.testing.allocator, text);
-    defer parser.deinit();
+pub fn expectAST(parser: *Self, maybe_node: ?AST.Node.Index, expected: ?AST.Node) !void {
+    try std.testing.expectEqualDeep(expected, if (maybe_node) |node| parser.getNode(node) else null);
+}
 
-    const maybe_node = try fn_ptr(&parser);
-    if (expected) |expected_node| {
-        if (maybe_node) |node| {
-            try std.testing.expectEqualDeep(expected_node, parser.getNode(node));
-            try parser.expectToken(tok_type, node);
-            try parser.expectTokenValue(token_value, node);
-        } else if (expected != null) {
-            std.debug.print("expected {any}, got null\n", .{expected});
-            return error.TestExpectedEqual;
+pub fn expectTokenAt(parser: *Self, marker: []const u8, node: AST.Node.Index) !void {
+    const raw = parser.getRawNode(node);
+    const marker_index = std.mem.indexOf(u8, marker, "^") orelse unreachable;
+    const tok = parser.tokens[raw.main_token];
+
+    if (tok.start != marker_index) {
+        var cur_marker = std.testing.allocator.alloc(u8, parser.buffer.len + 1) catch unreachable;
+        defer std.testing.allocator.free(cur_marker);
+
+        for (0..cur_marker.len) |i| {
+            cur_marker[i] = ' ';
         }
-    } else {
-        try expectEqual(null, maybe_node);
+        cur_marker[tok.start] = '^';
+
+        std.debug.print("expected main_token at:\n{s}\n{s}\nfound at:\n{s}\n{s}\n", .{ parser.buffer, marker, parser.buffer, cur_marker });
+        return error.TestExpectedEqual;
     }
 }
 
 pub fn expectSyntaxError(
-    fn_ptr: anytype,
-    comptime text: [:0]const u8,
+    parser: *Self,
+    nodeOrError: anytype,
     comptime expected_error: diagnostics.DiagnosticMessage,
     args: anytype,
 ) !void {
-    var parser = Self.init(std.testing.allocator, text);
-    defer parser.deinit();
-
-    const nodeOrError = fn_ptr(&parser);
-
     try expectError(ParserError.SyntaxError, nodeOrError);
     var buffer: [512]u8 = undefined;
     const expected_string = try std.fmt.bufPrint(&buffer, "TS" ++ expected_error.code ++ ": " ++ expected_error.message ++ "\n", args);
     try expectStringStartsWith(parser.errors.items, expected_string);
 }
 
-pub fn expectToken(self: *Self, tok_type: TokenType, node: AST.Node.Index) !void {
+pub fn expectToken(self: *Self, expected_tok_type: TokenType, expected_value: []const u8, node: AST.Node.Index) !void {
     const raw = self.getRawNode(node);
-    try expectEqual(tok_type, self.tokens[raw.main_token].type);
-}
-
-pub fn expectTokenValue(self: *Self, expected_value: []const u8, node: AST.Node.Index) !void {
-    const raw = self.getRawNode(node);
+    try expectEqual(expected_tok_type, self.tokens[raw.main_token].type);
     try expectEqualStrings(expected_value, self.tokens[raw.main_token].literal(self.buffer));
 }
 

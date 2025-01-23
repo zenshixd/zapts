@@ -11,7 +11,6 @@ const parseKeywordAsIdentifier = @import("primary.zig").parseKeywordAsIdentifier
 
 const expectEqual = std.testing.expectEqual;
 const expectAST = Parser.expectAST;
-const expectMaybeAST = Parser.expectMaybeAST;
 const expectSyntaxError = Parser.expectSyntaxError;
 
 pub fn parseOptionalDataType(self: *Parser) ParserError!AST.Node.Index {
@@ -374,16 +373,17 @@ fn parseInterfaceDeclaration(self: *Parser) ParserError!?AST.Node.Index {
 
 test "should parse optional data type" {
     const text = ": number";
+    var parser, const node = try Parser.once(text, parseOptionalDataType);
+    defer parser.deinit();
 
-    try expectAST(parseOptionalDataType, AST.Node{ .simple_type = .{ .kind = .number } }, text);
+    try parser.expectAST(node, AST.Node{ .simple_type = .{ .kind = .number } });
 }
 
 test "should return Empty node if no data type" {
     const text = "ident";
-    var parser = Parser.init(std.testing.allocator, text);
-    defer parser.deinit();
 
-    const node = try parseOptionalDataType(&parser);
+    var parser, const node = try Parser.once(text, parseOptionalDataType);
+    defer parser.deinit();
 
     try expectEqual(AST.Node.Empty, node);
 }
@@ -402,15 +402,20 @@ test "should parse primary symbol type" {
     };
 
     inline for (tests) |test_case| {
-        const text = test_case[0];
-        try expectAST(parseSymbolType, test_case[1], text);
+        var parser, const node = try Parser.once(test_case[0], parseSymbolType);
+        defer parser.deinit();
+
+        try parser.expectAST(node, test_case[1]);
     }
 }
 
 test "should return syntax error if its not a symbol type" {
     const text = "+";
 
-    try expectSyntaxError(parseSymbolType, text, diagnostics.type_expected, .{});
+    var parser, const node = try Parser.onceAny(text, parseSymbolType);
+    defer parser.deinit();
+
+    try parser.expectSyntaxError(node, diagnostics.type_expected, .{});
 }
 
 test "should parse unary type operators" {
@@ -420,48 +425,65 @@ test "should parse unary type operators" {
     };
 
     inline for (tests) |test_case| {
-        const text = test_case[0];
-        try expectAST(parseSymbolType, test_case[1], text);
+        var parser, const node = try Parser.once(test_case[0], parseSymbolType);
+        defer parser.deinit();
+
+        try parser.expectAST(node, test_case[1]);
     }
 }
 
 test "should parse generic type" {
     const text = "Array<number>";
 
-    try expectAST(parseSymbolType, AST.Node{ .generic_type = .{
+    var parser, const node = try Parser.once(text, parseSymbolType);
+    defer parser.deinit();
+
+    try parser.expectAST(node, AST.Node{ .generic_type = .{
         .name = 1,
         .params = @constCast(&[_]AST.Node.Index{2}),
-    } }, text);
+    } });
 }
 
 test "should parse generic type with multiple params" {
     const text = "Array<number, string>";
 
-    try expectAST(parseSymbolType, AST.Node{ .generic_type = .{
+    var parser, const node = try Parser.once(text, parseSymbolType);
+    defer parser.deinit();
+
+    try parser.expectAST(node, AST.Node{ .generic_type = .{
         .name = 1,
         .params = @constCast(&[_]AST.Node.Index{ 2, 3 }),
-    } }, text);
+    } });
 }
 
 test "should parse nested generic type" {
     const text = "Array<Array<number>>";
 
-    try expectAST(parseSymbolType, AST.Node{ .generic_type = .{
+    var parser, const node = try Parser.once(text, parseSymbolType);
+    defer parser.deinit();
+
+    try parser.expectAST(node, AST.Node{ .generic_type = .{
         .name = 1,
         .params = @constCast(&[_]AST.Node.Index{4}),
-    } }, text);
+    } });
 }
 
 test "should parse array type" {
     const text = "number[]";
 
-    try expectAST(parseSymbolType, AST.Node{ .array_type = 1 }, text);
+    var parser, const node = try Parser.once(text, parseSymbolType);
+    defer parser.deinit();
+
+    try parser.expectAST(node, AST.Node{ .array_type = 1 });
 }
 
 test "should parse tuple type" {
     const text = "[number, string]";
 
-    try expectAST(parseSymbolType, AST.Node{ .tuple_type = @constCast(&[_]AST.Node.Index{ 1, 2 }) }, text);
+    var parser, const node = try Parser.once(text, parseSymbolType);
+    defer parser.deinit();
+
+    try parser.expectAST(node, AST.Node{ .tuple_type = @constCast(&[_]AST.Node.Index{ 1, 2 }) });
 }
 
 test "should parse object type" {
@@ -471,7 +493,7 @@ test "should parse object type" {
     };
 
     inline for (texts) |text| {
-        var parser = Parser.init(std.testing.allocator, text);
+        var parser = try Parser.init(std.testing.allocator, text);
         defer parser.deinit();
 
         _ = try parseObjectType(&parser);
@@ -495,7 +517,7 @@ test "should parse method type" {
     };
 
     inline for (texts, 0..) |text, i| {
-        var parser = Parser.init(std.testing.allocator, text);
+        var parser = try Parser.init(std.testing.allocator, text);
         defer parser.deinit();
 
         _ = try parseObjectMethodType(&parser);
@@ -520,12 +542,12 @@ test "should parse method with generics" {
     };
 
     inline for (texts, 0..) |text, i| {
-        var parser = Parser.init(std.testing.allocator, text);
+        var parser = try Parser.init(std.testing.allocator, text);
         defer parser.deinit();
 
         _ = try parseObjectMethodType(&parser);
 
-        parser.expectNodesToEqual(&[_]AST.Raw{
+        try parser.expectNodesToEqual(&[_]AST.Raw{
             .{ .tag = .simple_value, .main_token = 0, .data = .{ .lhs = 1, .rhs = 0 } },
             .{ .tag = .simple_type, .main_token = 2, .data = .{ .lhs = 1, .rhs = 0 } },
             .{ .tag = .simple_type, .main_token = 7 + i, .data = .{ .lhs = 1, .rhs = 0 } },
@@ -535,24 +557,23 @@ test "should parse method with generics" {
             .{ .tag = .simple_type, .main_token = 14 + i, .data = .{ .lhs = 6, .rhs = 0 } },
             .{ .tag = .function_type, .main_token = 4 + i, .data = .{ .lhs = 3, .rhs = 7 } },
             .{ .tag = .object_type_field, .main_token = 1, .data = .{ .lhs = 1, .rhs = 8 } },
-        }) catch |err| { // LCOV_EXCL_START
-            std.debug.print("Failed parsing {s}\n", .{text});
-            return err;
-        };
-        // LCOV_EXCL_STOP
+        });
     }
 }
 
 test "should return syntax error if there is no comma between generic params" {
     const text = "fn<T B>(a: T): boolean";
 
-    try expectSyntaxError(parseObjectMethodType, text, diagnostics.ARG_expected, .{","});
+    var parser, const node = try Parser.onceAny(text, parseObjectMethodType);
+    defer parser.deinit();
+
+    try parser.expectSyntaxError(node, diagnostics.ARG_expected, .{","});
 }
 
 test "should parse method type with types" {
     const text = "fn(a, b)";
 
-    var parser = Parser.init(std.testing.allocator, text);
+    var parser = try Parser.init(std.testing.allocator, text);
     defer parser.deinit();
 
     _ = try parseObjectMethodType(&parser);
@@ -569,41 +590,59 @@ test "should parse method type with types" {
 test "should return null if its not method type" {
     const text = "[number, string]";
 
-    try expectMaybeAST(parseObjectMethodType, null, text);
+    var parser, const node = try Parser.once(text, parseObjectMethodType);
+    defer parser.deinit();
+
+    try parser.expectAST(node, null);
 }
 
 test "should return syntax error if there is no comma after params" {
     const text = "fn(a: number b: string): boolean";
 
-    try expectSyntaxError(parseObjectMethodType, text, diagnostics.ARG_expected, .{","});
+    var parser, const node = try Parser.onceAny(text, parseObjectMethodType);
+    defer parser.deinit();
+
+    try parser.expectSyntaxError(node, diagnostics.ARG_expected, .{","});
 }
 
 test "should return syntax error if param is not identifier" {
     const text = "fn(void): boolean";
 
-    try expectSyntaxError(parseObjectMethodType, text, diagnostics.identifier_expected, .{});
+    var parser, const node = try Parser.onceAny(text, parseObjectMethodType);
+    defer parser.deinit();
+
+    try parser.expectSyntaxError(node, diagnostics.identifier_expected, .{});
 }
 
 test "should parse type identifier" {
     const text = "Array";
 
-    try expectAST(parseSymbolType, AST.Node{ .simple_type = .{ .kind = .identifier } }, text);
+    var parser, const node = try Parser.once(text, parseSymbolType);
+    defer parser.deinit();
+
+    try parser.expectAST(node, AST.Node{ .simple_type = .{ .kind = .identifier } });
 }
 
 test "should parse type union" {
     const text = "number | string";
 
-    try expectAST(parseSymbolType, AST.Node{ .type_union = .{
+    var parser, const node = try Parser.once(text, parseSymbolType);
+    defer parser.deinit();
+
+    try parser.expectAST(node, AST.Node{ .type_union = .{
         .left = 1,
         .right = 2,
-    } }, text);
+    } });
 }
 
 test "should parse type intersection" {
     const text = "number & string";
 
-    try expectAST(parseSymbolType, AST.Node{ .type_intersection = .{
+    var parser, const node = try Parser.once(text, parseSymbolType);
+    defer parser.deinit();
+
+    try parser.expectAST(node, AST.Node{ .type_intersection = .{
         .left = 1,
         .right = 2,
-    } }, text);
+    } });
 }

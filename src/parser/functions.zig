@@ -14,7 +14,6 @@ const parseOptionalDataType = @import("types.zig").parseOptionalDataType;
 const parseBlock = @import("statements.zig").parseBlock;
 
 const expectAST = @import("../parser.zig").expectAST;
-const expectMaybeAST = @import("../parser.zig").expectMaybeAST;
 const expectSyntaxError = @import("../parser.zig").expectSyntaxError;
 
 pub fn parseMethodAsyncGenerator(self: *Parser) ParserError!?AST.Node.Index {
@@ -279,205 +278,269 @@ fn parseConciseBody(self: *Parser) ParserError!AST.Node.Index {
 test "should return null if its not function statement" {
     const text = "identifier";
 
-    try expectMaybeAST(parseFunctionStatement, null, text);
+    var parser, const node = try Parser.once(text, parseFunctionStatement);
+    defer parser.deinit();
+
+    try parser.expectAST(node, null);
 }
 
 test "should parse function statement" {
     const text = "function(a: number, b, c: string) {}";
-    var parser = Parser.init(std.testing.allocator, text);
+
+    var parser, const node = try Parser.once(text, parseFunctionStatement);
     defer parser.deinit();
 
-    _ = try parseFunctionStatement(&parser);
-
-    try parser.expectNodesToEqual(&[_]AST.Raw{
-        AST.Raw{ .tag = .simple_type, .main_token = 4, .data = .{ .lhs = 3, .rhs = 0 } },
-        AST.Raw{ .tag = .function_param, .main_token = 2, .data = .{ .lhs = 2, .rhs = 1 } },
-        AST.Raw{ .tag = .function_param, .main_token = 6, .data = .{ .lhs = 6, .rhs = 0 } },
-        AST.Raw{ .tag = .simple_type, .main_token = 10, .data = .{ .lhs = 5, .rhs = 0 } },
-        AST.Raw{ .tag = .function_param, .main_token = 8, .data = .{ .lhs = 8, .rhs = 4 } },
-        AST.Raw{ .tag = .block, .main_token = 14, .data = .{ .lhs = 0, .rhs = 0 } },
-        AST.Raw{ .tag = .func_decl, .main_token = 14, .data = .{ .lhs = 0, .rhs = 3 } },
+    const function_decl = AST.Node.FunctionDeclaration{
+        .name = 0,
+        .flags = AST.FunctionFlags.None,
+        .params = @constCast(&[_]AST.Node.Index{ 2, 3, 5 }),
+        .body = 6,
+        .return_type = 0,
+    };
+    try parser.expectAST(node, .{ .function_decl = function_decl });
+    try parser.expectAST(function_decl.params[0], AST.Node{
+        .function_param = AST.Node.FunctionParam{ .node = 2, .type = 1 },
+    });
+    try parser.expectAST(function_decl.params[1], AST.Node{
+        .function_param = AST.Node.FunctionParam{ .node = 6, .type = 0 },
+    });
+    try parser.expectAST(function_decl.params[2], AST.Node{
+        .function_param = AST.Node.FunctionParam{ .node = 8, .type = 4 },
     });
 }
 
 test "should parse function statement with name" {
     const text = "function foo(a: number, b, c: string): void {}";
 
-    try expectMaybeAST(parseFunctionStatement, AST.Node{
+    var parser, const node = try Parser.once(text, parseFunctionStatement);
+    defer parser.deinit();
+
+    try parser.expectAST(node, .{
         .function_decl = .{
-            .flags = 0,
             .name = 1,
+            .flags = AST.FunctionFlags.None,
             .params = @constCast(&[_]AST.Node.Index{ 2, 3, 5 }),
             .body = 7,
             .return_type = 6,
         },
-    }, text);
+    });
 }
 
 test "should allow trailing comma in function params" {
     const text = "function(a: number, b: number,): void {}";
 
-    try expectMaybeAST(parseFunctionStatement, AST.Node{
+    var parser, const node = try Parser.once(text, parseFunctionStatement);
+    defer parser.deinit();
+
+    try parser.expectAST(node, .{
         .function_decl = .{
-            .flags = 0,
             .name = 0,
+            .flags = AST.FunctionFlags.None,
             .params = @constCast(&[_]AST.Node.Index{ 2, 4 }),
             .body = 6,
             .return_type = 5,
         },
-    }, text);
+    });
 }
 
 test "should return null if its not async function statement" {
     const text = "function(): void {}";
 
-    try expectMaybeAST(parseAsyncFunctionStatement, null, text);
+    var parser, const node = try Parser.once(text, parseAsyncFunctionStatement);
+    defer parser.deinit();
+
+    try parser.expectAST(node, null);
 }
 
 test "should parse async function statement" {
     const text = "async function(): void {}";
 
-    try expectMaybeAST(parseAsyncFunctionStatement, AST.Node{
+    var parser, const node = try Parser.once(text, parseAsyncFunctionStatement);
+    defer parser.deinit();
+
+    try parser.expectAST(node, .{
         .function_decl = .{
-            .flags = AST.FunctionFlags.Async,
             .name = 0,
+            .flags = AST.FunctionFlags.Async,
             .params = @constCast(&[_]AST.Node.Index{}),
             .body = 2,
             .return_type = 1,
         },
-    }, text);
+    });
 }
 
 test "should return syntax error if async keyword is not followed by function" {
     const text = "async foo(): void {}";
 
-    try expectSyntaxError(parseAsyncFunctionStatement, text, diagnostics.unexpected_keyword_or_identifier, .{});
+    var parser, const nodeOrError = try Parser.onceAny(text, parseAsyncFunctionStatement);
+    defer parser.deinit();
+
+    try parser.expectSyntaxError(nodeOrError, diagnostics.unexpected_keyword_or_identifier, .{});
 }
 
 test "should parse generator function statement" {
     const text = "function*(): void {}";
 
-    try expectMaybeAST(parseFunctionStatement, AST.Node{
+    var parser, const node = try Parser.once(text, parseFunctionStatement);
+    defer parser.deinit();
+
+    try parser.expectAST(node, .{
         .function_decl = .{
-            .flags = AST.FunctionFlags.Generator,
             .name = 0,
+            .flags = AST.FunctionFlags.Generator,
             .params = @constCast(&[_]AST.Node.Index{}),
             .body = 2,
             .return_type = 1,
         },
-    }, text);
+    });
 }
 
 test "should parse async generator function statement" {
     const text = "async function*(): void {}";
 
-    try expectMaybeAST(parseAsyncFunctionStatement, AST.Node{
+    var parser, const node = try Parser.once(text, parseAsyncFunctionStatement);
+    defer parser.deinit();
+
+    try parser.expectAST(node, .{
         .function_decl = .{
-            .flags = AST.FunctionFlags.Async | AST.FunctionFlags.Generator,
             .name = 0,
+            .flags = AST.FunctionFlags.Async | AST.FunctionFlags.Generator,
             .params = @constCast(&[_]AST.Node.Index{}),
             .body = 2,
             .return_type = 1,
         },
-    }, text);
+    });
 }
 
 test "should return syntax error if open paren is missing" {
     const text = "function foo): void {}";
 
-    try expectSyntaxError(parseFunctionStatement, text, diagnostics.ARG_expected, .{"("});
+    var parser, const nodeOrError = try Parser.onceAny(text, parseFunctionStatement);
+    defer parser.deinit();
+
+    try parser.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{"("});
 }
 
 test "should return syntax error if close paren is missing" {
     const text = "function foo(: void {}";
 
-    try expectSyntaxError(parseFunctionStatement, text, diagnostics.identifier_expected, .{});
+    var parser, const nodeOrError = try Parser.onceAny(text, parseFunctionStatement);
+    defer parser.deinit();
+
+    try parser.expectSyntaxError(nodeOrError, diagnostics.identifier_expected, .{});
 }
 
 test "should return syntax error if block is missing" {
     const text = "function foo(): void";
 
-    try expectSyntaxError(parseFunctionStatement, text, diagnostics.ARG_expected, .{"{"});
+    var parser, const nodeOrError = try Parser.onceAny(text, parseFunctionStatement);
+    defer parser.deinit();
+
+    try parser.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{"{"});
 }
 
 test "should return null if its not a method" {
     const text = "foo";
 
-    try expectMaybeAST(parseMethod, null, text);
+    var parser, const node = try Parser.once(text, parseMethod);
+    defer parser.deinit();
+
+    try parser.expectAST(node, null);
 }
 
 test "should parse method" {
     const text = "foo(a: number, b,): void {}";
 
-    try expectMaybeAST(parseMethod, AST.Node{
+    var parser, const node = try Parser.once(text, parseMethod);
+    defer parser.deinit();
+
+    try parser.expectAST(node, .{
         .object_method = .{
-            .flags = AST.FunctionFlags.None,
             .name = 1,
             .params = @constCast(&[_]AST.Node.Index{ 3, 4 }),
             .body = 6,
             .return_type = 5,
+            .flags = AST.FunctionFlags.None,
         },
-    }, text);
+    });
 }
 
 test "should return syntax error if open bracket is missing" {
     const text = "foo(): void";
 
-    try expectSyntaxError(parseMethod, text, diagnostics.ARG_expected, .{"{"});
+    var parser, const nodeOrError = try Parser.onceAny(text, parseMethod);
+    defer parser.deinit();
+
+    try parser.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{"{"});
 }
 
 test "should return null if its not async method" {
     const text = "foo(): void {}";
 
-    try expectMaybeAST(parseMethodAsyncGenerator, null, text);
+    var parser, const node = try Parser.once(text, parseMethodAsyncGenerator);
+    defer parser.deinit();
+
+    try parser.expectAST(node, null);
 }
 
 test "should parse async method" {
     const text = "async foo(): void {}";
 
-    try expectMaybeAST(parseMethodAsyncGenerator, AST.Node{
+    var parser, const node = try Parser.once(text, parseMethodAsyncGenerator);
+    defer parser.deinit();
+
+    try parser.expectAST(node, .{
         .object_method = .{
-            .flags = AST.FunctionFlags.Async,
             .name = 1,
+            .flags = AST.FunctionFlags.Async,
             .params = @constCast(&[_]AST.Node.Index{}),
             .body = 3,
             .return_type = 2,
         },
-    }, text);
+    });
 }
 
 test "should return null if its not generator method" {
     const text = "foo(): void {}";
 
-    try expectMaybeAST(parseMethodGenerator, null, text);
+    var parser, const node = try Parser.once(text, parseMethodGenerator);
+    defer parser.deinit();
+
+    try parser.expectAST(node, null);
 }
 
 test "should parse generator method" {
     const text = "*foo(): void {}";
 
-    try expectMaybeAST(parseMethodGenerator, AST.Node{
+    var parser, const node = try Parser.once(text, parseMethodGenerator);
+    defer parser.deinit();
+
+    try parser.expectAST(node, .{
         .object_method = .{
-            .flags = AST.FunctionFlags.Generator,
             .name = 1,
+            .flags = AST.FunctionFlags.Generator,
             .params = @constCast(&[_]AST.Node.Index{}),
             .body = 3,
             .return_type = 2,
         },
-    }, text);
+    });
 }
 
 test "should parse async generator method" {
     const text = "async *foo(): void {}";
 
-    try expectMaybeAST(parseMethodAsyncGenerator, AST.Node{
+    var parser, const node = try Parser.once(text, parseMethodAsyncGenerator);
+    defer parser.deinit();
+
+    try parser.expectAST(node, .{
         .object_method = .{
-            .flags = AST.FunctionFlags.Async | AST.FunctionFlags.Generator,
             .name = 1,
+            .flags = AST.FunctionFlags.Async | AST.FunctionFlags.Generator,
             .params = @constCast(&[_]AST.Node.Index{}),
             .body = 3,
             .return_type = 2,
         },
-    }, text);
+    });
 }
 
 test "should parse number, string, bigint and expresions as method names" {
@@ -535,177 +598,237 @@ test "should parse number, string, bigint and expresions as method names" {
     };
 
     inline for (tests) |test_case| {
-        try expectMaybeAST(parseMethod, test_case[1], test_case[0]);
+        var parser, const node = try Parser.once(test_case[0], parseMethod);
+        defer parser.deinit();
+
+        try parser.expectAST(node, test_case[1]);
     }
 }
 
 test "should return null if its not getter method" {
     const text = "foo(): void {}";
 
-    try expectMaybeAST(parseMethodGetter, null, text);
+    var parser, const node = try Parser.once(text, parseMethodGetter);
+    defer parser.deinit();
+
+    try parser.expectAST(node, null);
 }
 
 test "should parse getter method" {
     const text = "get foo(): void {}";
 
-    try expectMaybeAST(parseMethodGetter, AST.Node{
-        .object_method = .{
-            .flags = AST.FunctionFlags.Getter,
-            .name = 1,
-            .params = @constCast(&[_]AST.Node.Index{}),
-            .body = 3,
-            .return_type = 2,
-        },
-    }, text);
+    var parser, const node = try Parser.once(text, parseMethodGetter);
+    defer parser.deinit();
+
+    try parser.expectAST(node, .{ .object_method = .{
+        .flags = AST.FunctionFlags.Getter,
+        .name = 1,
+        .params = @constCast(&[_]AST.Node.Index{}),
+        .body = 3,
+        .return_type = 2,
+    } });
 }
 
 test "should return syntax error if open bracket is missing when parsing getter" {
     const text = "get foo(): void";
 
-    try expectSyntaxError(parseMethodGetter, text, diagnostics.ARG_expected, .{"{"});
+    var parser, const nodeOrError = try Parser.onceAny(text, parseMethodGetter);
+    defer parser.deinit();
+
+    try parser.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{"{"});
 }
 
 test "should return syntax error if open paren is missing when parsing getter" {
     const text = "get foo): void {}";
 
-    try expectSyntaxError(parseMethodGetter, text, diagnostics.ARG_expected, .{"("});
+    var parser, const nodeOrError = try Parser.onceAny(text, parseMethodGetter);
+    defer parser.deinit();
+
+    try parser.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{"("});
 }
 
 test "should return null if its not setter method" {
     const text = "foo(): void {}";
 
-    try expectMaybeAST(parseMethodSetter, null, text);
+    var parser, const node = try Parser.once(text, parseMethodSetter);
+    defer parser.deinit();
+
+    try parser.expectAST(node, null);
 }
 
 test "should parse setter method" {
     const text = "set foo(a: number): void {}";
 
-    try expectMaybeAST(parseMethodSetter, AST.Node{
-        .object_method = .{
-            .flags = AST.FunctionFlags.Setter,
-            .name = 1,
-            .params = @constCast(&[_]AST.Node.Index{3}),
-            .body = 5,
-            .return_type = 4,
-        },
-    }, text);
+    var parser, const node = try Parser.once(text, parseMethodSetter);
+    defer parser.deinit();
+
+    try parser.expectAST(node, .{ .object_method = .{
+        .name = 1,
+        .flags = AST.FunctionFlags.Setter,
+        .params = @constCast(&[_]AST.Node.Index{3}),
+        .body = 5,
+        .return_type = 4,
+    } });
 }
 
 test "should return syntax error if open paren is missing when parsing setter" {
     const text = "set foo): void {}";
 
-    try expectSyntaxError(parseMethodSetter, text, diagnostics.ARG_expected, .{"("});
+    var parser, const nodeOrError = try Parser.onceAny(text, parseMethodSetter);
+    defer parser.deinit();
+
+    try parser.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{"("});
 }
 
 test "should return syntax error if open bracket is missing when parsing setter" {
     const text = "set foo(a: number): void";
 
-    try expectSyntaxError(parseMethodSetter, text, diagnostics.ARG_expected, .{"{"});
+    var parser, const nodeOrError = try Parser.onceAny(text, parseMethodSetter);
+    defer parser.deinit();
+
+    try parser.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{"{"});
 }
 
 test "should parse method with 'get' as name" {
     const text = "get(): void {}";
 
-    try expectMaybeAST(parseMethodGetter, AST.Node{
-        .object_method = .{
-            .flags = AST.FunctionFlags.None,
-            .name = 1,
-            .params = @constCast(&[_]AST.Node.Index{}),
-            .body = 3,
-            .return_type = 2,
-        },
-    }, text);
+    var parser, const node = try Parser.once(text, parseMethodGetter);
+    defer parser.deinit();
+
+    try parser.expectAST(node, .{ .object_method = .{
+        .flags = AST.FunctionFlags.None,
+        .name = 1,
+        .params = @constCast(&[_]AST.Node.Index{}),
+        .body = 3,
+        .return_type = 2,
+    } });
 }
 
 test "should parse method with 'set' as name" {
     const text = "set(a: number): void {}";
 
-    try expectMaybeAST(parseMethodSetter, AST.Node{
-        .object_method = .{
-            .flags = AST.FunctionFlags.None,
-            .name = 1,
-            .params = @constCast(&[_]AST.Node.Index{3}),
-            .body = 5,
-            .return_type = 4,
-        },
-    }, text);
+    var parser, const node = try Parser.once(text, parseMethodSetter);
+    defer parser.deinit();
+
+    try parser.expectAST(node, .{ .object_method = .{
+        .flags = AST.FunctionFlags.None,
+        .name = 1,
+        .params = @constCast(&[_]AST.Node.Index{3}),
+        .body = 5,
+        .return_type = 4,
+    } });
 }
 
 test "should return null if its not arrow function with 1 arg" {
     const text = "a = b";
 
-    try expectMaybeAST(parseArrowFunction, null, text);
+    var parser, const node = try Parser.once(text, parseArrowFunction);
+    defer parser.deinit();
+
+    try parser.expectAST(node, null);
 }
 
 test "should return null if its not async arrow function with 1 arg" {
     const text = "async a = b";
 
-    try expectMaybeAST(parseAsyncArrowFunction, null, text);
+    var parser, const node = try Parser.once(text, parseAsyncArrowFunction);
+    defer parser.deinit();
+
+    try parser.expectAST(node, null);
 }
 
 test "should return null if its not arrow function with no args" {
     const text = "() = b";
 
-    try expectMaybeAST(parseArrowFunction, null, text);
+    var parser, const node = try Parser.once(text, parseArrowFunction);
+    defer parser.deinit();
+
+    try parser.expectAST(node, null);
 }
 
 test "should return null if its not async arrow function with no args" {
     const text = "async () = b";
 
-    try expectMaybeAST(parseAsyncArrowFunction, null, text);
+    var parser, const node = try Parser.once(text, parseAsyncArrowFunction);
+    defer parser.deinit();
+
+    try parser.expectAST(node, null);
 }
 
 test "should parse arrow function" {
     const text = "a => b";
 
-    try expectMaybeAST(parseArrowFunction, AST.Node{ .arrow_function = .{
-        .type = .arrow,
-        .params = @constCast(&[_]AST.Node.Index{1}),
-        .body = 3,
-        .return_type = 0,
-    } }, text);
+    var parser, const node = try Parser.once(text, parseArrowFunction);
+    defer parser.deinit();
+
+    try parser.expectAST(node, .{
+        .arrow_function = .{
+            .type = .arrow,
+            .params = @constCast(&[_]AST.Node.Index{1}),
+            .body = 3,
+            .return_type = 0,
+        },
+    });
 }
 
 test "should parse async arrow function" {
     const text = "async a => b";
 
-    try expectMaybeAST(parseAsyncArrowFunction, AST.Node{ .arrow_function = .{
-        .type = .async_arrow,
-        .params = @constCast(&[_]AST.Node.Index{1}),
-        .body = 3,
-        .return_type = 0,
-    } }, text);
+    var parser, const node = try Parser.once(text, parseAsyncArrowFunction);
+    defer parser.deinit();
+
+    try parser.expectAST(node, .{
+        .arrow_function = .{
+            .type = .async_arrow,
+            .params = @constCast(&[_]AST.Node.Index{1}),
+            .body = 3,
+            .return_type = 0,
+        },
+    });
 }
 
 test "should parse arrow function without args" {
     const text = "() => {}";
 
-    try expectMaybeAST(parseArrowFunction, AST.Node{ .arrow_function = .{
-        .type = .arrow,
-        .params = &[_]AST.Node.Index{},
-        .body = 1,
-        .return_type = 0,
-    } }, text);
+    var parser, const node = try Parser.once(text, parseArrowFunction);
+    defer parser.deinit();
+
+    try parser.expectAST(node, .{
+        .arrow_function = .{
+            .type = .arrow,
+            .params = &[_]AST.Node.Index{},
+            .body = 1,
+            .return_type = 0,
+        },
+    });
 }
 
 test "should parse async arrow function without args" {
     const text = "async () => {}";
 
-    try expectMaybeAST(parseAsyncArrowFunction, AST.Node{ .arrow_function = .{
-        .type = .async_arrow,
-        .params = &[_]AST.Node.Index{},
-        .body = 1,
-        .return_type = 0,
-    } }, text);
+    var parser, const node = try Parser.once(text, parseAsyncArrowFunction);
+    defer parser.deinit();
+
+    try parser.expectAST(node, .{
+        .arrow_function = .{
+            .type = .async_arrow,
+            .params = &[_]AST.Node.Index{},
+            .body = 1,
+            .return_type = 0,
+        },
+    });
 }
 
 test "should parse arrow function with args" {
     const text = "(a: number, b): string => {}";
 
-    try expectMaybeAST(parseArrowFunction, AST.Node{ .arrow_function = .{
+    var parser, const node = try Parser.once(text, parseArrowFunction);
+    defer parser.deinit();
+
+    try parser.expectAST(node, .{ .arrow_function = .{
         .type = .arrow,
         .params = @constCast(&[_]AST.Node.Index{ 2, 3 }),
         .body = 5,
         .return_type = 4,
-    } }, text);
+    } });
 }
