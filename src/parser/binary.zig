@@ -11,9 +11,12 @@ const parseAsyncArrowFunction = @import("functions.zig").parseAsyncArrowFunction
 const parseArrowFunction = @import("functions.zig").parseArrowFunction;
 const parseConditionalExpression = @import("expressions.zig").parseConditionalExpression;
 
+const TestParser = @import("../test_parser.zig");
+const MarkerList = @import("../test_parser.zig").MarkerList;
+const Marker = @import("../test_parser.zig").Marker;
+
 const expectEqual = std.testing.expectEqual;
 const expectEqualDeep = std.testing.expectEqualDeep;
-const expectAST = Parser.expectAST;
 
 const assignment_map = .{
     .{ TokenType.Equal, "assignment" },
@@ -107,9 +110,13 @@ fn binaryOperatorMatches(parser: *Parser, operator_index: comptime_int) bool {
     return parser.match(binary_operators[operator_index][0]);
 }
 
-pub fn parseBinaryExpression(parser: *Parser, operator_index: comptime_int) ParserError!AST.Node.Index {
+pub fn parseBinaryExpression(parser: *Parser) ParserError!AST.Node.Index {
+    return try parseBinaryExpressionExtra(parser, 0);
+}
+
+pub fn parseBinaryExpressionExtra(parser: *Parser, operator_index: comptime_int) ParserError!AST.Node.Index {
     var node = if (operator_index + 1 < binary_operators.len)
-        try parseBinaryExpression(parser, operator_index + 1)
+        try parseBinaryExpressionExtra(parser, operator_index + 1)
     else
         try parseUnary(parser);
 
@@ -117,7 +124,7 @@ pub fn parseBinaryExpression(parser: *Parser, operator_index: comptime_int) Pars
         const new_node = parser.addNode(parser.cur_token, @unionInit(AST.Node, binary_operators[operator_index][1], .{
             .left = node,
             .right = if (operator_index + 1 < binary_operators.len)
-                try parseBinaryExpression(parser, operator_index + 1)
+                try parseBinaryExpressionExtra(parser, operator_index + 1)
             else
                 try parseUnary(parser),
         }));
@@ -157,11 +164,11 @@ test "should parse binary expression" {
 
     try expectEqual(test_cases.len, binary_operators.len);
     inline for (test_cases, 0..) |test_case, i| {
-        var parser = try Parser.init(std.testing.allocator, test_case);
-        defer parser.deinit();
-
-        const node = try parseBinaryExpression(&parser, 0);
-        try expectEqualDeep(@unionInit(AST.Node, binary_operators[i][1], .{ .left = 1, .right = 2 }), parser.getNode(node));
+        try TestParser.run(test_case, parseBinaryExpression, struct {
+            pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(test_case)) !void {
+                try t.expectAST(node, @unionInit(AST.Node, binary_operators[i][1], .{ .left = 1, .right = 2 }));
+            }
+        });
     }
 }
 
@@ -194,10 +201,10 @@ test "should parse assignment expression" {
 
     try expectEqual(test_cases.len, assignment_map.len);
     inline for (test_cases, 0..) |test_case, i| {
-        var parser = try Parser.init(std.testing.allocator, test_case);
-        defer parser.deinit();
-
-        const node = try parseAssignment(&parser);
-        try expectEqualDeep(@unionInit(AST.Node, assignment_map[i][1], .{ .left = 2, .right = 4 }), parser.getNode(node));
+        try TestParser.run(test_case, parseAssignment, struct {
+            pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(test_case)) !void {
+                try t.expectAST(node, @unionInit(AST.Node, assignment_map[i][1], .{ .left = 2, .right = 4 }));
+            }
+        });
     }
 }

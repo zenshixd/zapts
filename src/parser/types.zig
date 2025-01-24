@@ -9,9 +9,11 @@ const diagnostics = @import("../diagnostics.zig");
 const parseIdentifier = @import("primary.zig").parseIdentifier;
 const parseKeywordAsIdentifier = @import("primary.zig").parseKeywordAsIdentifier;
 
+const Marker = @import("../test_parser.zig").Marker;
+const MarkerList = @import("../test_parser.zig").MarkerList;
+const TestParser = @import("../test_parser.zig");
+
 const expectEqual = std.testing.expectEqual;
-const expectAST = Parser.expectAST;
-const expectSyntaxError = Parser.expectSyntaxError;
 
 pub fn parseOptionalDataType(self: *Parser) ParserError!AST.Node.Index {
     if (self.match(TokenType.Colon)) {
@@ -373,19 +375,22 @@ fn parseInterfaceDeclaration(self: *Parser) ParserError!?AST.Node.Index {
 
 test "should parse optional data type" {
     const text = ": number";
-    var parser, const node = try Parser.once(text, parseOptionalDataType);
-    defer parser.deinit();
 
-    try parser.expectAST(node, AST.Node{ .simple_type = .{ .kind = .number } });
+    try TestParser.run(text, parseOptionalDataType, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectAST(node, AST.Node{ .simple_type = .{ .kind = .number } });
+        }
+    });
 }
 
 test "should return Empty node if no data type" {
     const text = "ident";
 
-    var parser, const node = try Parser.once(text, parseOptionalDataType);
-    defer parser.deinit();
-
-    try expectEqual(AST.Node.Empty, node);
+    try TestParser.run(text, parseOptionalDataType, struct {
+        pub fn expect(_: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+            try expectEqual(AST.Node.Empty, node);
+        }
+    });
 }
 
 test "should parse primary symbol type" {
@@ -402,20 +407,22 @@ test "should parse primary symbol type" {
     };
 
     inline for (tests) |test_case| {
-        var parser, const node = try Parser.once(test_case[0], parseSymbolType);
-        defer parser.deinit();
-
-        try parser.expectAST(node, test_case[1]);
+        try TestParser.run(test_case[0], parseSymbolType, struct {
+            pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(test_case[0])) !void {
+                try t.expectAST(node, test_case[1]);
+            }
+        });
     }
 }
 
 test "should return syntax error if its not a symbol type" {
     const text = "+";
 
-    var parser, const node = try Parser.onceAny(text, parseSymbolType);
-    defer parser.deinit();
-
-    try parser.expectSyntaxError(node, diagnostics.type_expected, .{});
+    try TestParser.runAny(text, parseSymbolType, struct {
+        pub fn expect(t: TestParser, nodeOrError: Parser.ParserError!AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectSyntaxError(nodeOrError, diagnostics.type_expected, .{});
+        }
+    });
 }
 
 test "should parse unary type operators" {
@@ -425,65 +432,71 @@ test "should parse unary type operators" {
     };
 
     inline for (tests) |test_case| {
-        var parser, const node = try Parser.once(test_case[0], parseSymbolType);
-        defer parser.deinit();
-
-        try parser.expectAST(node, test_case[1]);
+        try TestParser.run(test_case[0], parseSymbolType, struct {
+            pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(test_case[0])) !void {
+                try t.expectAST(node, test_case[1]);
+            }
+        });
     }
 }
 
 test "should parse generic type" {
     const text = "Array<number>";
 
-    var parser, const node = try Parser.once(text, parseSymbolType);
-    defer parser.deinit();
-
-    try parser.expectAST(node, AST.Node{ .generic_type = .{
-        .name = 1,
-        .params = @constCast(&[_]AST.Node.Index{2}),
-    } });
+    try TestParser.run(text, parseSymbolType, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectAST(node, AST.Node{ .generic_type = .{
+                .name = 1,
+                .params = @constCast(&[_]AST.Node.Index{2}),
+            } });
+        }
+    });
 }
 
 test "should parse generic type with multiple params" {
     const text = "Array<number, string>";
 
-    var parser, const node = try Parser.once(text, parseSymbolType);
-    defer parser.deinit();
-
-    try parser.expectAST(node, AST.Node{ .generic_type = .{
-        .name = 1,
-        .params = @constCast(&[_]AST.Node.Index{ 2, 3 }),
-    } });
+    try TestParser.run(text, parseSymbolType, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectAST(node, AST.Node{ .generic_type = .{
+                .name = 1,
+                .params = @constCast(&[_]AST.Node.Index{ 2, 3 }),
+            } });
+        }
+    });
 }
 
 test "should parse nested generic type" {
     const text = "Array<Array<number>>";
 
-    var parser, const node = try Parser.once(text, parseSymbolType);
-    defer parser.deinit();
-
-    try parser.expectAST(node, AST.Node{ .generic_type = .{
-        .name = 1,
-        .params = @constCast(&[_]AST.Node.Index{4}),
-    } });
+    try TestParser.run(text, parseSymbolType, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectAST(node, AST.Node{ .generic_type = .{
+                .name = 1,
+                .params = @constCast(&[_]AST.Node.Index{4}),
+            } });
+        }
+    });
 }
 
 test "should parse array type" {
     const text = "number[]";
 
-    var parser, const node = try Parser.once(text, parseSymbolType);
-    defer parser.deinit();
-
-    try parser.expectAST(node, AST.Node{ .array_type = 1 });
+    try TestParser.run(text, parseSymbolType, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectAST(node, AST.Node{ .array_type = 1 });
+        }
+    });
 }
 
 test "should parse tuple type" {
     const text = "[number, string]";
 
-    var parser, const node = try Parser.once(text, parseSymbolType);
-    defer parser.deinit();
-
-    try parser.expectAST(node, AST.Node{ .tuple_type = @constCast(&[_]AST.Node.Index{ 1, 2 }) });
+    try TestParser.run(text, parseSymbolType, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectAST(node, AST.Node{ .tuple_type = @constCast(&[_]AST.Node.Index{ 1, 2 }) });
+        }
+    });
 }
 
 test "should parse object type" {
@@ -493,19 +506,18 @@ test "should parse object type" {
     };
 
     inline for (texts) |text| {
-        var parser = try Parser.init(std.testing.allocator, text);
-        defer parser.deinit();
-
-        _ = try parseObjectType(&parser);
-
-        try parser.expectNodesToEqual(&[_]AST.Raw{
-            .{ .tag = .simple_value, .main_token = 1, .data = .{ .lhs = 1, .rhs = 0 } },
-            .{ .tag = .simple_type, .main_token = 3, .data = .{ .lhs = 3, .rhs = 0 } },
-            .{ .tag = .object_type_field, .main_token = 4, .data = .{ .lhs = 1, .rhs = 2 } },
-            .{ .tag = .simple_value, .main_token = 5, .data = .{ .lhs = 1, .rhs = 0 } },
-            .{ .tag = .simple_type, .main_token = 7, .data = .{ .lhs = 5, .rhs = 0 } },
-            .{ .tag = .object_type_field, .main_token = 8, .data = .{ .lhs = 5, .rhs = 5 } },
-            .{ .tag = .object_type, .main_token = 9, .data = .{ .lhs = 0, .rhs = 2 } },
+        try TestParser.run(text, parseObjectType, struct {
+            pub fn expect(t: TestParser, _: ?AST.Node.Index, _: MarkerList(text)) !void {
+                try t.expectNodesToEqual(&[_]AST.Raw{
+                    .{ .tag = .simple_value, .main_token = 1, .data = .{ .lhs = 1, .rhs = 0 } },
+                    .{ .tag = .simple_type, .main_token = 3, .data = .{ .lhs = 3, .rhs = 0 } },
+                    .{ .tag = .object_type_field, .main_token = 4, .data = .{ .lhs = 1, .rhs = 2 } },
+                    .{ .tag = .simple_value, .main_token = 5, .data = .{ .lhs = 1, .rhs = 0 } },
+                    .{ .tag = .simple_type, .main_token = 7, .data = .{ .lhs = 5, .rhs = 0 } },
+                    .{ .tag = .object_type_field, .main_token = 8, .data = .{ .lhs = 5, .rhs = 5 } },
+                    .{ .tag = .object_type, .main_token = 9, .data = .{ .lhs = 0, .rhs = 2 } },
+                });
+            }
         });
     }
 }
@@ -517,20 +529,19 @@ test "should parse method type" {
     };
 
     inline for (texts, 0..) |text, i| {
-        var parser = try Parser.init(std.testing.allocator, text);
-        defer parser.deinit();
-
-        _ = try parseObjectMethodType(&parser);
-
-        try parser.expectNodesToEqual(&[_]AST.Raw{
-            .{ .tag = .simple_value, .main_token = 0, .data = .{ .lhs = 1, .rhs = 0 } },
-            .{ .tag = .simple_type, .main_token = 4, .data = .{ .lhs = 3, .rhs = 0 } },
-            .{ .tag = .function_param, .main_token = 2, .data = .{ .lhs = 2, .rhs = 2 } },
-            .{ .tag = .simple_type, .main_token = 8, .data = .{ .lhs = 5, .rhs = 0 } },
-            .{ .tag = .function_param, .main_token = 6, .data = .{ .lhs = 6, .rhs = 4 } },
-            .{ .tag = .simple_type, .main_token = 11 + i, .data = .{ .lhs = 6, .rhs = 0 } },
-            .{ .tag = .function_type, .main_token = 1, .data = .{ .lhs = 2, .rhs = 6 } },
-            .{ .tag = .object_type_field, .main_token = 1, .data = .{ .lhs = 1, .rhs = 7 } },
+        try TestParser.run(text, parseObjectMethodType, struct {
+            pub fn expect(t: TestParser, _: ?AST.Node.Index, _: MarkerList(text)) !void {
+                try t.expectNodesToEqual(&[_]AST.Raw{
+                    .{ .tag = .simple_value, .main_token = 0, .data = .{ .lhs = 1, .rhs = 0 } },
+                    .{ .tag = .simple_type, .main_token = 4, .data = .{ .lhs = 3, .rhs = 0 } },
+                    .{ .tag = .function_param, .main_token = 2, .data = .{ .lhs = 2, .rhs = 2 } },
+                    .{ .tag = .simple_type, .main_token = 8, .data = .{ .lhs = 5, .rhs = 0 } },
+                    .{ .tag = .function_param, .main_token = 6, .data = .{ .lhs = 6, .rhs = 4 } },
+                    .{ .tag = .simple_type, .main_token = 11 + i, .data = .{ .lhs = 6, .rhs = 0 } },
+                    .{ .tag = .function_type, .main_token = 1, .data = .{ .lhs = 2, .rhs = 6 } },
+                    .{ .tag = .object_type_field, .main_token = 1, .data = .{ .lhs = 1, .rhs = 7 } },
+                });
+            }
         });
     }
 }
@@ -542,21 +553,20 @@ test "should parse method with generics" {
     };
 
     inline for (texts, 0..) |text, i| {
-        var parser = try Parser.init(std.testing.allocator, text);
-        defer parser.deinit();
-
-        _ = try parseObjectMethodType(&parser);
-
-        try parser.expectNodesToEqual(&[_]AST.Raw{
-            .{ .tag = .simple_value, .main_token = 0, .data = .{ .lhs = 1, .rhs = 0 } },
-            .{ .tag = .simple_type, .main_token = 2, .data = .{ .lhs = 1, .rhs = 0 } },
-            .{ .tag = .simple_type, .main_token = 7 + i, .data = .{ .lhs = 1, .rhs = 0 } },
-            .{ .tag = .function_param, .main_token = 5 + i, .data = .{ .lhs = 5 + i, .rhs = 3 } },
-            .{ .tag = .simple_type, .main_token = 11 + i, .data = .{ .lhs = 1, .rhs = 0 } },
-            .{ .tag = .function_param, .main_token = 9 + i, .data = .{ .lhs = 9 + i, .rhs = 5 } },
-            .{ .tag = .simple_type, .main_token = 14 + i, .data = .{ .lhs = 6, .rhs = 0 } },
-            .{ .tag = .function_type, .main_token = 4 + i, .data = .{ .lhs = 3, .rhs = 7 } },
-            .{ .tag = .object_type_field, .main_token = 1, .data = .{ .lhs = 1, .rhs = 8 } },
+        try TestParser.run(text, parseObjectMethodType, struct {
+            pub fn expect(t: TestParser, _: ?AST.Node.Index, _: MarkerList(text)) !void {
+                try t.expectNodesToEqual(&[_]AST.Raw{
+                    .{ .tag = .simple_value, .main_token = 0, .data = .{ .lhs = 1, .rhs = 0 } },
+                    .{ .tag = .simple_type, .main_token = 2, .data = .{ .lhs = 1, .rhs = 0 } },
+                    .{ .tag = .simple_type, .main_token = 7 + i, .data = .{ .lhs = 1, .rhs = 0 } },
+                    .{ .tag = .function_param, .main_token = 5 + i, .data = .{ .lhs = 5 + i, .rhs = 3 } },
+                    .{ .tag = .simple_type, .main_token = 11 + i, .data = .{ .lhs = 1, .rhs = 0 } },
+                    .{ .tag = .function_param, .main_token = 9 + i, .data = .{ .lhs = 9 + i, .rhs = 5 } },
+                    .{ .tag = .simple_type, .main_token = 14 + i, .data = .{ .lhs = 6, .rhs = 0 } },
+                    .{ .tag = .function_type, .main_token = 4 + i, .data = .{ .lhs = 3, .rhs = 7 } },
+                    .{ .tag = .object_type_field, .main_token = 1, .data = .{ .lhs = 1, .rhs = 8 } },
+                });
+            }
         });
     }
 }
@@ -564,85 +574,91 @@ test "should parse method with generics" {
 test "should return syntax error if there is no comma between generic params" {
     const text = "fn<T B>(a: T): boolean";
 
-    var parser, const node = try Parser.onceAny(text, parseObjectMethodType);
-    defer parser.deinit();
-
-    try parser.expectSyntaxError(node, diagnostics.ARG_expected, .{","});
+    try TestParser.runAny(text, parseObjectMethodType, struct {
+        pub fn expect(t: TestParser, nodeOrError: Parser.ParserError!?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{","});
+        }
+    });
 }
 
 test "should parse method type with types" {
     const text = "fn(a, b)";
 
-    var parser = try Parser.init(std.testing.allocator, text);
-    defer parser.deinit();
-
-    _ = try parseObjectMethodType(&parser);
-
-    try parser.expectNodesToEqual(&[_]AST.Raw{
-        .{ .tag = .simple_value, .main_token = 0, .data = .{ .lhs = 1, .rhs = 0 } },
-        .{ .tag = .function_param, .main_token = 2, .data = .{ .lhs = 2, .rhs = 0 } },
-        .{ .tag = .function_param, .main_token = 4, .data = .{ .lhs = 4, .rhs = 0 } },
-        .{ .tag = .function_type, .main_token = 1, .data = .{ .lhs = 2, .rhs = 0 } },
-        .{ .tag = .object_type_field, .main_token = 1, .data = .{ .lhs = 1, .rhs = 4 } },
+    try TestParser.run(text, parseObjectMethodType, struct {
+        pub fn expect(t: TestParser, _: ?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectNodesToEqual(&[_]AST.Raw{
+                .{ .tag = .simple_value, .main_token = 0, .data = .{ .lhs = 1, .rhs = 0 } },
+                .{ .tag = .function_param, .main_token = 2, .data = .{ .lhs = 2, .rhs = 0 } },
+                .{ .tag = .function_param, .main_token = 4, .data = .{ .lhs = 4, .rhs = 0 } },
+                .{ .tag = .function_type, .main_token = 1, .data = .{ .lhs = 2, .rhs = 0 } },
+                .{ .tag = .object_type_field, .main_token = 1, .data = .{ .lhs = 1, .rhs = 4 } },
+            });
+        }
     });
 }
 
 test "should return null if its not method type" {
     const text = "[number, string]";
 
-    var parser, const node = try Parser.once(text, parseObjectMethodType);
-    defer parser.deinit();
-
-    try parser.expectAST(node, null);
+    try TestParser.run(text, parseObjectMethodType, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectAST(node, null);
+        }
+    });
 }
 
 test "should return syntax error if there is no comma after params" {
     const text = "fn(a: number b: string): boolean";
 
-    var parser, const node = try Parser.onceAny(text, parseObjectMethodType);
-    defer parser.deinit();
-
-    try parser.expectSyntaxError(node, diagnostics.ARG_expected, .{","});
+    try TestParser.runAny(text, parseObjectMethodType, struct {
+        pub fn expect(t: TestParser, nodeOrError: Parser.ParserError!?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{","});
+        }
+    });
 }
 
 test "should return syntax error if param is not identifier" {
     const text = "fn(void): boolean";
 
-    var parser, const node = try Parser.onceAny(text, parseObjectMethodType);
-    defer parser.deinit();
-
-    try parser.expectSyntaxError(node, diagnostics.identifier_expected, .{});
+    try TestParser.runAny(text, parseObjectMethodType, struct {
+        pub fn expect(t: TestParser, nodeOrError: Parser.ParserError!?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectSyntaxError(nodeOrError, diagnostics.identifier_expected, .{});
+        }
+    });
 }
 
 test "should parse type identifier" {
     const text = "Array";
 
-    var parser, const node = try Parser.once(text, parseSymbolType);
-    defer parser.deinit();
-
-    try parser.expectAST(node, AST.Node{ .simple_type = .{ .kind = .identifier } });
+    try TestParser.run(text, parseSymbolType, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectAST(node, AST.Node{ .simple_type = .{ .kind = .identifier } });
+        }
+    });
 }
 
 test "should parse type union" {
     const text = "number | string";
 
-    var parser, const node = try Parser.once(text, parseSymbolType);
-    defer parser.deinit();
-
-    try parser.expectAST(node, AST.Node{ .type_union = .{
-        .left = 1,
-        .right = 2,
-    } });
+    try TestParser.run(text, parseSymbolType, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectAST(node, AST.Node{ .type_union = .{
+                .left = 1,
+                .right = 2,
+            } });
+        }
+    });
 }
 
 test "should parse type intersection" {
     const text = "number & string";
 
-    var parser, const node = try Parser.once(text, parseSymbolType);
-    defer parser.deinit();
-
-    try parser.expectAST(node, AST.Node{ .type_intersection = .{
-        .left = 1,
-        .right = 2,
-    } });
+    try TestParser.run(text, parseSymbolType, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectAST(node, AST.Node{ .type_intersection = .{
+                .left = 1,
+                .right = 2,
+            } });
+        }
+    });
 }

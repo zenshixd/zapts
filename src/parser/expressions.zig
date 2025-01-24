@@ -11,8 +11,9 @@ const parseBinaryExpression = @import("binary.zig").parseBinaryExpression;
 const parsePrimaryExpression = @import("primary.zig").parsePrimaryExpression;
 const parseIdentifier = @import("primary.zig").parseIdentifier;
 
-const expectAST = @import("../parser.zig").expectAST;
-const expectSyntaxError = @import("../parser.zig").expectSyntaxError;
+const TestParser = @import("../test_parser.zig");
+const MarkerList = @import("../test_parser.zig").MarkerList;
+const Marker = @import("../test_parser.zig").Marker;
 
 pub fn parseExpression(self: *Parser) ParserError!AST.Node.Index {
     var node = try parseAssignment(self);
@@ -50,7 +51,7 @@ pub fn parseConditionalExpression(self: *Parser) ParserError!AST.Node.Index {
 }
 
 pub fn parseShortCircuitExpression(self: *Parser) ParserError!AST.Node.Index {
-    return try parseBinaryExpression(self, 0);
+    return try parseBinaryExpression(self);
 }
 const unary_operators = .{
     .{ .token = TokenType.Minus, .tag = "minus" },
@@ -196,47 +197,51 @@ pub fn parsePropertyAccess(self: *Parser, expr: AST.Node.Index) ParserError!?AST
 test "should parse comma expression" {
     const text = "a = b, c";
 
-    var parser, const node = try Parser.once(text, parseExpression);
-    defer parser.deinit();
-
-    try parser.expectAST(node, AST.Node{ .comma = .{
-        .left = 5,
-        .right = 7,
-    } });
+    try TestParser.run(text, parseExpression, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectAST(node, AST.Node{ .comma = .{
+                .left = 5,
+                .right = 7,
+            } });
+        }
+    });
 }
 
 test "should parse conditional expression" {
     const text = "a ? b : c";
 
-    var parser, const node = try Parser.once(text, parseExpression);
-    defer parser.deinit();
-
-    try parser.expectAST(node, AST.Node{ .ternary_expr = .{
-        .expr = 2,
-        .body = 4,
-        .@"else" = 6,
-    } });
+    try TestParser.run(text, parseExpression, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectAST(node, AST.Node{ .ternary_expr = .{
+                .expr = 2,
+                .body = 4,
+                .@"else" = 6,
+            } });
+        }
+    });
 }
 
 test "should return syntax error if short circuit expression is missing" {
     const text = "a ? b";
 
-    var parser, const nodeOrError = try Parser.onceAny(text, parseExpression);
-    defer parser.deinit();
-
-    try parser.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{":"});
+    try TestParser.runAny(text, parseExpression, struct {
+        pub fn expect(t: TestParser, nodeOrError: Parser.ParserError!AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{":"});
+        }
+    });
 }
 
 test "should parse short circuit expression" {
     const text = "a ?? b";
 
-    var parser, const node = try Parser.once(text, parseExpression);
-    defer parser.deinit();
-
-    try parser.expectAST(node, AST.Node{ .coalesce = .{
-        .left = 2,
-        .right = 3,
-    } });
+    try TestParser.run(text, parseExpression, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectAST(node, AST.Node{ .coalesce = .{
+                .left = 2,
+                .right = 3,
+            } });
+        }
+    });
 }
 
 test "should parse unary expression" {
@@ -251,10 +256,11 @@ test "should parse unary expression" {
     };
 
     inline for (tests) |test_case| {
-        var parser, const node = try Parser.once(test_case[0], parseUnary);
-        defer parser.deinit();
-
-        try parser.expectAST(node, test_case[1]);
+        try TestParser.run(test_case[0], parseUnary, struct {
+            pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(test_case[0])) !void {
+                try t.expectAST(node, test_case[1]);
+            }
+        });
     }
 }
 
@@ -267,47 +273,52 @@ test "should parse update expression" {
     };
 
     inline for (tests) |test_case| {
-        var parser, const node = try Parser.once(test_case[0], parseUnary);
-        defer parser.deinit();
-
-        try parser.expectAST(node, test_case[1]);
+        try TestParser.run(test_case[0], parseUnary, struct {
+            pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(test_case[0])) !void {
+                try t.expectAST(node, test_case[1]);
+            }
+        });
     }
 }
 
 test "should parse left hand side expression" {
     const text = "a()";
 
-    var parser, const node = try Parser.once(text, parseLeftHandSideExpression);
-    defer parser.deinit();
-
-    try parser.expectAST(node, AST.Node{ .call_expr = .{ .node = 1, .params = &.{} } });
+    try TestParser.run(text, parseLeftHandSideExpression, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectAST(node, AST.Node{ .call_expr = .{ .node = 1, .params = &.{} } });
+        }
+    });
 }
 
 test "should return syntax error if left hand side expression is missing" {
     const text = "()";
 
-    var parser, const nodeOrError = try Parser.onceAny(text, parseLeftHandSideExpression);
-    defer parser.deinit();
-
-    try parser.expectSyntaxError(nodeOrError, diagnostics.identifier_expected, .{});
+    try TestParser.runAny(text, parseLeftHandSideExpression, struct {
+        pub fn expect(t: TestParser, nodeOrError: Parser.ParserError!AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectSyntaxError(nodeOrError, diagnostics.identifier_expected, .{});
+        }
+    });
 }
 
 test "should parse new expression" {
     const text = "new a";
 
-    var parser, const node = try Parser.once(text, parseNewExpression);
-    defer parser.deinit();
-
-    try parser.expectAST(node, AST.Node{ .new_expr = 1 });
+    try TestParser.run(text, parseNewExpression, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectAST(node, AST.Node{ .new_expr = 1 });
+        }
+    });
 }
 
 test "should return null if new expression is missing" {
     const text = "a";
 
-    var parser, const node = try Parser.once(text, parseNewExpression);
-    defer parser.deinit();
-
-    try parser.expectAST(node, null);
+    try TestParser.run(text, parseNewExpression, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectAST(node, null);
+        }
+    });
 }
 
 test "should parse member expression" {
@@ -319,20 +330,22 @@ test "should parse member expression" {
     };
 
     inline for (tests) |test_case| {
-        var parser, const node = try Parser.once(test_case[0], parseMemberExpression);
-        defer parser.deinit();
-
-        try parser.expectAST(node, test_case[1]);
+        try TestParser.run(test_case[0], parseMemberExpression, struct {
+            pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(test_case[0])) !void {
+                try t.expectAST(node, test_case[1]);
+            }
+        });
     }
 }
 
 test "should return syntax error if property access key is not identifier" {
     const text = "a.'123'";
 
-    var parser, const nodeOrError = try Parser.onceAny(text, parseMemberExpression);
-    defer parser.deinit();
-
-    try parser.expectSyntaxError(nodeOrError, diagnostics.identifier_expected, .{});
+    try TestParser.runAny(text, parseMemberExpression, struct {
+        pub fn expect(t: TestParser, nodeOrError: Parser.ParserError!?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectSyntaxError(nodeOrError, diagnostics.identifier_expected, .{});
+        }
+    });
 }
 
 test "should parse chained member expression" {
@@ -358,11 +371,11 @@ test "should parse chained member expression" {
     };
 
     inline for (tests) |test_case| {
-        var parser = try Parser.init(std.testing.allocator, test_case[0]);
-        defer parser.deinit();
-
-        _ = try parseMemberExpression(&parser);
-        try parser.expectNodesToEqual(test_case[1]);
+        try TestParser.run(test_case[0], parseMemberExpression, struct {
+            pub fn expect(t: TestParser, _: ?AST.Node.Index, _: MarkerList(test_case[0])) !void {
+                try t.expectNodesToEqual(test_case[1]);
+            }
+        });
     }
 }
 
@@ -376,18 +389,20 @@ test "should parse callable expression" {
     };
 
     inline for (tests) |test_case| {
-        var parser, const node = try Parser.once(test_case[0], parseCallableExpression);
-        defer parser.deinit();
-
-        try parser.expectAST(node, test_case[1]);
+        try TestParser.run(test_case[0], parseCallableExpression, struct {
+            pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(test_case[0])) !void {
+                try t.expectAST(node, test_case[1]);
+            }
+        });
     }
 }
 
 test "should return syntax error if comma is missing between params" {
     const text = "a(b c)";
 
-    var parser, const nodeOrError = try Parser.onceAny(text, parseCallableExpression);
-    defer parser.deinit();
-
-    try parser.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{","});
+    try TestParser.runAny(text, parseCallableExpression, struct {
+        pub fn expect(t: TestParser, nodeOrError: Parser.ParserError!?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{","});
+        }
+    });
 }

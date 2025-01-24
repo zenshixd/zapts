@@ -22,14 +22,14 @@ const parseExpression = @import("expressions.zig").parseExpression;
 
 const ParserError = Parser.ParserError;
 
+const Marker = @import("../test_parser.zig").Marker;
+const MarkerList = @import("../test_parser.zig").MarkerList;
+const TestParser = @import("../test_parser.zig");
+
 const expectEqual = std.testing.expectEqual;
 const expectEqualDeep = std.testing.expectEqualDeep;
 const expectEqualStrings = std.testing.expectEqualStrings;
 const expectError = std.testing.expectError;
-const testParser = Parser.testParser;
-const expectAST = Parser.expectAST;
-const expectToken = Parser.expectToken;
-const expectSyntaxError = Parser.expectSyntaxError;
 
 pub fn parsePrimaryExpression(parser: *Parser) ParserError!?AST.Node.Index {
     return try parseIdentifier(parser) orelse
@@ -89,6 +89,7 @@ pub fn parseArrayLiteral(parser: *Parser) ParserError!?AST.Node.Index {
         return null;
     }
 
+    const main_token = parser.cur_token - 1;
     var values = std.ArrayList(AST.Node.Index).init(parser.gpa);
     defer values.deinit();
 
@@ -111,7 +112,7 @@ pub fn parseArrayLiteral(parser: *Parser) ParserError!?AST.Node.Index {
         }
     }
 
-    return parser.addNode(parser.cur_token, AST.Node{
+    return parser.addNode(main_token, AST.Node{
         .array_literal = values.items,
     });
 }
@@ -121,6 +122,7 @@ pub fn parseObjectLiteral(parser: *Parser) ParserError!?AST.Node.Index {
         return null;
     }
 
+    const main_token = parser.cur_token - 1;
     var nodes = std.ArrayList(AST.Node.Index).init(parser.gpa);
     defer nodes.deinit();
 
@@ -138,7 +140,7 @@ pub fn parseObjectLiteral(parser: *Parser) ParserError!?AST.Node.Index {
         _ = try parser.consume(TokenType.Comma, diagnostics.ARG_expected, .{","});
     }
 
-    return parser.addNode(parser.cur_token, AST.Node{
+    return parser.addNode(main_token, AST.Node{
         .object_literal = nodes.items,
     });
 }
@@ -154,6 +156,7 @@ pub fn parseObjectField(parser: *Parser) ParserError!?AST.Node.Index {
         return node;
     }
 
+    const main_token = parser.cur_token;
     const identifier = try parseObjectElementName(parser);
 
     if (identifier == null) {
@@ -161,14 +164,14 @@ pub fn parseObjectField(parser: *Parser) ParserError!?AST.Node.Index {
     }
 
     if (parser.match(TokenType.Colon)) {
-        return parser.addNode(parser.cur_token, AST.Node{
+        return parser.addNode(main_token, AST.Node{
             .object_literal_field = .{
                 .left = identifier.?,
                 .right = try parseAssignment(parser),
             },
         });
     } else if (parser.peekMatch(TokenType.Comma) or parser.peekMatch(TokenType.CloseCurlyBrace)) {
-        return parser.addNode(parser.cur_token, AST.Node{
+        return parser.addNode(main_token, AST.Node{
             .object_literal_field_shorthand = identifier.?,
         });
     }
@@ -181,14 +184,14 @@ pub fn parseSpreadExpression(parser: *Parser) ParserError!?AST.Node.Index {
         return null;
     }
 
-    return parser.addNode(parser.cur_token, AST.Node{
+    return parser.addNode(parser.cur_token - 1, AST.Node{
         .spread = try parseAssignment(parser),
     });
 }
 
 pub fn parseGroupingExpression(parser: *Parser) ParserError!?AST.Node.Index {
     if (parser.match(TokenType.OpenParen)) {
-        const node = parser.addNode(parser.cur_token, AST.Node{
+        const node = parser.addNode(parser.cur_token - 1, AST.Node{
             .grouping = try parseExpression(parser),
         });
 
@@ -202,117 +205,136 @@ pub fn parseGroupingExpression(parser: *Parser) ParserError!?AST.Node.Index {
 test "should parse primary expression" {
     const test_cases = .{
         .{
-            "this",
-            "^   ",
+            \\ this
+            \\>^   
+            ,
             AST.Node{ .simple_value = .{ .kind = .this } },
         },
         .{
-            "identifier",
-            "^         ",
+            \\ identifier
+            \\>^         
+            ,
             AST.Node{ .simple_value = .{ .kind = .identifier } },
         },
         .{
-            "123",
-            "^  ",
+            \\ 123
+            \\>^  
+            ,
             AST.Node{ .simple_value = .{ .kind = .number } },
         },
         .{
-            "{a: 1}",
-            "^     ",
+            \\ {a: 1}
+            \\>^     
+            ,
             AST.Node{ .object_literal = @constCast(&[_]AST.Node.Index{4}) },
         },
         .{
-            "[1, 2]",
-            "^     ",
-            AST.Node{ .array_literal = @constCast(&[_]AST.Node.Index{ 9, 10 }) },
+            \\ [1, 2]
+            \\>^     
+            ,
+            AST.Node{ .array_literal = @constCast(&[_]AST.Node.Index{ 1, 2 }) },
         },
         .{
-            "function() {}",
-            "^            ",
-            AST.Node{ .function_decl = .{ .flags = AST.FunctionFlags.None, .name = 0, .params = &[_]AST.Node.Index{}, .body = 12, .return_type = 0 } },
+            \\ function() {}
+            \\>^
+            ,
+            AST.Node{ .function_decl = .{ .flags = AST.FunctionFlags.None, .name = 0, .params = &[_]AST.Node.Index{}, .body = 1, .return_type = 0 } },
         },
         .{
-            "function*() {}",
-            "^             ",
-            AST.Node{ .function_decl = .{ .flags = AST.FunctionFlags.Generator, .name = 0, .params = &[_]AST.Node.Index{}, .body = 14, .return_type = 0 } },
+            \\ function*() {}
+            \\>^
+            ,
+            AST.Node{ .function_decl = .{ .flags = AST.FunctionFlags.Generator, .name = 0, .params = &[_]AST.Node.Index{}, .body = 1, .return_type = 0 } },
         },
         .{
-            "async function() {}",
-            "^                  ",
-            AST.Node{ .function_decl = .{ .flags = AST.FunctionFlags.Async, .name = 0, .params = &[_]AST.Node.Index{}, .body = 16, .return_type = 0 } },
+            \\ async function() {}
+            \\>^
+            ,
+            AST.Node{ .function_decl = .{ .flags = AST.FunctionFlags.Async, .name = 0, .params = &[_]AST.Node.Index{}, .body = 1, .return_type = 0 } },
         },
         .{
-            "async function*() {}",
-            "^                   ",
-            AST.Node{ .function_decl = .{ .flags = AST.FunctionFlags.Async | AST.FunctionFlags.Generator, .name = 0, .params = &[_]AST.Node.Index{}, .body = 18, .return_type = 0 } },
+            \\ async function*() {}
+            \\>^
+            ,
+            AST.Node{ .function_decl = .{ .flags = AST.FunctionFlags.Async | AST.FunctionFlags.Generator, .name = 0, .params = &[_]AST.Node.Index{}, .body = 1, .return_type = 0 } },
         },
         .{
-            "(a, b)",
-            "^     ",
-            AST.Node{ .grouping = 24 },
+            \\ (a, b)
+            \\>^
+            ,
+            AST.Node{ .grouping = 5 },
         },
         .{
-            "class {}",
-            "^       ",
+            \\ class {}
+            \\>^       
+            ,
             AST.Node{ .class = .{ .abstract = false, .name = 0, .implements = &.{}, .super_class = 0, .body = &.{} } },
         },
     };
 
     inline for (test_cases) |test_case| {
-        var parser, const maybe_node = try Parser.once(test_case[0], parsePrimaryExpression);
-        defer parser.deinit();
-
-        try parser.expectAST(maybe_node, test_case[2]);
-        try parser.expectTokenAt(test_case[1], maybe_node.?);
+        try TestParser.run(test_case[0], parsePrimaryExpression, struct {
+            pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(test_case[0])) !void {
+                try t.expectAST(node, test_case[1]);
+                try t.expectTokenAt(markers[0], node.?);
+            }
+        });
     }
 }
 
 test "should parse identifier" {
     const test_cases = .{
         .{
-            "identifier",
-            "^         ",
+            \\ identifier
+            \\>^
+            ,
         },
         .{
-            "$identifier",
-            "^         ",
+            \\ $identifier
+            \\>^
+            ,
         },
         .{
-            "_identifier",
-            "^          ",
+            \\ _identifier
+            \\>^
+            ,
         },
         .{
-            "\\u00FFidentifier",
-            "^                ",
+            \\ \u00FFidentifier
+            \\>^
+            ,
         },
         .{
-            "\\u{FF}identifier",
-            "^                ",
+            \\ \u{FF}identifier
+            \\>^
+            ,
         },
     };
 
     inline for (test_cases) |test_case| {
-        var parser, const maybe_node = try Parser.once(test_case[0], parseIdentifier);
-        defer parser.deinit();
-
-        try parser.expectAST(maybe_node, AST.Node{ .simple_value = .{ .kind = .identifier } });
-        try parser.expectToken(TokenType.Identifier, test_case[0], maybe_node.?);
-        try parser.expectTokenAt(test_case[1], maybe_node.?);
+        try TestParser.run(test_case[0], parseIdentifier, struct {
+            pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(test_case[0])) !void {
+                try t.expectAST(node, AST.Node{ .simple_value = .{ .kind = .identifier } });
+                try t.expectToken(TokenType.Identifier, std.mem.sliceTo(test_case[0][1..], '\n'), node.?);
+                try t.expectTokenAt(markers[0], node.?);
+            }
+        });
     }
 }
 
 test "should parse allowed keyword as identifier" {
-    const text = .{
-        "abstract",
-        "^       ",
-    };
+    const text =
+        \\ abstract
+        \\>^
+    ;
 
-    var parser, const maybe_node = try Parser.once(text[0], parseIdentifier);
-    defer parser.deinit();
-
-    try parser.expectAST(maybe_node, AST.Node{ .simple_value = .{ .kind = .identifier } });
-    try parser.expectToken(TokenType.Abstract, "abstract", maybe_node.?);
-    try parser.expectTokenAt(text[1], maybe_node.?);
+    try TestParser.run(text, parseIdentifier, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectAST(node, AST.Node{ .simple_value = .{ .kind = .identifier } });
+            try t.expectToken(TokenType.Abstract, "abstract", node.?);
+            try t.expectTokenAt(markers[0], node.?);
+        }
+    });
 }
 
 test "should return null if no identifier" {
@@ -320,10 +342,11 @@ test "should return null if no identifier" {
         \\123
     ;
 
-    var parser, const maybe_node = try Parser.once(text, parseIdentifier);
-    defer parser.deinit();
-
-    try parser.expectAST(maybe_node, null);
+    try TestParser.run(text, parseIdentifier, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectAST(node, null);
+        }
+    });
 }
 
 test "should return null if not allowed keyword" {
@@ -331,66 +354,75 @@ test "should return null if not allowed keyword" {
         \\break
     ;
 
-    var parser, const maybe_node = try Parser.once(text, parseIdentifier);
-    defer parser.deinit();
-
-    try parser.expectAST(maybe_node, null);
+    try TestParser.run(text, parseIdentifier, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectAST(node, null);
+        }
+    });
 }
 
 test "should parse literal" {
     const test_cases = .{
         .{
-            "this",
-            "^   ",
+            \\ this
+            \\>^   
+            ,
             AST.SimpleValueKind.this,
             TokenType.This,
             "this",
         },
         .{
-            "null",
-            "^   ",
+            \\ null
+            \\>^   
+            ,
             AST.SimpleValueKind.null,
             TokenType.Null,
             "null",
         },
         .{
-            "undefined",
-            "^   ",
+            \\ undefined
+            \\>^   
+            ,
             AST.SimpleValueKind.undefined,
             TokenType.Undefined,
             "undefined",
         },
         .{
-            "true",
-            "^   ",
+            \\ true
+            \\>^   
+            ,
             AST.SimpleValueKind.true,
             TokenType.True,
             "true",
         },
         .{
-            "false",
-            "^    ",
+            \\ false
+            \\>^   
+            ,
             AST.SimpleValueKind.false,
             TokenType.False,
             "false",
         },
         .{
-            "123",
-            "^  ",
+            \\ 123
+            \\>^  
+            ,
             AST.SimpleValueKind.number,
             TokenType.NumberConstant,
             "123",
         },
         .{
-            "123n",
-            "^   ",
+            \\ 123n
+            \\>^   
+            ,
             AST.SimpleValueKind.bigint,
             TokenType.BigIntConstant,
             "123n",
         },
         .{
-            "\"hello\"",
-            "^        ",
+            \\ "hello"
+            \\>^      
+            ,
             AST.SimpleValueKind.string,
             TokenType.StringConstant,
             "\"hello\"",
@@ -398,12 +430,13 @@ test "should parse literal" {
     };
 
     inline for (test_cases) |test_case| {
-        var parser, const maybe_node = try Parser.once(test_case[0], parseLiteral);
-        defer parser.deinit();
-
-        try parser.expectAST(maybe_node, AST.Node{ .simple_value = .{ .kind = test_case[2] } });
-        try parser.expectToken(test_case[3], test_case[4], maybe_node.?);
-        try parser.expectTokenAt(test_case[1], maybe_node.?);
+        try TestParser.run(test_case[0], parseLiteral, struct {
+            pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(test_case[0])) !void {
+                try t.expectAST(node, AST.Node{ .simple_value = .{ .kind = test_case[1] } });
+                try t.expectToken(test_case[2], test_case[3], node.?);
+                try t.expectTokenAt(markers[0], node.?);
+            }
+        });
     }
 }
 
@@ -412,10 +445,11 @@ test "should return null if no literal" {
         \\identifier
     ;
 
-    var parser, const maybe_node = try Parser.once(text, parseLiteral);
-    defer parser.deinit();
-
-    try parser.expectAST(maybe_node, null);
+    try TestParser.run(text, parseLiteral, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectAST(node, null);
+        }
+    });
 }
 
 test "should return null if not array literal" {
@@ -423,10 +457,11 @@ test "should return null if not array literal" {
         \\1
     ;
 
-    var parser, const maybe_node = try Parser.once(text, parseArrayLiteral);
-    defer parser.deinit();
-
-    try parser.expectAST(maybe_node, null);
+    try TestParser.run(text, parseArrayLiteral, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectAST(node, null);
+        }
+    });
 }
 
 test "should parse array literal" {
@@ -442,10 +477,11 @@ test "should parse array literal" {
     };
 
     inline for (expects_map) |expected_items| {
-        var parser, const maybe_node = try Parser.once(expected_items[0], parseArrayLiteral);
-        defer parser.deinit();
-
-        try parser.expectAST(maybe_node, AST.Node{ .array_literal = @constCast(expected_items[1]) });
+        try TestParser.run(expected_items[0], parseArrayLiteral, struct {
+            pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(expected_items[0])) !void {
+                try t.expectAST(node, AST.Node{ .array_literal = @constCast(expected_items[1]) });
+            }
+        });
     }
 }
 
@@ -454,10 +490,11 @@ test "should return null if not object literal" {
         \\1
     ;
 
-    var parser, const maybe_node = try Parser.once(text, parseObjectLiteral);
-    defer parser.deinit();
-
-    try parser.expectAST(maybe_node, null);
+    try TestParser.run(text, parseObjectLiteral, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectAST(node, null);
+        }
+    });
 }
 
 test "should parse object literal" {
@@ -472,10 +509,11 @@ test "should parse object literal" {
     ;
     const expected_fields = &[_]AST.Node.Index{ 4, 8, 11, 14, 25 };
 
-    var parser, const maybe_node = try Parser.once(text, parseObjectLiteral);
-    defer parser.deinit();
-
-    try parser.expectAST(maybe_node, AST.Node{ .object_literal = @constCast(expected_fields) });
+    try TestParser.run(text, parseObjectLiteral, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectAST(node, AST.Node{ .object_literal = @constCast(expected_fields) });
+        }
+    });
 }
 
 test "should parse methods on object literal" {
@@ -490,23 +528,26 @@ test "should parse methods on object literal" {
         \\}
     ;
 
-    var parser, const node = try Parser.once(text, parseObjectLiteral);
-    defer parser.deinit();
-    try expectEqualStrings("object_literal", @tagName(parser.getNode(node.?)));
-    try expectEqual(6, parser.getNode(node.?).object_literal.len);
+    try TestParser.run(text, parseObjectLiteral, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectAST(node, AST.Node{ .object_literal = @constCast(&[_]AST.Node.Index{ 3, 6, 9, 12, 15, 19 }) });
+            try expectEqualStrings("object_literal", @tagName(t.getNode(node.?)));
+            try expectEqual(6, t.getNode(node.?).object_literal.len);
 
-    const expected_methods = .{
-        .{ AST.FunctionFlags.None, "a" },
-        .{ AST.FunctionFlags.Async, "b" },
-        .{ AST.FunctionFlags.Generator, "c" },
-        .{ AST.FunctionFlags.Async | AST.FunctionFlags.Generator, "d" },
-        .{ AST.FunctionFlags.Getter, "e" },
-        .{ AST.FunctionFlags.Setter, "e" },
-    };
+            const expected_methods = .{
+                .{ AST.FunctionFlags.None, "a" },
+                .{ AST.FunctionFlags.Async, "b" },
+                .{ AST.FunctionFlags.Generator, "c" },
+                .{ AST.FunctionFlags.Async | AST.FunctionFlags.Generator, "d" },
+                .{ AST.FunctionFlags.Getter, "e" },
+                .{ AST.FunctionFlags.Setter, "e" },
+            };
 
-    inline for (expected_methods, 0..) |expected_method, i| {
-        try parser.expectSimpleMethod(parser.getNode(node.?).object_literal[i], expected_method[0], expected_method[1]);
-    }
+            inline for (expected_methods, 0..) |expected_method, i| {
+                try t.expectSimpleMethod(t.getNode(node.?).object_literal[i], expected_method[0], expected_method[1]);
+            }
+        }
+    });
 }
 
 test "should fail parsing object literal if comma is missing between fields" {
@@ -518,20 +559,22 @@ test "should fail parsing object literal if comma is missing between fields" {
         \\}
     ;
 
-    var parser, const nodeOrError = try Parser.onceAny(text, parseObjectLiteral);
-    defer parser.deinit();
-
-    try parser.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{","});
+    try TestParser.runAny(text, parseObjectLiteral, struct {
+        pub fn expect(t: TestParser, nodeOrError: Parser.ParserError!?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{","});
+        }
+    });
 }
 
 test "should fail parsing object literal if field name is invalid" {
     const test_cases = .{ "{ - }", "{ a - b }" };
 
     inline for (test_cases) |test_case| {
-        var parser, const nodeOrError = try Parser.onceAny(test_case, parseObjectLiteral);
-        defer parser.deinit();
-
-        try parser.expectSyntaxError(nodeOrError, diagnostics.property_assignment_expected, .{});
+        try TestParser.runAny(test_case, parseObjectLiteral, struct {
+            pub fn expect(t: TestParser, nodeOrError: Parser.ParserError!?AST.Node.Index, _: MarkerList(test_case)) !void {
+                try t.expectSyntaxError(nodeOrError, diagnostics.property_assignment_expected, .{});
+            }
+        });
     }
 }
 
@@ -542,19 +585,21 @@ test "should fail parsing object literal if there is multiple closing commas" {
         \\}
     ;
 
-    var parser, const nodeOrError = try Parser.onceAny(text, parseObjectLiteral);
-    defer parser.deinit();
-
-    try parser.expectSyntaxError(nodeOrError, diagnostics.property_assignment_expected, .{});
+    try TestParser.runAny(text, parseObjectLiteral, struct {
+        pub fn expect(t: TestParser, nodeOrError: Parser.ParserError!?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectSyntaxError(nodeOrError, diagnostics.property_assignment_expected, .{});
+        }
+    });
 }
 
 test "should parse grouping expression" {
     const text = "(a, b)";
 
-    var parser, const maybe_node = try Parser.once(text, parseGroupingExpression);
-    defer parser.deinit();
-
-    try parser.expectAST(maybe_node, AST.Node{ .grouping = 5 });
+    try TestParser.run(text, parseGroupingExpression, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectAST(node, AST.Node{ .grouping = 5 });
+        }
+    });
 }
 
 test "should return null if no grouping expression" {
@@ -562,8 +607,9 @@ test "should return null if no grouping expression" {
         \\1
     ;
 
-    var parser, const maybe_node = try Parser.once(text, parseGroupingExpression);
-    defer parser.deinit();
-
-    try parser.expectAST(maybe_node, null);
+    try TestParser.run(text, parseGroupingExpression, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectAST(node, null);
+        }
+    });
 }

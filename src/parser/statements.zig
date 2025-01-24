@@ -19,8 +19,9 @@ const parseAssignment = @import("binary.zig").parseAssignment;
 const parseExpression = @import("expressions.zig").parseExpression;
 const parseOptionalDataType = @import("types.zig").parseOptionalDataType;
 
-const expectAST = Parser.expectAST;
-const expectSyntaxError = Parser.expectSyntaxError;
+const TestParser = @import("../test_parser.zig");
+const MarkerList = @import("../test_parser.zig").MarkerList;
+const Marker = @import("../test_parser.zig").Marker;
 
 pub fn parseStatement(self: *Parser) ParserError!AST.Node.Index {
     const node = try parseBlock(self) orelse
@@ -188,29 +189,32 @@ test "should parse statements" {
     };
 
     inline for (tests) |test_case| {
-        var parser, const node = try Parser.once(test_case[0], parseStatement);
-        defer parser.deinit();
-
-        try parser.expectAST(node, test_case[1]);
+        try TestParser.run(test_case[0], parseStatement, struct {
+            pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(test_case[0])) !void {
+                try t.expectAST(node, test_case[1]);
+            }
+        });
     }
 }
 
 test "should parse block" {
     const text = "{ a; b; c; }";
 
-    var parser, const node = try Parser.once(text, parseBlock);
-    defer parser.deinit();
-
-    try parser.expectAST(node, AST.Node{ .block = @constCast(&[_]AST.Node.Index{ 2, 4, 6 }) });
+    try TestParser.run(text, parseBlock, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectAST(node, AST.Node{ .block = @constCast(&[_]AST.Node.Index{ 2, 4, 6 }) });
+        }
+    });
 }
 
 test "should return syntax error if block is missing" {
     const text = "{a; ";
 
-    var parser, const node = try Parser.onceAny(text, parseBlock);
-    defer parser.deinit();
-
-    try parser.expectSyntaxError(node, diagnostics.ARG_expected, .{"}"});
+    try TestParser.runAny(text, parseBlock, struct {
+        pub fn expect(t: TestParser, nodeOrError: Parser.ParserError!?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{"}"});
+        }
+    });
 }
 
 test "should parse declarations" {
@@ -266,72 +270,80 @@ test "should parse declarations" {
     };
 
     inline for (tests) |test_case| {
-        var parser, _ = try Parser.once(test_case[0], parseDeclaration);
-        defer parser.deinit();
-
-        try parser.expectNodesToEqual(test_case[1]);
+        try TestParser.run(test_case[0], parseDeclaration, struct {
+            pub fn expect(t: TestParser, _: ?AST.Node.Index, _: MarkerList(test_case[0])) !void {
+                try t.expectNodesToEqual(test_case[1]);
+            }
+        });
     }
 }
 
 test "should parse empty return statement" {
     const text = "return;";
 
-    var parser, const node = try Parser.once(text, parseReturnStatement);
-    defer parser.deinit();
-
-    try parser.expectAST(node, AST.Node{ .@"return" = AST.Node.Empty });
+    try TestParser.run(text, parseReturnStatement, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectAST(node, AST.Node{ .@"return" = AST.Node.Empty });
+        }
+    });
 }
 
 test "should parse return statement" {
     const text = "return a;";
 
-    var parser, const node = try Parser.once(text, parseReturnStatement);
-    defer parser.deinit();
-
-    try parser.expectAST(node, AST.Node{ .@"return" = 2 });
+    try TestParser.run(text, parseReturnStatement, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectAST(node, AST.Node{ .@"return" = 2 });
+        }
+    });
 }
 
 test "should parse if statement" {
     const text = "if (a) {}";
 
-    var parser, const node = try Parser.once(text, parseIfStatement);
-    defer parser.deinit();
-
-    try parser.expectAST(node, AST.Node{ .@"if" = AST.Node.If{ .expr = 2, .body = 3, .@"else" = AST.Node.Empty } });
+    try TestParser.run(text, parseIfStatement, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectAST(node, AST.Node{ .@"if" = AST.Node.If{ .expr = 2, .body = 3, .@"else" = AST.Node.Empty } });
+        }
+    });
 }
 
 test "should parse if statement with else" {
     const text = "if (a) {} else {}";
 
-    var parser, const node = try Parser.once(text, parseIfStatement);
-    defer parser.deinit();
-
-    try parser.expectAST(node, AST.Node{ .@"if" = AST.Node.If{ .expr = 2, .body = 3, .@"else" = 4 } });
+    try TestParser.run(text, parseIfStatement, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectAST(node, AST.Node{ .@"if" = AST.Node.If{ .expr = 2, .body = 3, .@"else" = 4 } });
+        }
+    });
 }
 
 test "should return syntax error if open paren is missing" {
     const text = "if a) {} else";
 
-    var parser, const node = try Parser.onceAny(text, parseIfStatement);
-    defer parser.deinit();
-
-    try parser.expectSyntaxError(node, diagnostics.ARG_expected, .{"("});
+    try TestParser.runAny(text, parseIfStatement, struct {
+        pub fn expect(t: TestParser, nodeOrError: Parser.ParserError!?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{"("});
+        }
+    });
 }
 
 test "should return syntax error if close paren is missing" {
     const text = "if (a {}";
 
-    var parser, const node = try Parser.onceAny(text, parseIfStatement);
-    defer parser.deinit();
-
-    try parser.expectSyntaxError(node, diagnostics.ARG_expected, .{")"});
+    try TestParser.runAny(text, parseIfStatement, struct {
+        pub fn expect(t: TestParser, nodeOrError: Parser.ParserError!?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{")"});
+        }
+    });
 }
 
 test "should return syntax error if body is missing" {
     const text = "if (a)";
 
-    var parser, const node = try Parser.onceAny(text, parseIfStatement);
-    defer parser.deinit();
-
-    try parser.expectSyntaxError(node, diagnostics.identifier_expected, .{});
+    try TestParser.runAny(text, parseIfStatement, struct {
+        pub fn expect(t: TestParser, nodeOrError: Parser.ParserError!?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectSyntaxError(nodeOrError, diagnostics.identifier_expected, .{});
+        }
+    });
 }

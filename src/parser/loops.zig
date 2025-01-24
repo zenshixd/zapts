@@ -9,12 +9,14 @@ const parseStatement = @import("statements.zig").parseStatement;
 const parseExpression = @import("expressions.zig").parseExpression;
 const parseDeclaration = @import("statements.zig").parseDeclaration;
 
+const TestParser = @import("../test_parser.zig");
+const MarkerList = @import("../test_parser.zig").MarkerList;
+const Marker = @import("../test_parser.zig").Marker;
+
 const expectEqual = std.testing.expectEqual;
 const expectEqualDeep = std.testing.expectEqualDeep;
 const expectEqualStrings = std.testing.expectEqualStrings;
 const expectError = std.testing.expectError;
-const expectAST = Parser.expectAST;
-const expectSyntaxError = Parser.expectSyntaxError;
 
 pub fn parseBreakableStatement(parser: *Parser) ParserError!?AST.Node.Index {
     return try parseDoWhileStatement(parser) orelse
@@ -136,131 +138,142 @@ test "should parse breakable statement" {
     };
 
     inline for (test_cases) |test_case| {
-        var parser, const node = try Parser.once(test_case[0], parseBreakableStatement);
-        defer parser.deinit();
-
-        try parser.expectAST(node, test_case[1]);
+        try TestParser.run(test_case[0], parseBreakableStatement, struct {
+            pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(test_case[0])) !void {
+                try t.expectAST(node, test_case[1]);
+            }
+        });
     }
 }
 
 test "should return null if while loop is empty" {
     const text = "identifier";
 
-    var parser, const node = try Parser.once(text, parseWhileStatement);
-    defer parser.deinit();
-
-    try parser.expectAST(node, null);
+    try TestParser.run(text, parseWhileStatement, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectAST(node, null);
+        }
+    });
 }
 
 test "should parse while loop" {
     const text = "while (true) {}";
 
-    var parser, const node = try Parser.once(text, parseWhileStatement);
-    defer parser.deinit();
-
-    try parser.expectAST(node, AST.Node{ .@"while" = .{
-        .cond = 1,
-        .body = 2,
-    } });
+    try TestParser.run(text, parseWhileStatement, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectAST(node, AST.Node{ .@"while" = .{
+                .cond = 1,
+                .body = 2,
+            } });
+        }
+    });
 }
 
 test "should return null if do while loop is empty" {
     const text = "identifier";
 
-    var parser, const node = try Parser.once(text, parseDoWhileStatement);
-    defer parser.deinit();
-
-    try parser.expectAST(node, null);
+    try TestParser.run(text, parseDoWhileStatement, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectAST(node, null);
+        }
+    });
 }
 
 test "should parse do while loop" {
     const text = "do {} while (true);";
 
-    var parser, const node = try Parser.once(text, parseDoWhileStatement);
-    defer parser.deinit();
-
-    try parser.expectAST(node, AST.Node{ .do_while = .{
-        .cond = 2,
-        .body = 1,
-    } });
+    try TestParser.run(text, parseDoWhileStatement, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectAST(node, AST.Node{ .do_while = .{
+                .cond = 2,
+                .body = 1,
+            } });
+        }
+    });
 }
 
 test "should return null if for loop is not a for loop" {
     const text = "identifier";
 
-    var parser, const node = try Parser.once(text, parseForStatement);
-    defer parser.deinit();
-
-    try parser.expectAST(node, null);
+    try TestParser.run(text, parseForStatement, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectAST(node, null);
+        }
+    });
 }
 
 test "should parse classic for loops" {
     const text = "for (let i = 0; i < 10; i++) {}";
 
-    var parser, const node = try Parser.once(text, parseForStatement);
-    defer parser.deinit();
-
-    try parser.expectAST(node, AST.Node{ .@"for" = .{
-        .classic = .{
-            .init = 3,
-            .cond = 7,
-            .post = 10,
-            .body = 11,
-        },
-    } });
+    try TestParser.run(text, parseForStatement, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectAST(node, AST.Node{ .@"for" = .{
+                .classic = .{
+                    .init = 3,
+                    .cond = 7,
+                    .post = 10,
+                    .body = 11,
+                },
+            } });
+        }
+    });
 }
 
 test "should parse empty for loops" {
     const text = "for (;;) {}";
 
-    var parser, const node = try Parser.once(text, parseForStatement);
-    defer parser.deinit();
-
-    try parser.expectAST(node, AST.Node{ .@"for" = .{
-        .classic = .{
-            .init = 0,
-            .cond = 0,
-            .post = 0,
-            .body = 1,
-        },
-    } });
+    try TestParser.run(text, parseForStatement, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectAST(node, AST.Node{ .@"for" = .{
+                .classic = .{
+                    .init = 0,
+                    .cond = 0,
+                    .post = 0,
+                    .body = 1,
+                },
+            } });
+        }
+    });
 }
 
 test "should parse in for loops" {
     const text = "for (let i in [1, 2, 3]) {}";
 
-    var parser, const node = try Parser.once(text, parseForStatement);
-    defer parser.deinit();
-
-    try parser.expectAST(node, AST.Node{ .@"for" = .{
-        .in = .{
-            .left = 4,
-            .right = 8,
-            .body = 9,
-        },
-    } });
+    try TestParser.run(text, parseForStatement, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectAST(node, AST.Node{ .@"for" = .{
+                .in = .{
+                    .left = 4,
+                    .right = 8,
+                    .body = 9,
+                },
+            } });
+        }
+    });
 }
 
 test "should parse of for loops" {
     const text = "for (let i of [1, 2, 3]) {}";
 
-    var parser, const node = try Parser.once(text, parseForStatement);
-    defer parser.deinit();
-
-    try parser.expectAST(node, AST.Node{ .@"for" = .{
-        .of = .{
-            .left = 6,
-            .right = 10,
-            .body = 11,
-        },
-    } });
+    try TestParser.run(text, parseForStatement, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectAST(node, AST.Node{ .@"for" = .{
+                .of = .{
+                    .left = 6,
+                    .right = 10,
+                    .body = 11,
+                },
+            } });
+        }
+    });
 }
 
 test "should throw SyntaxError if for loop if its not of or in loop" {
     const text = "for (let i as [1, 2, 3]) {}";
 
-    var parser, const node = try Parser.onceAny(text, parseForStatement);
-    defer parser.deinit();
-
-    try parser.expectSyntaxError(node, diagnostics.declaration_or_statement_expected, .{});
+    try TestParser.runAny(text, parseForStatement, struct {
+        pub fn expect(t: TestParser, nodeOrError: Parser.ParserError!?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectSyntaxError(nodeOrError, diagnostics.declaration_or_statement_expected, .{});
+        }
+    });
 }
