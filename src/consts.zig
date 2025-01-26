@@ -204,8 +204,26 @@ pub const Token = struct {
     start: u32,
     end: u32,
 
-    pub const Empty = 0;
-    pub const Index = u32;
+    pub const Empty = at(0);
+    pub const Index = enum(u32) {
+        _,
+
+        pub inline fn int(self: Index) u32 {
+            return @intFromEnum(self);
+        }
+
+        pub inline fn inc(self: Index, offset: u32) Index {
+            return @enumFromInt(self.int() + offset);
+        }
+
+        pub inline fn dec(self: Index, offset: u32) Index {
+            return @enumFromInt(self.int() - offset);
+        }
+    };
+
+    pub inline fn at(index: u32) Token.Index {
+        return @enumFromInt(index);
+    }
 
     pub fn format(self: Token, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
         try std.fmt.format(writer, "Token{{ .type = {s}, .start = {d}, .end = {d} }}", .{ @tagName(self.type), self.start, self.end });

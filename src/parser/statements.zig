@@ -156,15 +156,21 @@ test "should parse statements" {
         },
         .{
             "class A {}",
-            AST.Node{ .class = .{ .abstract = false, .name = 1, .super_class = AST.Node.Empty, .implements = &.{}, .body = &.{} } },
+            AST.Node{ .class = .{
+                .abstract = false,
+                .name = Token.at(1),
+                .super_class = AST.Node.Empty,
+                .implements = &.{},
+                .body = &.{},
+            } },
         },
         .{
             "import 'a';",
-            AST.Node{ .import = .{ .simple = 1 } },
+            AST.Node{ .import = .{ .simple = Token.at(1) } },
         },
         .{
             "export default a;",
-            AST.Node{ .@"export" = .{ .default = 2 } },
+            AST.Node{ .@"export" = AST.Node.Export{ .default = AST.Node.at(2) } },
         },
         .{
             ";",
@@ -172,11 +178,11 @@ test "should parse statements" {
         },
         .{
             "if (a) {}",
-            AST.Node{ .@"if" = AST.Node.If{ .expr = 2, .body = 3, .@"else" = AST.Node.Empty } },
+            AST.Node{ .@"if" = AST.Node.If{ .expr = AST.Node.at(2), .body = AST.Node.at(3), .@"else" = AST.Node.Empty } },
         },
         .{
             "while (a) {}",
-            AST.Node{ .@"while" = .{ .cond = 2, .body = 3 } },
+            AST.Node{ .@"while" = AST.Node.While{ .cond = AST.Node.at(2), .body = AST.Node.at(3) } },
         },
         .{
             "return;",
@@ -202,7 +208,7 @@ test "should parse block" {
 
     try TestParser.run(text, parseBlock, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .block = @constCast(&[_]AST.Node.Index{ 2, 4, 6 }) });
+            try t.expectAST(node, AST.Node{ .block = @constCast(&[_]AST.Node.Index{ AST.Node.at(2), AST.Node.at(4), AST.Node.at(6) }) });
         }
     });
 }
@@ -222,49 +228,49 @@ test "should parse declarations" {
         .{
             "var a;",
             &[_]AST.Raw{
-                AST.Raw{ .tag = .decl_binding, .main_token = 2, .data = .{ .lhs = 1, .rhs = 0 } },
-                AST.Raw{ .tag = .var_decl, .main_token = 2, .data = .{ .lhs = 2, .rhs = 3 } },
+                AST.Raw{ .tag = .decl_binding, .main_token = Token.at(2), .data = .{ .lhs = 1, .rhs = 0 } },
+                AST.Raw{ .tag = .var_decl, .main_token = Token.at(2), .data = .{ .lhs = 2, .rhs = 3 } },
             },
         },
         .{
             "let a;",
             &[_]AST.Raw{
-                AST.Raw{ .tag = .decl_binding, .main_token = 2, .data = .{ .lhs = 1, .rhs = 0 } },
-                AST.Raw{ .tag = .let_decl, .main_token = 2, .data = .{ .lhs = 2, .rhs = 3 } },
+                AST.Raw{ .tag = .decl_binding, .main_token = Token.at(2), .data = .{ .lhs = 1, .rhs = 0 } },
+                AST.Raw{ .tag = .let_decl, .main_token = Token.at(2), .data = .{ .lhs = 2, .rhs = 3 } },
             },
         },
         .{
             "const a;",
             &[_]AST.Raw{
-                AST.Raw{ .tag = .decl_binding, .main_token = 2, .data = .{ .lhs = 1, .rhs = 0 } },
-                AST.Raw{ .tag = .const_decl, .main_token = 2, .data = .{ .lhs = 2, .rhs = 3 } },
+                AST.Raw{ .tag = .decl_binding, .main_token = Token.at(2), .data = .{ .lhs = 1, .rhs = 0 } },
+                AST.Raw{ .tag = .const_decl, .main_token = Token.at(2), .data = .{ .lhs = 2, .rhs = 3 } },
             },
         },
         .{
             "const a = 1;",
             &[_]AST.Raw{
-                AST.Raw{ .tag = .simple_value, .main_token = 3, .data = .{ .lhs = 3, .rhs = 0 } },
-                AST.Raw{ .tag = .decl_binding, .main_token = 4, .data = .{ .lhs = 1, .rhs = 0 } },
-                AST.Raw{ .tag = .const_decl, .main_token = 4, .data = .{ .lhs = 2, .rhs = 3 } },
+                AST.Raw{ .tag = .simple_value, .main_token = Token.at(3), .data = .{ .lhs = 3, .rhs = 0 } },
+                AST.Raw{ .tag = .decl_binding, .main_token = Token.at(4), .data = .{ .lhs = 1, .rhs = 0 } },
+                AST.Raw{ .tag = .const_decl, .main_token = Token.at(4), .data = .{ .lhs = 2, .rhs = 3 } },
             },
         },
         .{
             "const a = 1, b = 2;",
             &[_]AST.Raw{
-                AST.Raw{ .tag = .simple_value, .main_token = 3, .data = .{ .lhs = 3, .rhs = 0 } },
-                AST.Raw{ .tag = .decl_binding, .main_token = 4, .data = .{ .lhs = 1, .rhs = 0 } },
-                AST.Raw{ .tag = .simple_value, .main_token = 7, .data = .{ .lhs = 3, .rhs = 0 } },
-                AST.Raw{ .tag = .decl_binding, .main_token = 8, .data = .{ .lhs = 5, .rhs = 2 } },
-                AST.Raw{ .tag = .const_decl, .main_token = 8, .data = .{ .lhs = 4, .rhs = 6 } },
+                AST.Raw{ .tag = .simple_value, .main_token = Token.at(3), .data = .{ .lhs = 3, .rhs = 0 } },
+                AST.Raw{ .tag = .decl_binding, .main_token = Token.at(4), .data = .{ .lhs = 1, .rhs = 0 } },
+                AST.Raw{ .tag = .simple_value, .main_token = Token.at(7), .data = .{ .lhs = 3, .rhs = 0 } },
+                AST.Raw{ .tag = .decl_binding, .main_token = Token.at(8), .data = .{ .lhs = 5, .rhs = 2 } },
+                AST.Raw{ .tag = .const_decl, .main_token = Token.at(8), .data = .{ .lhs = 4, .rhs = 6 } },
             },
         },
         .{
             "const a: number = 1;",
             &[_]AST.Raw{
-                AST.Raw{ .tag = .simple_type, .main_token = 3, .data = .{ .lhs = 3, .rhs = 0 } },
-                AST.Raw{ .tag = .simple_value, .main_token = 5, .data = .{ .lhs = 3, .rhs = 0 } },
-                AST.Raw{ .tag = .decl_binding, .main_token = 6, .data = .{ .lhs = 1, .rhs = 0 } },
-                AST.Raw{ .tag = .const_decl, .main_token = 6, .data = .{ .lhs = 2, .rhs = 3 } },
+                AST.Raw{ .tag = .simple_type, .main_token = Token.at(3), .data = .{ .lhs = 3, .rhs = 0 } },
+                AST.Raw{ .tag = .simple_value, .main_token = Token.at(5), .data = .{ .lhs = 3, .rhs = 0 } },
+                AST.Raw{ .tag = .decl_binding, .main_token = Token.at(6), .data = .{ .lhs = 1, .rhs = 0 } },
+                AST.Raw{ .tag = .const_decl, .main_token = Token.at(6), .data = .{ .lhs = 2, .rhs = 3 } },
             },
         },
     };
@@ -293,7 +299,7 @@ test "should parse return statement" {
 
     try TestParser.run(text, parseReturnStatement, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .@"return" = 2 });
+            try t.expectAST(node, AST.Node{ .@"return" = AST.Node.at(2) });
         }
     });
 }
@@ -303,7 +309,11 @@ test "should parse if statement" {
 
     try TestParser.run(text, parseIfStatement, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .@"if" = AST.Node.If{ .expr = 2, .body = 3, .@"else" = AST.Node.Empty } });
+            try t.expectAST(node, AST.Node{ .@"if" = AST.Node.If{
+                .expr = AST.Node.at(2),
+                .body = AST.Node.at(3),
+                .@"else" = AST.Node.Empty,
+            } });
         }
     });
 }
@@ -313,7 +323,11 @@ test "should parse if statement with else" {
 
     try TestParser.run(text, parseIfStatement, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .@"if" = AST.Node.If{ .expr = 2, .body = 3, .@"else" = 4 } });
+            try t.expectAST(node, AST.Node{ .@"if" = AST.Node.If{
+                .expr = AST.Node.at(2),
+                .body = AST.Node.at(3),
+                .@"else" = AST.Node.at(4),
+            } });
         }
     });
 }

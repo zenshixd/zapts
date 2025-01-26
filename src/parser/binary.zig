@@ -101,7 +101,7 @@ fn binaryOperatorMatches(parser: *Parser, operator_index: comptime_int) bool {
             !parser.peekMatchMany(.{ TokenType.GreaterThan, TokenType.GreaterThan, TokenType.GreaterThanEqual });
 
         if (is_match) {
-            parser.cur_token += @intCast(binary_operators[operator_index][0].len);
+            parser.cur_token = parser.cur_token.inc(@intCast(binary_operators[operator_index][0].len));
         }
 
         return is_match;
@@ -166,7 +166,10 @@ test "should parse binary expression" {
     inline for (test_cases, 0..) |test_case, i| {
         try TestParser.run(test_case, parseBinaryExpression, struct {
             pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(test_case)) !void {
-                try t.expectAST(node, @unionInit(AST.Node, binary_operators[i][1], .{ .left = 1, .right = 2 }));
+                try t.expectAST(node, @unionInit(AST.Node, binary_operators[i][1], .{
+                    .left = AST.Node.at(1),
+                    .right = AST.Node.at(2),
+                }));
             }
         });
     }
@@ -203,7 +206,10 @@ test "should parse assignment expression" {
     inline for (test_cases, 0..) |test_case, i| {
         try TestParser.run(test_case, parseAssignment, struct {
             pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(test_case)) !void {
-                try t.expectAST(node, @unionInit(AST.Node, assignment_map[i][1], .{ .left = 2, .right = 4 }));
+                try t.expectAST(node, @unionInit(AST.Node, assignment_map[i][1], .{
+                    .left = AST.Node.at(2),
+                    .right = AST.Node.at(4),
+                }));
             }
         });
     }

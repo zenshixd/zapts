@@ -181,8 +181,8 @@ pub const Raw = struct {
     data: Data = .{},
 
     pub const Data = struct {
-        lhs: Node.Index = 0,
-        rhs: Node.Index = 0,
+        lhs: u32 = 0,
+        rhs: u32 = 0,
     };
 
     // LCOV_EXCL_START
@@ -233,9 +233,21 @@ pub const SimpleValueKind = enum(u8) {
 };
 
 pub const Extra = struct {
+    pub const Index = enum(u32) {
+        _,
+
+        pub inline fn int(self: Index) u32 {
+            return @intFromEnum(self);
+        }
+    };
+
+    pub inline fn at(index: u32) Index {
+        return @enumFromInt(index);
+    }
+
     pub const Subrange = struct {
-        start: Node.Index,
-        end: Node.Index,
+        start: Index,
+        end: Index,
     };
 
     pub const ExportFrom = struct {
@@ -246,10 +258,10 @@ pub const Extra = struct {
 
     pub const ClassDeclaration = struct {
         super_class: Node.Index,
-        implements_start: Node.Index,
-        implements_end: Node.Index,
-        body_start: Node.Index,
-        body_end: Node.Index,
+        implements_start: Index,
+        implements_end: Index,
+        body_start: Index,
+        body_end: Index,
     };
 
     const Declaration = struct {
@@ -274,32 +286,32 @@ pub const Extra = struct {
     };
 
     pub const ArrowFunction = struct {
-        params_start: Node.Index,
-        params_end: Node.Index,
+        params_start: Index,
+        params_end: Index,
         body: Node.Index,
         return_type: Node.Index,
     };
 
     pub const Function = struct {
-        flags: Node.Index,
-        params_start: Node.Index,
-        params_end: Node.Index,
+        flags: u32,
+        params_start: Index,
+        params_end: Index,
         body: Node.Index,
         return_type: Node.Index,
     };
 
     pub const FunctionType = struct {
-        generic_params_start: Node.Index,
-        generic_params_end: Node.Index,
-        params_start: Node.Index,
-        params_end: Node.Index,
+        generic_params_start: Index,
+        generic_params_end: Index,
+        params_start: Index,
+        params_end: Index,
     };
 
     pub const Interface = struct {
-        extends_start: Node.Index,
-        extends_end: Node.Index,
-        body_start: Node.Index,
-        body_end: Node.Index,
+        extends_start: Index,
+        extends_end: Index,
+        body_start: Index,
+        body_end: Index,
     };
 };
 
@@ -313,8 +325,8 @@ pub const Node = union(enum) {
     class: ClassDeclaration,
     class_static_block: []Node.Index,
     class_member: ClassMember,
-    class_field: DeclarationBinding,
-    class_method: FunctionDeclaration,
+    class_field: ClassFieldBinding,
+    class_method: MethodDeclaration,
 
     declaration: Declaration,
     decl_binding: DeclarationBinding,
@@ -393,7 +405,7 @@ pub const Node = union(enum) {
     object_literal: []Node.Index,
     object_literal_field: Binary,
     object_literal_field_shorthand: Node.Index,
-    object_method: FunctionDeclaration,
+    object_method: MethodDeclaration,
 
     @"return": Node.Index,
     grouping: Node.Index,
@@ -428,8 +440,15 @@ pub const Node = union(enum) {
     type_decl: Binary,
     interface_decl: InterfaceDecl,
 
-    pub const Empty = 0;
-    pub const Index = u32;
+    pub const Empty = at(0);
+    pub const Index = enum(u32) {
+        root,
+        _,
+
+        pub inline fn int(self: Index) u32 {
+            return @intFromEnum(self);
+        }
+    };
 
     pub const Import = union(enum) {
         simple: Token.Index,
@@ -444,12 +463,12 @@ pub const Node = union(enum) {
     pub const ImportBinding = union(enum) {
         named: []Node.Index,
         default: Node.Index,
-        namespace: Node.Index,
+        namespace: Token.Index,
     };
 
     pub const BindingDecl = struct {
         name: Token.Index,
-        alias: Node.Index,
+        alias: Token.Index,
     };
 
     pub const Export = union(enum) {
@@ -506,6 +525,12 @@ pub const Node = union(enum) {
         value: Node.Index,
     };
 
+    pub const ClassFieldBinding = struct {
+        name: Node.Index,
+        decl_type: Node.Index,
+        value: Node.Index,
+    };
+
     pub const If = struct {
         expr: Node.Index,
         body: Node.Index,
@@ -555,13 +580,21 @@ pub const Node = union(enum) {
     };
 
     pub const FunctionParam = struct {
-        node: Token.Index,
+        identifier: Token.Index,
         type: Node.Index,
     };
 
     pub const FunctionDeclaration = struct {
         flags: u4,
         name: Token.Index,
+        params: []Node.Index,
+        body: Node.Index,
+        return_type: Node.Index,
+    };
+
+    pub const MethodDeclaration = struct {
+        flags: u4,
+        name: Node.Index,
         params: []Node.Index,
         body: Node.Index,
         return_type: Node.Index,
@@ -607,6 +640,10 @@ pub const Node = union(enum) {
         extends: []Token.Index,
         body: []Node.Index,
     };
+
+    pub inline fn at(index: u32) Node.Index {
+        return @enumFromInt(index);
+    }
 };
 
 pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
@@ -616,14 +653,14 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
             return addRawNode(self, .{
                 .tag = .root,
                 .main_token = main_token,
-                .data = .{ .lhs = subrange.start, .rhs = subrange.end },
+                .data = .{ .lhs = subrange.start.int(), .rhs = subrange.end.int() },
             });
         },
         .binding_decl => |binding_decl| {
             return addRawNode(self, .{
                 .tag = .binding_decl,
                 .main_token = main_token,
-                .data = .{ .lhs = binding_decl.name, .rhs = binding_decl.alias },
+                .data = .{ .lhs = binding_decl.name.int(), .rhs = binding_decl.alias.int() },
             });
         },
         .import => |import| {
@@ -632,7 +669,7 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                     return addRawNode(self, .{
                         .tag = .import,
                         .main_token = main_token,
-                        .data = .{ .rhs = simple },
+                        .data = .{ .rhs = simple.int() },
                     });
                 },
                 .full => |full| {
@@ -641,8 +678,8 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                         .tag = .import,
                         .main_token = main_token,
                         .data = .{
-                            .lhs = addExtra(self, span),
-                            .rhs = full.path,
+                            .lhs = addExtra(self, span).int(),
+                            .rhs = full.path.int(),
                         },
                     });
                 },
@@ -656,8 +693,8 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                         .tag = .import_binding_named,
                         .main_token = main_token,
                         .data = .{
-                            .lhs = span.start,
-                            .rhs = span.end,
+                            .lhs = span.start.int(),
+                            .rhs = span.end.int(),
                         },
                     });
                 },
@@ -665,14 +702,14 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                     return addRawNode(self, .{
                         .tag = .import_binding_default,
                         .main_token = main_token,
-                        .data = .{ .lhs = default },
+                        .data = .{ .lhs = default.int() },
                     });
                 },
                 .namespace => |namespace| {
                     return addRawNode(self, .{
                         .tag = .import_binding_namespace,
                         .main_token = main_token,
-                        .data = .{ .lhs = namespace },
+                        .data = .{ .lhs = namespace.int() },
                     });
                 },
             }
@@ -685,8 +722,8 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                         .tag = .export_named,
                         .main_token = main_token,
                         .data = .{
-                            .lhs = span.start,
-                            .rhs = span.end,
+                            .lhs = span.start.int(),
+                            .rhs = span.end.int(),
                         },
                     });
                 },
@@ -696,8 +733,8 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                         .tag = .export_from,
                         .main_token = main_token,
                         .data = .{
-                            .lhs = addExtra(self, span),
-                            .rhs = from.path,
+                            .lhs = addExtra(self, span).int(),
+                            .rhs = from.path.int(),
                         },
                     });
                 },
@@ -706,8 +743,8 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                         .tag = .export_from_all,
                         .main_token = main_token,
                         .data = .{
-                            .lhs = from.alias,
-                            .rhs = from.path,
+                            .lhs = from.alias.int(),
+                            .rhs = from.path.int(),
                         },
                     });
                 },
@@ -715,14 +752,14 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                     return addRawNode(self, .{
                         .tag = .export_default,
                         .main_token = main_token,
-                        .data = .{ .lhs = default },
+                        .data = .{ .lhs = default.int() },
                     });
                 },
                 .node => |node| {
                     return addRawNode(self, .{
                         .tag = .export_node,
                         .main_token = main_token,
-                        .data = .{ .lhs = node },
+                        .data = .{ .lhs = node.int() },
                     });
                 },
             }
@@ -734,14 +771,14 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                 .tag = if (class.abstract) .abstract_class_decl else .class_decl,
                 .main_token = main_token,
                 .data = .{
-                    .lhs = class.name,
+                    .lhs = class.name.int(),
                     .rhs = addExtra(self, Extra.ClassDeclaration{
                         .super_class = class.super_class,
                         .implements_start = implements_span.start,
                         .implements_end = implements_span.end,
                         .body_start = subrange.start,
                         .body_end = subrange.end,
-                    }),
+                    }).int(),
                 },
             });
         },
@@ -751,8 +788,8 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                 .tag = .class_static_block,
                 .main_token = main_token,
                 .data = .{
-                    .lhs = subrange.start,
-                    .rhs = subrange.end,
+                    .lhs = subrange.start.int(),
+                    .rhs = subrange.end.int(),
                 },
             });
         },
@@ -762,7 +799,7 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                 .main_token = main_token,
                 .data = .{
                     .lhs = member.flags,
-                    .rhs = member.node,
+                    .rhs = member.node.int(),
                 },
             });
         },
@@ -775,8 +812,8 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                 .tag = .class_field,
                 .main_token = main_token,
                 .data = .{
-                    .lhs = field.name,
-                    .rhs = binding,
+                    .lhs = field.name.int(),
+                    .rhs = binding.int(),
                 },
             });
         },
@@ -791,8 +828,8 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                 .tag = tag,
                 .main_token = main_token,
                 .data = .{
-                    .lhs = subrange.start,
-                    .rhs = subrange.end,
+                    .lhs = subrange.start.int(),
+                    .rhs = subrange.end.int(),
                 },
             });
         },
@@ -801,11 +838,11 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                 .tag = .decl_binding,
                 .main_token = main_token,
                 .data = .{
-                    .lhs = declaration.name,
+                    .lhs = declaration.name.int(),
                     .rhs = addExtra(self, Extra.Declaration{
                         .decl_type = declaration.decl_type,
                         .value = declaration.value,
-                    }),
+                    }).int(),
                 },
             });
         },
@@ -817,8 +854,8 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                     .lhs = addExtra(self, Extra.If{
                         .expr = if_node.expr,
                         .body = if_node.body,
-                    }),
-                    .rhs = if_node.@"else",
+                    }).int(),
+                    .rhs = if_node.@"else".int(),
                 },
             });
         },
@@ -828,8 +865,8 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                 .tag = .@"switch",
                 .main_token = main_token,
                 .data = .{
-                    .lhs = switch_node.expr,
-                    .rhs = addExtra(self, cases),
+                    .lhs = switch_node.expr.int(),
+                    .rhs = addExtra(self, cases).int(),
                 },
             });
         },
@@ -841,8 +878,8 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                         .tag = .default,
                         .main_token = main_token,
                         .data = .{
-                            .lhs = stmts.start,
-                            .rhs = stmts.end,
+                            .lhs = stmts.start.int(),
+                            .rhs = stmts.end.int(),
                         },
                     });
                 },
@@ -852,8 +889,8 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                         .tag = .case,
                         .main_token = main_token,
                         .data = .{
-                            .lhs = case_node.expr,
-                            .rhs = addExtra(self, stmts),
+                            .lhs = case_node.expr.int(),
+                            .rhs = addExtra(self, stmts).int(),
                         },
                     });
                 },
@@ -870,8 +907,8 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                                 .init = classic.init,
                                 .cond = classic.cond,
                                 .post = classic.post,
-                            }),
-                            .rhs = classic.body,
+                            }).int(),
+                            .rhs = classic.body.int(),
                         },
                     });
                 },
@@ -883,8 +920,8 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                             .lhs = addExtra(self, Extra.ForTwo{
                                 .left = in.left,
                                 .right = in.right,
-                            }),
-                            .rhs = in.body,
+                            }).int(),
+                            .rhs = in.body.int(),
                         },
                     });
                 },
@@ -896,8 +933,8 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                             .lhs = addExtra(self, Extra.ForTwo{
                                 .left = of.left,
                                 .right = of.right,
-                            }),
-                            .rhs = of.body,
+                            }).int(),
+                            .rhs = of.body.int(),
                         },
                     });
                 },
@@ -908,8 +945,8 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                 .tag = if (key == .@"while") .@"while" else .do_while,
                 .main_token = main_token,
                 .data = .{
-                    .lhs = while_node.cond,
-                    .rhs = while_node.body,
+                    .lhs = while_node.cond.int(),
+                    .rhs = while_node.body.int(),
                 },
             });
         },
@@ -923,22 +960,20 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                     else => unreachable, // LCOV_EXCL_LINE
                 },
                 .main_token = main_token,
-                .data = .{ .lhs = subrange.start, .rhs = subrange.end },
+                .data = .{ .lhs = subrange.start.int(), .rhs = subrange.end.int() },
             });
         },
         .function_param => |param| {
             return addRawNode(self, .{
                 .tag = .function_param,
                 .main_token = main_token,
-                .data = .{ .lhs = param.node, .rhs = param.type },
+                .data = .{ .lhs = param.identifier.int(), .rhs = param.type.int() },
             });
         },
-        .function_decl, .function_expr, .class_method, .object_method => |func_decl| {
+        .function_decl, .function_expr => |func_decl| {
             const tag: Tag = switch (key) {
                 .function_decl => .func_decl,
                 .function_expr => .func_expr,
-                .class_method => .class_method,
-                .object_method => .object_method,
                 else => unreachable, // LCOV_EXCL_LINE
             };
             const subrange = listToSubrange(self, func_decl.params);
@@ -946,14 +981,36 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                 .tag = tag,
                 .main_token = main_token,
                 .data = .{
-                    .lhs = func_decl.name,
+                    .lhs = func_decl.name.int(),
                     .rhs = addExtra(self, Extra.Function{
                         .flags = func_decl.flags,
                         .params_start = subrange.start,
                         .params_end = subrange.end,
                         .body = func_decl.body,
                         .return_type = func_decl.return_type,
-                    }),
+                    }).int(),
+                },
+            });
+        },
+        .class_method, .object_method => |method_decl| {
+            const tag: Tag = switch (key) {
+                .class_method => .class_method,
+                .object_method => .object_method,
+                else => unreachable, // LCOV_EXCL_LINE
+            };
+            const subrange = listToSubrange(self, method_decl.params);
+            return addRawNode(self, .{
+                .tag = tag,
+                .main_token = main_token,
+                .data = .{
+                    .lhs = method_decl.name.int(),
+                    .rhs = addExtra(self, Extra.Function{
+                        .flags = method_decl.flags,
+                        .params_start = subrange.start,
+                        .params_end = subrange.end,
+                        .body = method_decl.body,
+                        .return_type = method_decl.return_type,
+                    }).int(),
                 },
             });
         },
@@ -968,8 +1025,8 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                         .params_end = subrange.end,
                         .return_type = arrow_func.return_type,
                         .body = arrow_func.body,
-                    }),
-                    .rhs = arrow_func.body,
+                    }).int(),
+                    .rhs = arrow_func.body.int(),
                 },
             });
         },
@@ -979,8 +1036,8 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                 .tag = .call_expr,
                 .main_token = main_token,
                 .data = .{
-                    .lhs = expr.node,
-                    .rhs = addExtra(self, subrange),
+                    .lhs = expr.node.int(),
+                    .rhs = addExtra(self, subrange).int(),
                 },
             });
         },
@@ -990,8 +1047,8 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                 .tag = if (key == .object_type) .object_type else .tuple_type,
                 .main_token = main_token,
                 .data = .{
-                    .lhs = subrange.start,
-                    .rhs = subrange.end,
+                    .lhs = subrange.start.int(),
+                    .rhs = subrange.end.int(),
                 },
             });
         },
@@ -1008,8 +1065,8 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                 .tag = .function_type,
                 .main_token = main_token,
                 .data = .{
-                    .lhs = extra,
-                    .rhs = func_type.return_type,
+                    .lhs = extra.int(),
+                    .rhs = func_type.return_type.int(),
                 },
             });
         },
@@ -1120,8 +1177,8 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                 .tag = tag,
                 .main_token = main_token,
                 .data = .{
-                    .lhs = binary.left,
-                    .rhs = binary.right,
+                    .lhs = binary.left.int(),
+                    .rhs = binary.right.int(),
                 },
             });
         },
@@ -1171,7 +1228,7 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
             return addRawNode(self, .{
                 .tag = tag,
                 .main_token = main_token,
-                .data = .{ .lhs = node },
+                .data = .{ .lhs = node.int() },
             });
         },
 
@@ -1200,7 +1257,7 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
             return addRawNode(self, .{
                 .tag = .object_type_field,
                 .main_token = main_token,
-                .data = .{ .lhs = obj_field_type.name, .rhs = obj_field_type.type },
+                .data = .{ .lhs = obj_field_type.name.int(), .rhs = obj_field_type.type.int() },
             });
         },
         .generic_type => |generic_type| {
@@ -1209,8 +1266,8 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                 .tag = .generic_type,
                 .main_token = main_token,
                 .data = .{
-                    .lhs = generic_type.name,
-                    .rhs = addExtra(self, span),
+                    .lhs = generic_type.name.int(),
+                    .rhs = addExtra(self, span).int(),
                 },
             });
         },
@@ -1221,13 +1278,13 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                 .tag = .interface_decl,
                 .main_token = main_token,
                 .data = .{
-                    .lhs = interface_decl.name,
+                    .lhs = interface_decl.name.int(),
                     .rhs = addExtra(self, Extra.Interface{
                         .extends_start = extends_span.start,
                         .extends_end = extends_span.end,
                         .body_start = body_span.start,
                         .body_end = body_span.end,
-                    }),
+                    }).int(),
                 },
             });
         },
@@ -1235,74 +1292,74 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
 }
 
 pub fn getNode(self: Parser, index: Node.Index) Node {
-    const node = self.nodes.items[index];
+    const node = self.nodes.items[index.int()];
 
     switch (node.tag) {
         .root => {
             return .{
-                .root = self.extra.items[node.data.lhs..node.data.rhs],
+                .root = getExtraItems(self, Node.Index, node.data.lhs, node.data.rhs),
             };
         },
         .import => {
-            if (node.data.lhs == Node.Empty) {
+            if (node.data.lhs == Node.Empty.int()) {
                 return .{
                     .import = .{
-                        .simple = node.data.rhs,
+                        .simple = Token.at(node.data.rhs),
                     },
                 };
             }
 
-            const subrange = getExtra(self, Extra.Subrange, node.data.lhs);
+            const subrange = getExtra(self, Extra.Subrange, Extra.at(node.data.lhs));
             return .{
                 .import = .{ .full = .{
-                    .bindings = self.extra.items[subrange.start..subrange.end],
-                    .path = node.data.rhs,
+                    .bindings = getExtraItems(self, Node.Index, subrange.start.int(), subrange.end.int()),
+                    .path = Token.at(node.data.rhs),
                 } },
             };
         },
         .import_binding_named => {
             return .{
                 .import_binding = .{
-                    .named = self.extra.items[node.data.lhs..node.data.rhs],
+                    .named = getExtraItems(self, Node.Index, node.data.lhs, node.data.rhs),
                 },
             };
         },
         .import_binding_default => {
             return .{
                 .import_binding = .{
-                    .default = node.data.lhs,
+                    .default = Node.at(node.data.lhs),
                 },
             };
         },
         .import_binding_namespace => {
             return .{
                 .import_binding = .{
-                    .namespace = node.data.lhs,
+                    .namespace = Token.at(node.data.lhs),
                 },
             };
         },
         .binding_decl => {
             return .{
                 .binding_decl = .{
-                    .name = node.data.lhs,
-                    .alias = node.data.rhs,
+                    .name = Token.at(node.data.lhs),
+                    .alias = Token.at(node.data.rhs),
                 },
             };
         },
         .export_named => {
             return .{
                 .@"export" = .{
-                    .named = self.extra.items[node.data.lhs..node.data.rhs],
+                    .named = getExtraItems(self, Node.Index, node.data.lhs, node.data.rhs),
                 },
             };
         },
         .export_from => {
-            const span = getExtra(self, Extra.Subrange, node.data.lhs);
+            const span = getExtra(self, Extra.Subrange, Extra.at(node.data.lhs));
             return .{
                 .@"export" = .{
                     .from = .{
-                        .bindings = self.extra.items[span.start..span.end],
-                        .path = node.data.rhs,
+                        .bindings = getExtraItems(self, Node.Index, span.start.int(), span.end.int()),
+                        .path = Token.at(node.data.rhs),
                     },
                 },
             };
@@ -1311,8 +1368,8 @@ pub fn getNode(self: Parser, index: Node.Index) Node {
             return .{
                 .@"export" = .{
                     .from_all = .{
-                        .alias = node.data.lhs,
-                        .path = node.data.rhs,
+                        .alias = Token.at(node.data.lhs),
+                        .path = Token.at(node.data.rhs),
                     },
                 },
             };
@@ -1320,26 +1377,26 @@ pub fn getNode(self: Parser, index: Node.Index) Node {
         .export_default => {
             return .{
                 .@"export" = .{
-                    .default = node.data.lhs,
+                    .default = Node.at(node.data.lhs),
                 },
             };
         },
         .export_node => {
             return .{
                 .@"export" = .{
-                    .node = node.data.lhs,
+                    .node = Node.at(node.data.lhs),
                 },
             };
         },
         .abstract_class_decl, .class_decl => {
-            const class = getExtra(self, Extra.ClassDeclaration, node.data.rhs);
+            const class = getExtra(self, Extra.ClassDeclaration, Extra.at(node.data.rhs));
             return .{
                 .class = .{
                     .abstract = node.tag == .abstract_class_decl,
-                    .name = node.data.lhs,
+                    .name = Token.at(node.data.lhs),
                     .super_class = class.super_class,
-                    .implements = self.extra.items[class.implements_start..class.implements_end],
-                    .body = self.extra.items[class.body_start..class.body_end],
+                    .implements = getExtraItems(self, Token.Index, class.implements_start.int(), class.implements_end.int()),
+                    .body = getExtraItems(self, Node.Index, class.body_start.int(), class.body_end.int()),
                 },
             };
         },
@@ -1347,15 +1404,15 @@ pub fn getNode(self: Parser, index: Node.Index) Node {
             return .{
                 .class_member = .{
                     .flags = @intCast(node.data.lhs),
-                    .node = node.data.rhs,
+                    .node = Node.at(node.data.rhs),
                 },
             };
         },
         .class_field => {
-            const field = getExtra(self, Extra.Declaration, node.data.rhs);
+            const field = getExtra(self, Extra.Declaration, Extra.at(node.data.rhs));
             return .{
                 .class_field = .{
-                    .name = node.data.lhs,
+                    .name = Node.at(node.data.lhs),
                     .decl_type = field.decl_type,
                     .value = field.value,
                 },
@@ -1370,26 +1427,26 @@ pub fn getNode(self: Parser, index: Node.Index) Node {
                         .let_decl => .let,
                         else => unreachable, // LCOV_EXCL_LINE
                     },
-                    .list = self.extra.items[node.data.lhs..node.data.rhs],
+                    .list = getExtraItems(self, Node.Index, node.data.lhs, node.data.rhs),
                 },
             };
         },
         .decl_binding => {
-            const extra = getExtra(self, Extra.Declaration, node.data.rhs);
+            const extra = getExtra(self, Extra.Declaration, Extra.at(node.data.rhs));
             return .{
                 .decl_binding = .{
-                    .name = node.data.lhs,
+                    .name = Token.at(node.data.lhs),
                     .decl_type = extra.decl_type,
                     .value = extra.value,
                 },
             };
         },
         .@"if", .ternary => {
-            const if_extra = getExtra(self, Extra.If, node.data.lhs);
+            const if_extra = getExtra(self, Extra.If, Extra.at(node.data.lhs));
             const data = Node.If{
                 .expr = if_extra.expr,
                 .body = if_extra.body,
-                .@"else" = node.data.rhs,
+                .@"else" = Node.at(node.data.rhs),
             };
             return switch (node.tag) {
                 .@"if" => .{ .@"if" = data },
@@ -1398,22 +1455,22 @@ pub fn getNode(self: Parser, index: Node.Index) Node {
             };
         },
         .@"switch" => {
-            const subrange = getExtra(self, Extra.Subrange, node.data.rhs);
+            const subrange = getExtra(self, Extra.Subrange, Extra.at(node.data.rhs));
             return .{
                 .@"switch" = .{
-                    .expr = node.data.lhs,
-                    .cases = self.extra.items[subrange.start..subrange.end],
+                    .expr = Node.at(node.data.lhs),
+                    .cases = getExtraItems(self, Node.Index, subrange.start.int(), subrange.end.int()),
                 },
             };
         },
         .case => {
-            const expr = node.data.lhs;
-            const subrange = getExtra(self, Extra.Subrange, node.data.rhs);
+            const expr = Node.at(node.data.lhs);
+            const subrange = getExtra(self, Extra.Subrange, Extra.at(node.data.rhs));
             return .{
                 .case = .{
                     .case = .{
                         .expr = expr,
-                        .body = self.extra.items[subrange.start..subrange.end],
+                        .body = getExtraItems(self, Node.Index, subrange.start.int(), subrange.end.int()),
                     },
                 },
             };
@@ -1421,43 +1478,43 @@ pub fn getNode(self: Parser, index: Node.Index) Node {
         .default => {
             return .{
                 .case = .{
-                    .default = self.extra.items[node.data.lhs..node.data.rhs],
+                    .default = getExtraItems(self, Node.Index, node.data.lhs, node.data.rhs),
                 },
             };
         },
         .@"for" => {
-            const for_extra = getExtra(self, Extra.ForThree, node.data.lhs);
+            const for_extra = getExtra(self, Extra.ForThree, Extra.at(node.data.lhs));
             return Node{
                 .@"for" = .{
                     .classic = .{
                         .init = for_extra.init,
                         .cond = for_extra.cond,
                         .post = for_extra.post,
-                        .body = node.data.rhs,
+                        .body = Node.at(node.data.rhs),
                     },
                 },
             };
         },
         .for_in => {
-            const for_extra = getExtra(self, Extra.ForTwo, node.data.lhs);
+            const for_extra = getExtra(self, Extra.ForTwo, Extra.at(node.data.lhs));
             return .{
                 .@"for" = .{
                     .in = .{
                         .left = for_extra.left,
                         .right = for_extra.right,
-                        .body = node.data.rhs,
+                        .body = Node.at(node.data.rhs),
                     },
                 },
             };
         },
         .for_of => {
-            const for_extra = getExtra(self, Extra.ForTwo, node.data.lhs);
+            const for_extra = getExtra(self, Extra.ForTwo, Extra.at(node.data.lhs));
             return .{
                 .@"for" = .{
                     .of = .{
                         .left = for_extra.left,
                         .right = for_extra.right,
-                        .body = node.data.rhs,
+                        .body = Node.at(node.data.rhs),
                     },
                 },
             };
@@ -1465,50 +1522,63 @@ pub fn getNode(self: Parser, index: Node.Index) Node {
         .@"while" => {
             return .{
                 .@"while" = .{
-                    .cond = node.data.lhs,
-                    .body = node.data.rhs,
+                    .cond = Node.at(node.data.lhs),
+                    .body = Node.at(node.data.rhs),
                 },
             };
         },
         .do_while => {
             return .{
                 .do_while = .{
-                    .cond = node.data.lhs,
-                    .body = node.data.rhs,
+                    .cond = Node.at(node.data.lhs),
+                    .body = Node.at(node.data.rhs),
                 },
             };
         },
         .function_param => {
             return .{
                 .function_param = .{
-                    .node = node.data.lhs,
-                    .type = node.data.rhs,
+                    .identifier = Token.at(node.data.lhs),
+                    .type = Node.at(node.data.rhs),
                 },
             };
         },
         .func_decl,
         .func_expr,
-        .class_method,
-        .object_method,
         => {
-            const extra = getExtra(self, Extra.Function, node.data.rhs);
+            const extra = getExtra(self, Extra.Function, Extra.at(node.data.rhs));
             const decl: Node.FunctionDeclaration = .{
                 .flags = @truncate(extra.flags),
-                .name = node.data.lhs,
-                .params = self.extra.items[extra.params_start..extra.params_end],
+                .name = Token.at(node.data.lhs),
+                .params = getExtraItems(self, Node.Index, extra.params_start.int(), extra.params_end.int()),
                 .body = extra.body,
                 .return_type = extra.return_type,
             };
             return switch (node.tag) {
                 .func_decl => .{ .function_decl = decl },
                 .func_expr => .{ .function_expr = decl },
+                else => unreachable, // LCOV_EXCL_LINE
+            };
+        },
+        .class_method,
+        .object_method,
+        => {
+            const extra = getExtra(self, Extra.Function, Extra.at(node.data.rhs));
+            const decl: Node.MethodDeclaration = .{
+                .flags = @truncate(extra.flags),
+                .name = Node.at(node.data.lhs),
+                .params = getExtraItems(self, Node.Index, extra.params_start.int(), extra.params_end.int()),
+                .body = extra.body,
+                .return_type = extra.return_type,
+            };
+            return switch (node.tag) {
                 .class_method => .{ .class_method = decl },
                 .object_method => .{ .object_method = decl },
                 else => unreachable, // LCOV_EXCL_LINE
             };
         },
         .async_arrow_function, .arrow_function => {
-            const extra = getExtra(self, Extra.ArrowFunction, node.data.lhs);
+            const params = getExtra(self, Extra.ArrowFunction, Extra.at(node.data.lhs));
             return Node{
                 .arrow_function = .{
                     .type = switch (node.tag) {
@@ -1516,22 +1586,23 @@ pub fn getNode(self: Parser, index: Node.Index) Node {
                         .arrow_function => .arrow,
                         else => unreachable, // LCOV_EXCL_LINE
                     },
-                    .params = self.extra.items[extra.params_start..extra.params_end],
-                    .body = node.data.rhs,
-                    .return_type = extra.return_type,
+                    .params = getExtraItems(self, Node.Index, params.params_start.int(), params.params_end.int()),
+                    .body = Node.at(node.data.rhs),
+                    .return_type = params.return_type,
                 },
             };
         },
         .call_expr => {
-            const extra = getExtra(self, Extra.Subrange, node.data.rhs);
-            const data = Node.CallExpression{
-                .node = node.data.lhs,
-                .params = self.extra.items[extra.start..extra.end],
+            const params = getExtra(self, Extra.Subrange, Extra.at(node.data.rhs));
+            return .{
+                .call_expr = Node.CallExpression{
+                    .node = Node.at(node.data.lhs),
+                    .params = getExtraItems(self, Node.Index, params.start.int(), params.end.int()),
+                },
             };
-            return .{ .call_expr = data };
         },
         .block, .array_literal, .object_literal, .class_static_block => {
-            const nodes = self.extra.items[node.data.lhs..node.data.rhs];
+            const nodes = getExtraItems(self, Node.Index, node.data.lhs, node.data.rhs);
             return switch (node.tag) {
                 .block => .{ .block = nodes },
                 .array_literal => .{ .array_literal = nodes },
@@ -1591,8 +1662,8 @@ pub fn getNode(self: Parser, index: Node.Index) Node {
         .type_decl,
         => {
             const data = Node.Binary{
-                .left = node.data.lhs,
-                .right = node.data.rhs,
+                .left = Node.at(node.data.lhs),
+                .right = Node.at(node.data.rhs),
             };
             return switch (node.tag) {
                 .comma => .{ .comma = data },
@@ -1669,25 +1740,25 @@ pub fn getNode(self: Parser, index: Node.Index) Node {
         .array_type,
         => {
             return switch (node.tag) {
-                .@"return" => .{ .@"return" = node.data.lhs },
-                .new_expr => .{ .new_expr = node.data.lhs },
-                .grouping => .{ .grouping = node.data.lhs },
-                .plus => .{ .plus = node.data.lhs },
-                .plusplus_pre => .{ .plusplus_pre = node.data.lhs },
-                .plusplus_post => .{ .plusplus_post = node.data.lhs },
-                .minus => .{ .minus = node.data.lhs },
-                .minusminus_pre => .{ .minusminus_pre = node.data.lhs },
-                .minusminus_post => .{ .minusminus_post = node.data.lhs },
-                .not => .{ .not = node.data.lhs },
-                .bitwise_negate => .{ .bitwise_negate = node.data.lhs },
-                .spread => .{ .spread = node.data.lhs },
-                .typeof => .{ .typeof = node.data.lhs },
-                .keyof => .{ .keyof = node.data.lhs },
-                .void => .{ .void = node.data.lhs },
-                .delete => .{ .delete = node.data.lhs },
-                .computed_identifier => .{ .computed_identifier = node.data.lhs },
-                .object_literal_field_shorthand => .{ .object_literal_field_shorthand = node.data.lhs },
-                .array_type => .{ .array_type = node.data.lhs },
+                .@"return" => .{ .@"return" = Node.at(node.data.lhs) },
+                .new_expr => .{ .new_expr = Node.at(node.data.lhs) },
+                .grouping => .{ .grouping = Node.at(node.data.lhs) },
+                .plus => .{ .plus = Node.at(node.data.lhs) },
+                .plusplus_pre => .{ .plusplus_pre = Node.at(node.data.lhs) },
+                .plusplus_post => .{ .plusplus_post = Node.at(node.data.lhs) },
+                .minus => .{ .minus = Node.at(node.data.lhs) },
+                .minusminus_pre => .{ .minusminus_pre = Node.at(node.data.lhs) },
+                .minusminus_post => .{ .minusminus_post = Node.at(node.data.lhs) },
+                .not => .{ .not = Node.at(node.data.lhs) },
+                .bitwise_negate => .{ .bitwise_negate = Node.at(node.data.lhs) },
+                .spread => .{ .spread = Node.at(node.data.lhs) },
+                .typeof => .{ .typeof = Node.at(node.data.lhs) },
+                .keyof => .{ .keyof = Node.at(node.data.lhs) },
+                .void => .{ .void = Node.at(node.data.lhs) },
+                .delete => .{ .delete = Node.at(node.data.lhs) },
+                .computed_identifier => .{ .computed_identifier = Node.at(node.data.lhs) },
+                .object_literal_field_shorthand => .{ .object_literal_field_shorthand = Node.at(node.data.lhs) },
+                .array_type => .{ .array_type = Node.at(node.data.lhs) },
                 else => unreachable, // LCOV_EXCL_LINE
             };
         },
@@ -1714,44 +1785,44 @@ pub fn getNode(self: Parser, index: Node.Index) Node {
         },
 
         .function_type => {
-            const extra = getExtra(self, Extra.FunctionType, node.data.lhs);
+            const extra = getExtra(self, Extra.FunctionType, Extra.at(node.data.lhs));
             return .{ .function_type = .{
-                .generic_params = self.extra.items[extra.generic_params_start..extra.generic_params_end],
-                .params = self.extra.items[extra.params_start..extra.params_end],
-                .return_type = node.data.rhs,
+                .generic_params = getExtraItems(self, Node.Index, extra.generic_params_start.int(), extra.generic_params_end.int()),
+                .params = getExtraItems(self, Node.Index, extra.params_start.int(), extra.params_end.int()),
+                .return_type = Node.at(node.data.rhs),
             } };
         },
 
         .object_type, .tuple_type => {
             return switch (node.tag) {
-                .object_type => .{ .object_type = self.extra.items[node.data.lhs..node.data.rhs] },
-                .tuple_type => .{ .tuple_type = self.extra.items[node.data.lhs..node.data.rhs] },
+                .object_type => .{ .object_type = getExtraItems(self, Node.Index, node.data.lhs, node.data.rhs) },
+                .tuple_type => .{ .tuple_type = getExtraItems(self, Node.Index, node.data.lhs, node.data.rhs) },
                 else => unreachable, // LCOV_EXCL_LINE
             };
         },
 
         .object_type_field => {
             return .{ .object_type_field = .{
-                .name = node.data.lhs,
-                .type = node.data.rhs,
+                .name = Node.at(node.data.lhs),
+                .type = Node.at(node.data.rhs),
             } };
         },
 
         .generic_type => {
-            const span = getExtra(self, Extra.Subrange, node.data.rhs);
+            const span = getExtra(self, Extra.Subrange, Extra.at(node.data.rhs));
             return .{ .generic_type = .{
-                .name = node.data.lhs,
-                .params = self.extra.items[span.start..span.end],
+                .name = Token.at(node.data.lhs),
+                .params = getExtraItems(self, Node.Index, span.start.int(), span.end.int()),
             } };
         },
 
         .interface_decl => {
-            const interface = getExtra(self, Extra.Interface, node.data.rhs);
+            const interface = getExtra(self, Extra.Interface, Extra.at(node.data.rhs));
             return .{
                 .interface_decl = .{
-                    .name = node.data.lhs,
-                    .extends = self.extra.items[interface.extends_start..interface.extends_end],
-                    .body = self.extra.items[interface.body_start..interface.body_end],
+                    .name = Token.at(node.data.lhs),
+                    .extends = getExtraItems(self, Token.Index, interface.extends_start.int(), interface.extends_end.int()),
+                    .body = getExtraItems(self, Node.Index, interface.body_start.int(), interface.body_end.int()),
                 },
             };
         },
@@ -1759,38 +1830,48 @@ pub fn getNode(self: Parser, index: Node.Index) Node {
 }
 
 pub fn getRawNode(self: Parser, index: Node.Index) Raw {
-    return self.nodes.items[index];
+    return self.nodes.items[index.int()];
 }
 
 pub fn addRawNode(self: *Parser, node: Raw) Node.Index {
     const index = self.nodes.items.len;
     self.nodes.append(node) catch @panic("Out of memory");
-    return @intCast(index);
+    return Node.at(@intCast(index));
 }
 
-pub fn getExtra(self: Parser, ty: type, index: Node.Index) ty {
+pub fn getExtra(self: Parser, ty: type, index: Extra.Index) ty {
     const fields = std.meta.fields(ty);
     var result: [fields.len]Node.Index = undefined;
-    @memcpy(&result, self.extra.items[index .. index + fields.len]);
+    @memcpy(&result, getExtraItems(self, Node.Index, index.int(), index.int() + fields.len));
     return @as(*ty, @ptrCast(&result)).*;
 }
 
-pub fn addExtra(self: *Parser, extra: anytype) Node.Index {
+pub fn getExtraItems(self: Parser, ty: type, start: usize, end: usize) []ty {
+    return @as([]ty, @ptrCast(self.extra.items[start..end]));
+}
+
+pub fn addExtra(self: *Parser, extra: anytype) Extra.Index {
     const fields = std.meta.fields(@TypeOf(extra));
     self.extra.ensureUnusedCapacity(fields.len) catch @panic("Out of memory");
     const result = self.extra.items.len;
     inline for (fields) |field| {
-        comptime assert(field.type == Node.Index);
-        self.extra.appendAssumeCapacity(@field(extra, field.name));
+        if (field.type == Node.Index or field.type == Token.Index or field.type == Extra.Index) {
+            self.extra.appendAssumeCapacity(@intFromEnum(@field(extra, field.name)));
+        } else if (field.type == u32) {
+            self.extra.appendAssumeCapacity(@field(extra, field.name));
+        } else {
+            @compileError("unexpected field type");
+        }
     }
-    return @intCast(result);
+    return Extra.at(@intCast(result));
 }
 
-pub fn listToSubrange(self: *Parser, list: []Node.Index) Extra.Subrange {
-    self.extra.appendSlice(list) catch @panic("Out of memory");
+pub fn listToSubrange(self: *Parser, list: anytype) Extra.Subrange {
+    assert(@TypeOf(list) == []Node.Index or @TypeOf(list) == []Token.Index);
+    self.extra.appendSlice(@as([]u32, @ptrCast(list))) catch @panic("Out of memory");
     return .{
-        .start = @intCast(self.extra.items.len - list.len),
-        .end = @intCast(self.extra.items.len),
+        .start = Extra.at(@intCast(self.extra.items.len - list.len)),
+        .end = Extra.at(@intCast(self.extra.items.len)),
     };
 }
 
@@ -1798,53 +1879,53 @@ fn expectRawNode(expected_raw: Raw, node: Node) !void {
     var parser = try Parser.init(std.testing.allocator, "1");
     defer parser.deinit();
 
-    const node_idx = addNode(&parser, 0, node);
+    const node_idx = addNode(&parser, Token.at(0), node);
 
     try expectEqualDeep(expected_raw, getRawNode(parser, node_idx));
     try expectEqualDeep(node, getNode(parser, node_idx));
 }
 
 test "Pool root" {
-    var stmts = [_]Node.Index{ 1, 2, 3 };
+    var stmts = [_]Node.Index{ Node.at(1), Node.at(2), Node.at(3) };
     try expectRawNode(Raw{
         .tag = .root,
-        .main_token = 0,
+        .main_token = Token.at(0),
         .data = .{ .lhs = 0, .rhs = @intCast(stmts.len) },
     }, Node{ .root = &stmts });
 }
 
 test "Pool imports" {
-    const name_node = 1;
-    const alias_node = 2;
-    const path_node_index = 4;
-    const identifier_token = 2;
+    const name_node = Token.at(1);
+    const alias_node = Token.at(2);
+    const path_node_index = Token.at(4);
+    const identifier_token = Node.at(2);
     var named_bindings = [_]Node.Index{identifier_token};
-    var import_bindings = [_]Node.Index{ 1, 2, 3 };
+    var import_bindings = [_]Node.Index{ Node.at(1), Node.at(2), Node.at(3) };
 
     const tests = .{
         .{
             Node{ .import_binding = .{ .named = &named_bindings } },
-            Raw{ .tag = .import_binding_named, .main_token = 0, .data = .{ .lhs = 0, .rhs = named_bindings.len } },
+            Raw{ .tag = .import_binding_named, .main_token = Token.at(0), .data = .{ .lhs = 0, .rhs = named_bindings.len } },
         },
         .{
             Node{ .import_binding = .{ .default = identifier_token } },
-            Raw{ .tag = .import_binding_default, .main_token = 0, .data = .{ .lhs = identifier_token, .rhs = Node.Empty } },
+            Raw{ .tag = .import_binding_default, .main_token = Token.at(0), .data = .{ .lhs = identifier_token.int(), .rhs = 0 } },
         },
         .{
-            Node{ .import_binding = .{ .namespace = identifier_token } },
-            Raw{ .tag = .import_binding_namespace, .main_token = 0, .data = .{ .lhs = identifier_token, .rhs = Node.Empty } },
+            Node{ .import_binding = .{ .namespace = Token.at(identifier_token.int()) } },
+            Raw{ .tag = .import_binding_namespace, .main_token = Token.at(0), .data = .{ .lhs = identifier_token.int(), .rhs = 0 } },
         },
         .{
             Node{ .import = .{ .simple = path_node_index } },
-            Raw{ .tag = .import, .main_token = 0, .data = .{ .lhs = Node.Empty, .rhs = path_node_index } },
+            Raw{ .tag = .import, .main_token = Token.at(0), .data = .{ .lhs = 0, .rhs = path_node_index.int() } },
         },
         .{
             Node{ .import = .{ .full = .{ .bindings = &import_bindings, .path = path_node_index } } },
-            Raw{ .tag = .import, .main_token = 0, .data = .{ .lhs = import_bindings.len, .rhs = path_node_index } },
+            Raw{ .tag = .import, .main_token = Token.at(0), .data = .{ .lhs = import_bindings.len, .rhs = path_node_index.int() } },
         },
         .{
             Node{ .binding_decl = .{ .name = name_node, .alias = alias_node } },
-            Raw{ .tag = .binding_decl, .main_token = 0, .data = .{ .lhs = name_node, .rhs = alias_node } },
+            Raw{ .tag = .binding_decl, .main_token = Token.at(0), .data = .{ .lhs = name_node.int(), .rhs = alias_node.int() } },
         },
     };
 
@@ -1854,31 +1935,31 @@ test "Pool imports" {
 }
 
 test "Pool exports" {
-    const node_index = 3;
-    const path_index = 4;
-    const alias_index = 5;
-    var bindings = [_]Node.Index{ 1, 2 };
+    const node_index = Node.at(3);
+    const path_index = Token.at(4);
+    const alias_index = Token.at(5);
+    var bindings = [_]Node.Index{ Node.at(1), Node.at(2) };
 
     const tests = .{
         .{
             Node{ .@"export" = .{ .named = &bindings } },
-            Raw{ .tag = .export_named, .main_token = 0, .data = .{ .lhs = 0, .rhs = bindings.len } },
+            Raw{ .tag = .export_named, .main_token = Token.at(0), .data = .{ .lhs = 0, .rhs = bindings.len } },
         },
         .{
             Node{ .@"export" = .{ .from = .{ .bindings = &bindings, .path = path_index } } },
-            Raw{ .tag = .export_from, .main_token = 0, .data = .{ .lhs = bindings.len, .rhs = path_index } },
+            Raw{ .tag = .export_from, .main_token = Token.at(0), .data = .{ .lhs = bindings.len, .rhs = path_index.int() } },
         },
         .{
             Node{ .@"export" = .{ .from_all = .{ .alias = alias_index, .path = path_index } } },
-            Raw{ .tag = .export_from_all, .main_token = 0, .data = .{ .lhs = alias_index, .rhs = path_index } },
+            Raw{ .tag = .export_from_all, .main_token = Token.at(0), .data = .{ .lhs = alias_index.int(), .rhs = path_index.int() } },
         },
         .{
             Node{ .@"export" = .{ .default = node_index } },
-            Raw{ .tag = .export_default, .main_token = 0, .data = .{ .lhs = node_index, .rhs = 0 } },
+            Raw{ .tag = .export_default, .main_token = Token.at(0), .data = .{ .lhs = node_index.int(), .rhs = 0 } },
         },
         .{
             Node{ .@"export" = .{ .node = node_index } },
-            Raw{ .tag = .export_node, .main_token = 0, .data = .{ .lhs = node_index, .rhs = 0 } },
+            Raw{ .tag = .export_node, .main_token = Token.at(0), .data = .{ .lhs = node_index.int(), .rhs = 0 } },
         },
     };
 
@@ -1888,10 +1969,10 @@ test "Pool exports" {
 }
 
 test "Pool class declaration" {
-    const name_node = 1;
-    const super_class_node = 2;
-    var implements = [_]Node.Index{3};
-    var body = [_]Node.Index{4};
+    const name_node = Token.at(1);
+    const super_class_node = Node.at(2);
+    var implements = [_]Token.Index{Token.at(3)};
+    var body = [_]Node.Index{Node.at(4)};
 
     const tests = .{
         .{
@@ -1907,32 +1988,32 @@ test "Pool class declaration" {
     inline for (tests) |test_case| {
         try expectRawNode(Raw{
             .tag = test_case[1],
-            .main_token = 0,
-            .data = .{ .lhs = name_node, .rhs = @intCast(implements.len + body.len) },
+            .main_token = Token.at(0),
+            .data = .{ .lhs = name_node.int(), .rhs = @intCast(implements.len + body.len) },
         }, test_case[0]);
     }
 }
 
 test "Pool class members" {
     const flags = ClassMemberFlags.abstract | ClassMemberFlags.public | ClassMemberFlags.readonly;
-    const name_node = 1;
-    const decl_type_node = 2;
-    const value_node = 3;
-    const class_field_node = 4;
+    const name_node = Node.at(1);
+    const decl_type_node = Node.at(2);
+    const value_node = Node.at(3);
+    const class_field_node = Node.at(4);
     var class_static_nodes = [_]Node.Index{class_field_node};
 
     const tests = .{
         .{
             Node{ .class_field = .{ .name = name_node, .decl_type = decl_type_node, .value = value_node } },
-            Raw{ .tag = .class_field, .main_token = 0, .data = .{ .lhs = name_node, .rhs = 0 } },
+            Raw{ .tag = .class_field, .main_token = Token.at(0), .data = .{ .lhs = name_node.int(), .rhs = 0 } },
         },
         .{
             Node{ .class_member = .{ .flags = @intCast(flags), .node = class_field_node } },
-            Raw{ .tag = .class_member, .main_token = 0, .data = .{ .lhs = flags, .rhs = class_field_node } },
+            Raw{ .tag = .class_member, .main_token = Token.at(0), .data = .{ .lhs = flags, .rhs = class_field_node.int() } },
         },
         .{
             Node{ .class_static_block = &class_static_nodes },
-            Raw{ .tag = .class_static_block, .main_token = 0, .data = .{ .lhs = 0, .rhs = @intCast(class_static_nodes.len) } },
+            Raw{ .tag = .class_static_block, .main_token = Token.at(0), .data = .{ .lhs = 0, .rhs = @intCast(class_static_nodes.len) } },
         },
     };
 
@@ -1942,27 +2023,27 @@ test "Pool class members" {
 }
 
 test "Pool declarations" {
-    const name_node = 1;
-    const decl_type_node = 2;
-    const value_node = 3;
-    var binding_list = [_]Node.Index{4};
+    const name_node = Token.at(1);
+    const decl_type_node = Node.at(2);
+    const value_node = Node.at(3);
+    var binding_list = [_]Node.Index{Node.at(4)};
 
     const tests = .{
         .{
             Node{ .decl_binding = .{ .name = name_node, .decl_type = decl_type_node, .value = value_node } },
-            Raw{ .tag = .decl_binding, .main_token = 0, .data = .{ .lhs = name_node, .rhs = 0 } },
+            Raw{ .tag = .decl_binding, .main_token = Token.at(0), .data = .{ .lhs = name_node.int(), .rhs = 0 } },
         },
         .{
             Node{ .declaration = .{ .kind = .@"var", .list = &binding_list } },
-            Raw{ .tag = .var_decl, .main_token = 0, .data = .{ .lhs = 0, .rhs = @intCast(binding_list.len) } },
+            Raw{ .tag = .var_decl, .main_token = Token.at(0), .data = .{ .lhs = 0, .rhs = @intCast(binding_list.len) } },
         },
         .{
             Node{ .declaration = .{ .kind = .@"const", .list = &binding_list } },
-            Raw{ .tag = .const_decl, .main_token = 0, .data = .{ .lhs = 0, .rhs = @intCast(binding_list.len) } },
+            Raw{ .tag = .const_decl, .main_token = Token.at(0), .data = .{ .lhs = 0, .rhs = @intCast(binding_list.len) } },
         },
         .{
             Node{ .declaration = .{ .kind = .let, .list = &binding_list } },
-            Raw{ .tag = .let_decl, .main_token = 0, .data = .{ .lhs = 0, .rhs = @intCast(binding_list.len) } },
+            Raw{ .tag = .let_decl, .main_token = Token.at(0), .data = .{ .lhs = 0, .rhs = @intCast(binding_list.len) } },
         },
     };
 
@@ -1972,37 +2053,37 @@ test "Pool declarations" {
 }
 
 test "Pool ifs" {
-    const expr_node = 1;
-    const body_node = 2;
-    const else_node = 3;
+    const expr_node = Node.at(1);
+    const body_node = Node.at(2);
+    const else_node = Node.at(3);
 
     try expectRawNode(Raw{
         .tag = .@"if",
-        .main_token = 0,
+        .main_token = Token.at(0),
         .data = .{
             .lhs = 0,
-            .rhs = else_node,
+            .rhs = else_node.int(),
         },
     }, Node{ .@"if" = .{ .expr = expr_node, .body = body_node, .@"else" = else_node } });
 }
 
 test "Pool switches" {
-    const case_expr_node = 1;
-    var case_body_node = [_]u32{2};
-    var switch_cases = [_]Node.Index{ 3, 4 };
+    const case_expr_node = Node.at(1);
+    var case_body_node = [_]Node.Index{Node.at(2)};
+    var switch_cases = [_]Node.Index{ Node.at(3), Node.at(4) };
 
     const tests = .{
         .{
             Node{ .case = .{ .case = .{ .expr = case_expr_node, .body = &case_body_node } } },
-            Raw{ .tag = .case, .main_token = 0, .data = .{ .lhs = case_expr_node, .rhs = case_body_node.len } },
+            Raw{ .tag = .case, .main_token = Token.at(0), .data = .{ .lhs = case_expr_node.int(), .rhs = case_body_node.len } },
         },
         .{
             Node{ .case = .{ .default = &case_body_node } },
-            Raw{ .tag = .default, .main_token = 0, .data = .{ .lhs = 0, .rhs = @intCast(case_body_node.len) } },
+            Raw{ .tag = .default, .main_token = Token.at(0), .data = .{ .lhs = 0, .rhs = @intCast(case_body_node.len) } },
         },
         .{
             Node{ .@"switch" = .{ .expr = case_expr_node, .cases = &switch_cases } },
-            Raw{ .tag = .@"switch", .main_token = 0, .data = .{ .lhs = case_expr_node, .rhs = @intCast(switch_cases.len) } },
+            Raw{ .tag = .@"switch", .main_token = Token.at(0), .data = .{ .lhs = case_expr_node.int(), .rhs = @intCast(switch_cases.len) } },
         },
     };
 
@@ -2012,10 +2093,10 @@ test "Pool switches" {
 }
 
 test "Pool for loops" {
-    const init_node = 1;
-    const cond_node = 2;
-    const post_node = 3;
-    const body_node = 4;
+    const init_node = Node.at(1);
+    const cond_node = Node.at(2);
+    const post_node = Node.at(3);
+    const body_node = Node.at(4);
 
     const tests = .{
         .{
@@ -2027,7 +2108,7 @@ test "Pool for loops" {
                     .body = body_node,
                 },
             } },
-            Raw{ .tag = .@"for", .main_token = 0, .data = .{ .lhs = 0, .rhs = body_node } },
+            Raw{ .tag = .@"for", .main_token = Token.at(0), .data = .{ .lhs = 0, .rhs = body_node.int() } },
         },
         .{
             Node{ .@"for" = .{
@@ -2037,7 +2118,7 @@ test "Pool for loops" {
                     .body = body_node,
                 },
             } },
-            Raw{ .tag = .for_in, .main_token = 0, .data = .{ .lhs = 0, .rhs = body_node } },
+            Raw{ .tag = .for_in, .main_token = Token.at(0), .data = .{ .lhs = 0, .rhs = body_node.int() } },
         },
         .{
             Node{ .@"for" = .{
@@ -2047,15 +2128,15 @@ test "Pool for loops" {
                     .body = body_node,
                 },
             } },
-            Raw{ .tag = .for_of, .main_token = 0, .data = .{ .lhs = 0, .rhs = body_node } },
+            Raw{ .tag = .for_of, .main_token = Token.at(0), .data = .{ .lhs = 0, .rhs = body_node.int() } },
         },
         .{
             Node{ .@"while" = .{ .cond = cond_node, .body = body_node } },
-            Raw{ .tag = .@"while", .main_token = 0, .data = .{ .lhs = cond_node, .rhs = body_node } },
+            Raw{ .tag = .@"while", .main_token = Token.at(0), .data = .{ .lhs = cond_node.int(), .rhs = body_node.int() } },
         },
         .{
             Node{ .do_while = .{ .cond = cond_node, .body = body_node } },
-            Raw{ .tag = .do_while, .main_token = 0, .data = .{ .lhs = cond_node, .rhs = body_node } },
+            Raw{ .tag = .do_while, .main_token = Token.at(0), .data = .{ .lhs = cond_node.int(), .rhs = body_node.int() } },
         },
     };
 
@@ -2065,7 +2146,7 @@ test "Pool for loops" {
 }
 
 test "Pool blocks" {
-    var stmts = [_]Node.Index{ 1, 2 };
+    var stmts = [_]Node.Index{ Node.at(1), Node.at(2) };
 
     const test_cases = .{
         .{ Node{ .block = &stmts }, .block },
@@ -2076,42 +2157,58 @@ test "Pool blocks" {
     inline for (test_cases) |test_case| {
         try expectRawNode(Raw{
             .tag = test_case[1],
-            .main_token = 0,
+            .main_token = Token.at(0),
             .data = .{ .lhs = 0, .rhs = @intCast(stmts.len) },
         }, test_case[0]);
     }
 }
 
 test "Pool function expressions" {
-    const param_name_node = 1;
-    const param_type_node = 2;
-    var params = [_]Node.Index{3};
+    const param_name_node = Token.at(1);
+    const param_type_node = Node.at(2);
+    var params = [_]Node.Index{Node.at(3)};
 
-    const name_node = 3;
-    const body_node = 4;
-    const return_type = 5;
+    const name_node = Token.at(3);
+    const body_node = Node.at(4);
+    const return_type = Node.at(5);
     const async_func_data = Node.FunctionDeclaration{ .flags = FunctionFlags.Async, .name = name_node, .params = &params, .body = body_node, .return_type = return_type };
 
     const tests = .{
         .{
-            Node{ .function_param = .{ .node = param_name_node, .type = param_type_node } },
-            Raw{ .tag = .function_param, .main_token = 0, .data = .{ .lhs = param_name_node, .rhs = param_type_node } },
+            Node{ .function_param = .{ .identifier = param_name_node, .type = param_type_node } },
+            Raw{ .tag = .function_param, .main_token = Token.at(0), .data = .{ .lhs = param_name_node.int(), .rhs = param_type_node.int() } },
         },
         .{
             Node{ .function_decl = async_func_data },
-            Raw{ .tag = .func_decl, .main_token = 0, .data = .{ .lhs = name_node, .rhs = @intCast(params.len) } },
+            Raw{ .tag = .func_decl, .main_token = Token.at(0), .data = .{ .lhs = name_node.int(), .rhs = @intCast(params.len) } },
         },
         .{
             Node{ .function_expr = async_func_data },
-            Raw{ .tag = .func_expr, .main_token = 0, .data = .{ .lhs = name_node, .rhs = @intCast(params.len) } },
+            Raw{ .tag = .func_expr, .main_token = Token.at(0), .data = .{ .lhs = name_node.int(), .rhs = @intCast(params.len) } },
         },
+    };
+
+    inline for (tests) |test_case| {
+        try expectRawNode(test_case[1], test_case[0]);
+    }
+}
+
+test "Pool method declarations" {
+    var params = [_]Node.Index{Node.at(3)};
+
+    const name_node = Node.at(3);
+    const body_node = Node.at(4);
+    const return_type = Node.at(5);
+    const async_func_data = Node.MethodDeclaration{ .flags = FunctionFlags.Async, .name = name_node, .params = &params, .body = body_node, .return_type = return_type };
+
+    const tests = .{
         .{
             Node{ .class_method = async_func_data },
-            Raw{ .tag = .class_method, .main_token = 0, .data = .{ .lhs = name_node, .rhs = @intCast(params.len) } },
+            Raw{ .tag = .class_method, .main_token = Token.at(0), .data = .{ .lhs = name_node.int(), .rhs = @intCast(params.len) } },
         },
         .{
             Node{ .object_method = async_func_data },
-            Raw{ .tag = .object_method, .main_token = 0, .data = .{ .lhs = name_node, .rhs = @intCast(params.len) } },
+            Raw{ .tag = .object_method, .main_token = Token.at(0), .data = .{ .lhs = name_node.int(), .rhs = @intCast(params.len) } },
         },
     };
 
@@ -2121,18 +2218,18 @@ test "Pool function expressions" {
 }
 
 test "Pool arrow functions" {
-    var params = [_]Node.Index{ 1, 2 };
-    const body_node = 3;
-    const return_type = 5;
+    var params = [_]Node.Index{ Node.at(1), Node.at(2) };
+    const body_node = Node.at(3);
+    const return_type = Node.at(5);
 
     const tests = .{
         .{
             Node{ .arrow_function = .{ .type = .arrow, .params = &params, .body = body_node, .return_type = return_type } },
-            Raw{ .tag = .arrow_function, .main_token = 0, .data = .{ .lhs = @intCast(params.len), .rhs = body_node } },
+            Raw{ .tag = .arrow_function, .main_token = Token.at(0), .data = .{ .lhs = @intCast(params.len), .rhs = body_node.int() } },
         },
         .{
             Node{ .arrow_function = .{ .type = .async_arrow, .params = &params, .body = body_node, .return_type = return_type } },
-            Raw{ .tag = .async_arrow_function, .main_token = 0, .data = .{ .lhs = @intCast(params.len), .rhs = body_node } },
+            Raw{ .tag = .async_arrow_function, .main_token = Token.at(0), .data = .{ .lhs = @intCast(params.len), .rhs = body_node.int() } },
         },
     };
     inline for (tests) |test_case| {
@@ -2141,19 +2238,19 @@ test "Pool arrow functions" {
 }
 
 test "Pool call expressions" {
-    const main_node = 1;
-    var params = [_]Node.Index{ 1, 2 };
+    const main_node = Node.at(1);
+    var params = [_]Node.Index{ Node.at(1), Node.at(2) };
 
     try expectRawNode(Raw{
         .tag = .call_expr,
-        .main_token = 0,
-        .data = .{ .lhs = main_node, .rhs = @intCast(params.len) },
+        .main_token = Token.at(0),
+        .data = .{ .lhs = main_node.int(), .rhs = @intCast(params.len) },
     }, Node{ .call_expr = .{ .node = main_node, .params = &params } });
 }
 
 test "Pool binary" {
-    const left_node = 1;
-    const right_node = 2;
+    const left_node = Node.at(1);
+    const right_node = Node.at(2);
 
     const data = Node.Binary{
         .left = left_node,
@@ -2214,17 +2311,17 @@ test "Pool binary" {
     inline for (tests) |test_case| {
         try expectRawNode(Raw{
             .tag = test_case[1],
-            .main_token = 0,
+            .main_token = Token.at(0),
             .data = .{
-                .lhs = data.left,
-                .rhs = data.right,
+                .lhs = data.left.int(),
+                .rhs = data.right.int(),
             },
         }, test_case[0]);
     }
 }
 
 test "Pool single node" {
-    const node = 1;
+    const node = Node.at(1);
 
     const tests = .{
         .{ Node{ .grouping = node }, .grouping },
@@ -2251,8 +2348,8 @@ test "Pool single node" {
     inline for (tests) |test_case| {
         try expectRawNode(Raw{
             .tag = test_case[1],
-            .main_token = 0,
-            .data = .{ .lhs = node },
+            .main_token = Token.at(0),
+            .data = .{ .lhs = node.int() },
         }, test_case[0]);
     }
 }
@@ -2266,7 +2363,7 @@ test "Pool empty" {
     inline for (tests) |test_case| {
         try expectRawNode(Raw{
             .tag = test_case[1],
-            .main_token = 0,
+            .main_token = Token.at(0),
             .data = .{ .lhs = 0, .rhs = 0 },
         }, test_case[0]);
     }
@@ -2284,29 +2381,29 @@ test "Pool simple_value" {
     inline for (tests) |test_case| {
         try expectRawNode(Raw{
             .tag = test_case[1],
-            .main_token = 0,
-            .data = .{ .lhs = @intFromEnum(data.kind), .rhs = Node.Empty },
+            .main_token = Token.at(0),
+            .data = .{ .lhs = @intFromEnum(data.kind), .rhs = 0 },
         }, test_case[0]);
     }
 }
 
 test "Pool object type" {
-    const field_name = 1;
-    const field_type = 2;
-    var field_list = [_]Node.Index{ 3, 4 };
+    const field_name = Node.at(1);
+    const field_type = Node.at(2);
+    var field_list = [_]Node.Index{ Node.at(3), Node.at(4) };
 
     const tests = .{
         .{
             Node{ .object_type_field = .{ .name = field_name, .type = field_type } },
-            Raw{ .tag = .object_type_field, .main_token = 0, .data = .{ .lhs = field_name, .rhs = field_type } },
+            Raw{ .tag = .object_type_field, .main_token = Token.at(0), .data = .{ .lhs = field_name.int(), .rhs = field_type.int() } },
         },
         .{
             Node{ .object_type = &field_list },
-            Raw{ .tag = .object_type, .main_token = 0, .data = .{ .lhs = 0, .rhs = @intCast(field_list.len) } },
+            Raw{ .tag = .object_type, .main_token = Token.at(0), .data = .{ .lhs = 0, .rhs = @intCast(field_list.len) } },
         },
         .{
             Node{ .tuple_type = &field_list },
-            Raw{ .tag = .tuple_type, .main_token = 0, .data = .{ .lhs = 0, .rhs = @intCast(field_list.len) } },
+            Raw{ .tag = .tuple_type, .main_token = Token.at(0), .data = .{ .lhs = 0, .rhs = @intCast(field_list.len) } },
         },
     };
 
@@ -2316,8 +2413,8 @@ test "Pool object type" {
 }
 
 test "Pool generic_type" {
-    const name_node = 1;
-    var params = [_]Node.Index{2};
+    const name_node = Token.at(1);
+    var params = [_]Node.Index{Node.at(2)};
     const data = Node.GenericType{
         .name = name_node,
         .params = &params,
@@ -2329,9 +2426,9 @@ test "Pool generic_type" {
     inline for (tests) |test_case| {
         try expectRawNode(Raw{
             .tag = test_case[1],
-            .main_token = 0,
+            .main_token = Token.at(0),
             .data = .{
-                .lhs = name_node,
+                .lhs = name_node.int(),
                 .rhs = @intCast(params.len),
             },
         }, test_case[0]);
@@ -2339,14 +2436,14 @@ test "Pool generic_type" {
 }
 
 test "Pool function_type" {
-    var params = [_]Node.Index{2};
-    var generic_params = [_]Node.Index{3};
-    const return_type = 4;
+    var params = [_]Node.Index{Node.at(2)};
+    var generic_params = [_]Node.Index{Node.at(3)};
+    const return_type = Node.at(4);
 
     const tests = .{
         .{
             Node{ .function_type = .{ .generic_params = &generic_params, .params = &params, .return_type = return_type } },
-            Raw{ .tag = .function_type, .main_token = 0, .data = .{ .lhs = generic_params.len + params.len, .rhs = return_type } },
+            Raw{ .tag = .function_type, .main_token = Token.at(0), .data = .{ .lhs = generic_params.len + params.len, .rhs = return_type.int() } },
         },
     };
 
@@ -2356,9 +2453,9 @@ test "Pool function_type" {
 }
 
 test "Pool interface_decl" {
-    const name_node = 1;
-    var extends = [_]Node.Index{2};
-    var body = [_]Node.Index{3};
+    const name_node = Token.at(1);
+    var extends = [_]Token.Index{Token.at(2)};
+    var body = [_]Node.Index{Node.at(3)};
     const data = Node.InterfaceDecl{
         .name = name_node,
         .extends = &extends,
@@ -2372,9 +2469,9 @@ test "Pool interface_decl" {
     inline for (tests) |test_case| {
         try expectRawNode(Raw{
             .tag = test_case[1],
-            .main_token = 0,
+            .main_token = Token.at(0),
             .data = .{
-                .lhs = name_node,
+                .lhs = name_node.int(),
                 .rhs = @intCast(extends.len + body.len),
             },
         }, test_case[0]);

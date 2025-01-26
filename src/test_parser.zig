@@ -133,12 +133,12 @@ test "should parse markers" {
     try expectEqualDeep(Marker{
         .line = 0,
         .col = 6,
-        .pos = 6,
+        .pos = 5,
     }, markers[0]);
     try expectEqualDeep(Marker{
         .line = 1,
         .col = 2,
-        .pos = 13,
+        .pos = 12,
     }, markers[1]);
 }
 
@@ -152,7 +152,7 @@ pub fn expectAST(t: TestParser, maybe_node: ?AST.Node.Index, expected: ?AST.Node
 
 pub fn expectTokenAt(t: TestParser, comptime marker: Marker, node: AST.Node.Index) !void {
     const raw = t.parser.getRawNode(node);
-    const tok = t.parser.tokens[raw.main_token];
+    const tok = t.parser.tokens[raw.main_token.int()];
 
     if (tok.start != marker.pos) {
         var cur_marker = std.testing.allocator.alloc(u8, t.parser.buffer.len + 1) catch unreachable;
@@ -182,8 +182,8 @@ pub fn expectSyntaxError(
 
 pub fn expectToken(t: TestParser, expected_tok_type: TokenType, expected_value: []const u8, node: AST.Node.Index) !void {
     const raw = t.parser.getRawNode(node);
-    try expectEqual(expected_tok_type, t.parser.tokens[raw.main_token].type);
-    try expectEqualStrings(expected_value, t.parser.tokens[raw.main_token].literal(t.parser.buffer));
+    try expectEqual(expected_tok_type, t.parser.tokens[raw.main_token.int()].type);
+    try expectEqualStrings(expected_value, t.parser.tokens[raw.main_token.int()].literal(t.parser.buffer));
 }
 
 pub fn expectSimpleMethod(t: TestParser, node_idx: AST.Node.Index, expected_flags: anytype, expected_name: []const u8) !void {
@@ -191,7 +191,7 @@ pub fn expectSimpleMethod(t: TestParser, node_idx: AST.Node.Index, expected_flag
     try expectEqual(expected_flags, node.object_method.flags);
 
     const name_node = t.parser.getRawNode(node.object_method.name);
-    const name_token = t.parser.tokens[name_node.main_token].literal(t.parser.buffer);
+    const name_token = t.parser.tokens[name_node.main_token.int()].literal(t.parser.buffer);
     try expectEqualStrings(expected_name, name_token);
 }
 

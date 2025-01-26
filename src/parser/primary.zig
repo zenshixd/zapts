@@ -44,7 +44,7 @@ pub fn parsePrimaryExpression(parser: *Parser) ParserError!?AST.Node.Index {
 
 pub fn parseIdentifier(parser: *Parser) ParserError!?AST.Node.Index {
     if (parser.match(TokenType.Identifier) or try parseKeywordAsIdentifier(parser)) {
-        return parser.addNode(parser.cur_token - 1, AST.Node{ .simple_value = .{ .kind = .identifier } });
+        return parser.addNode(parser.cur_token.dec(1), AST.Node{ .simple_value = .{ .kind = .identifier } });
     }
 
     return null;
@@ -77,7 +77,7 @@ const literal_map = .{
 pub fn parseLiteral(parser: *Parser) ParserError!?AST.Node.Index {
     inline for (literal_map) |literal| {
         if (parser.match(literal[0])) {
-            return parser.addNode(parser.cur_token - 1, AST.Node{ .simple_value = .{ .kind = literal[1] } });
+            return parser.addNode(parser.cur_token.dec(1), AST.Node{ .simple_value = .{ .kind = literal[1] } });
         }
     }
 
@@ -89,7 +89,7 @@ pub fn parseArrayLiteral(parser: *Parser) ParserError!?AST.Node.Index {
         return null;
     }
 
-    const main_token = parser.cur_token - 1;
+    const main_token = parser.cur_token.dec(1);
     var values = std.ArrayList(AST.Node.Index).init(parser.gpa);
     defer values.deinit();
 
@@ -122,7 +122,7 @@ pub fn parseObjectLiteral(parser: *Parser) ParserError!?AST.Node.Index {
         return null;
     }
 
-    const main_token = parser.cur_token - 1;
+    const main_token = parser.cur_token.dec(1);
     var nodes = std.ArrayList(AST.Node.Index).init(parser.gpa);
     defer nodes.deinit();
 
@@ -184,14 +184,14 @@ pub fn parseSpreadExpression(parser: *Parser) ParserError!?AST.Node.Index {
         return null;
     }
 
-    return parser.addNode(parser.cur_token - 1, AST.Node{
+    return parser.addNode(parser.cur_token.dec(1), AST.Node{
         .spread = try parseAssignment(parser),
     });
 }
 
 pub fn parseGroupingExpression(parser: *Parser) ParserError!?AST.Node.Index {
     if (parser.match(TokenType.OpenParen)) {
-        const node = parser.addNode(parser.cur_token - 1, AST.Node{
+        const node = parser.addNode(parser.cur_token.dec(1), AST.Node{
             .grouping = try parseExpression(parser),
         });
 
@@ -226,49 +226,55 @@ test "should parse primary expression" {
             \\ {a: 1}
             \\>^     
             ,
-            AST.Node{ .object_literal = @constCast(&[_]AST.Node.Index{4}) },
+            AST.Node{ .object_literal = @constCast(&[_]AST.Node.Index{AST.Node.at(4)}) },
         },
         .{
             \\ [1, 2]
             \\>^     
             ,
-            AST.Node{ .array_literal = @constCast(&[_]AST.Node.Index{ 1, 2 }) },
+            AST.Node{ .array_literal = @constCast(&[_]AST.Node.Index{ AST.Node.at(1), AST.Node.at(2) }) },
         },
         .{
             \\ function() {}
             \\>^
             ,
-            AST.Node{ .function_decl = .{ .flags = AST.FunctionFlags.None, .name = 0, .params = &[_]AST.Node.Index{}, .body = 1, .return_type = 0 } },
+            AST.Node{ .function_decl = .{ .flags = AST.FunctionFlags.None, .name = Token.Empty, .params = &.{}, .body = AST.Node.at(1), .return_type = AST.Node.Empty } },
         },
         .{
             \\ function*() {}
             \\>^
             ,
-            AST.Node{ .function_decl = .{ .flags = AST.FunctionFlags.Generator, .name = 0, .params = &[_]AST.Node.Index{}, .body = 1, .return_type = 0 } },
+            AST.Node{ .function_decl = .{ .flags = AST.FunctionFlags.Generator, .name = Token.Empty, .params = &.{}, .body = AST.Node.at(1), .return_type = AST.Node.Empty } },
         },
         .{
             \\ async function() {}
             \\>^
             ,
-            AST.Node{ .function_decl = .{ .flags = AST.FunctionFlags.Async, .name = 0, .params = &[_]AST.Node.Index{}, .body = 1, .return_type = 0 } },
+            AST.Node{ .function_decl = .{ .flags = AST.FunctionFlags.Async, .name = Token.Empty, .params = &.{}, .body = AST.Node.at(1), .return_type = AST.Node.Empty } },
         },
         .{
             \\ async function*() {}
             \\>^
             ,
-            AST.Node{ .function_decl = .{ .flags = AST.FunctionFlags.Async | AST.FunctionFlags.Generator, .name = 0, .params = &[_]AST.Node.Index{}, .body = 1, .return_type = 0 } },
+            AST.Node{ .function_decl = .{
+                .flags = AST.FunctionFlags.Async | AST.FunctionFlags.Generator,
+                .name = Token.Empty,
+                .params = &.{},
+                .body = AST.Node.at(1),
+                .return_type = AST.Node.Empty,
+            } },
         },
         .{
             \\ (a, b)
             \\>^
             ,
-            AST.Node{ .grouping = 5 },
+            AST.Node{ .grouping = AST.Node.at(5) },
         },
         .{
             \\ class {}
             \\>^       
             ,
-            AST.Node{ .class = .{ .abstract = false, .name = 0, .implements = &.{}, .super_class = 0, .body = &.{} } },
+            AST.Node{ .class = .{ .abstract = false, .name = Token.Empty, .implements = &.{}, .super_class = AST.Node.Empty, .body = &.{} } },
         },
     };
 
@@ -466,14 +472,14 @@ test "should return null if not array literal" {
 
 test "should parse array literal" {
     const expects_map = .{
-        .{ "[,]", &[_]AST.Node.Index{0} },
-        .{ "[, 1 + 2]", &[_]AST.Node.Index{ 0, 3 } },
-        .{ "[1, 2, 3]", &[_]AST.Node.Index{ 1, 2, 3 } },
-        .{ "[1, 2, 3,]", &[_]AST.Node.Index{ 1, 2, 3 } },
-        .{ "[1, 2, 3 + 4,]", &[_]AST.Node.Index{ 1, 2, 5 } },
-        .{ "[1,,,]", &[_]AST.Node.Index{ 1, 0, 0 } },
-        .{ "[...a]", &[_]AST.Node.Index{3} },
-        .{ "[1, ...a]", &[_]AST.Node.Index{ 1, 4 } },
+        .{ "[,]", &[_]AST.Node.Index{AST.Node.Empty} },
+        .{ "[, 1 + 2]", &[_]AST.Node.Index{ AST.Node.Empty, AST.Node.at(3) } },
+        .{ "[1, 2, 3]", &[_]AST.Node.Index{ AST.Node.at(1), AST.Node.at(2), AST.Node.at(3) } },
+        .{ "[1, 2, 3,]", &[_]AST.Node.Index{ AST.Node.at(1), AST.Node.at(2), AST.Node.at(3) } },
+        .{ "[1, 2, 3 + 4,]", &[_]AST.Node.Index{ AST.Node.at(1), AST.Node.at(2), AST.Node.at(5) } },
+        .{ "[1,,,]", &[_]AST.Node.Index{ AST.Node.at(1), AST.Node.Empty, AST.Node.Empty } },
+        .{ "[...a]", &[_]AST.Node.Index{AST.Node.at(3)} },
+        .{ "[1, ...a]", &[_]AST.Node.Index{ AST.Node.at(1), AST.Node.at(4) } },
     };
 
     inline for (expects_map) |expected_items| {
@@ -507,11 +513,11 @@ test "should parse object literal" {
         \\    [1 + 2]: e,
         \\}
     ;
-    const expected_fields = &[_]AST.Node.Index{ 4, 8, 11, 14, 25 };
+    const expected_fields = [_]AST.Node.Index{ AST.Node.at(4), AST.Node.at(8), AST.Node.at(11), AST.Node.at(14), AST.Node.at(25) };
 
     try TestParser.run(text, parseObjectLiteral, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .object_literal = @constCast(expected_fields) });
+            try t.expectAST(node, AST.Node{ .object_literal = @constCast(&expected_fields) });
         }
     });
 }
@@ -530,7 +536,8 @@ test "should parse methods on object literal" {
 
     try TestParser.run(text, parseObjectLiteral, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .object_literal = @constCast(&[_]AST.Node.Index{ 3, 6, 9, 12, 15, 19 }) });
+            var expected_fields = [_]AST.Node.Index{ AST.Node.at(3), AST.Node.at(6), AST.Node.at(9), AST.Node.at(12), AST.Node.at(15), AST.Node.at(19) };
+            try t.expectAST(node, AST.Node{ .object_literal = &expected_fields });
             try expectEqualStrings("object_literal", @tagName(t.getNode(node.?)));
             try expectEqual(6, t.getNode(node.?).object_literal.len);
 
@@ -597,7 +604,7 @@ test "should parse grouping expression" {
 
     try TestParser.run(text, parseGroupingExpression, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .grouping = 5 });
+            try t.expectAST(node, AST.Node{ .grouping = AST.Node.at(5) });
         }
     });
 }

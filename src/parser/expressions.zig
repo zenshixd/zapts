@@ -200,8 +200,8 @@ test "should parse comma expression" {
     try TestParser.run(text, parseExpression, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
             try t.expectAST(node, AST.Node{ .comma = .{
-                .left = 5,
-                .right = 7,
+                .left = AST.Node.at(5),
+                .right = AST.Node.at(7),
             } });
         }
     });
@@ -213,9 +213,9 @@ test "should parse conditional expression" {
     try TestParser.run(text, parseExpression, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
             try t.expectAST(node, AST.Node{ .ternary_expr = .{
-                .expr = 2,
-                .body = 4,
-                .@"else" = 6,
+                .expr = AST.Node.at(2),
+                .body = AST.Node.at(4),
+                .@"else" = AST.Node.at(6),
             } });
         }
     });
@@ -237,8 +237,8 @@ test "should parse short circuit expression" {
     try TestParser.run(text, parseExpression, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
             try t.expectAST(node, AST.Node{ .coalesce = .{
-                .left = 2,
-                .right = 3,
+                .left = AST.Node.at(2),
+                .right = AST.Node.at(3),
             } });
         }
     });
@@ -246,13 +246,13 @@ test "should parse short circuit expression" {
 
 test "should parse unary expression" {
     const tests = .{
-        .{ "+a", AST.Node{ .plus = 1 } },
-        .{ "-a", AST.Node{ .minus = 1 } },
-        .{ "!a", AST.Node{ .not = 1 } },
-        .{ "~a", AST.Node{ .bitwise_negate = 1 } },
-        .{ "typeof a", AST.Node{ .typeof = 1 } },
-        .{ "void a", AST.Node{ .void = 1 } },
-        .{ "delete a", AST.Node{ .delete = 1 } },
+        .{ "+a", AST.Node{ .plus = AST.Node.at(1) } },
+        .{ "-a", AST.Node{ .minus = AST.Node.at(1) } },
+        .{ "!a", AST.Node{ .not = AST.Node.at(1) } },
+        .{ "~a", AST.Node{ .bitwise_negate = AST.Node.at(1) } },
+        .{ "typeof a", AST.Node{ .typeof = AST.Node.at(1) } },
+        .{ "void a", AST.Node{ .void = AST.Node.at(1) } },
+        .{ "delete a", AST.Node{ .delete = AST.Node.at(1) } },
     };
 
     inline for (tests) |test_case| {
@@ -266,10 +266,10 @@ test "should parse unary expression" {
 
 test "should parse update expression" {
     const tests = .{
-        .{ "++a", AST.Node{ .plusplus_pre = 1 } },
-        .{ "--a", AST.Node{ .minusminus_pre = 1 } },
-        .{ "a++", AST.Node{ .plusplus_post = 1 } },
-        .{ "a--", AST.Node{ .minusminus_post = 1 } },
+        .{ "++a", AST.Node{ .plusplus_pre = AST.Node.at(1) } },
+        .{ "--a", AST.Node{ .minusminus_pre = AST.Node.at(1) } },
+        .{ "a++", AST.Node{ .plusplus_post = AST.Node.at(1) } },
+        .{ "a--", AST.Node{ .minusminus_post = AST.Node.at(1) } },
     };
 
     inline for (tests) |test_case| {
@@ -286,7 +286,7 @@ test "should parse left hand side expression" {
 
     try TestParser.run(text, parseLeftHandSideExpression, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .call_expr = .{ .node = 1, .params = &.{} } });
+            try t.expectAST(node, AST.Node{ .call_expr = .{ .node = AST.Node.at(1), .params = &.{} } });
         }
     });
 }
@@ -306,7 +306,7 @@ test "should parse new expression" {
 
     try TestParser.run(text, parseNewExpression, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .new_expr = 1 });
+            try t.expectAST(node, AST.Node{ .new_expr = AST.Node.at(1) });
         }
     });
 }
@@ -323,10 +323,10 @@ test "should return null if new expression is missing" {
 
 test "should parse member expression" {
     const tests = .{
-        .{ "new a()", AST.Node{ .new_expr = 2 } },
+        .{ "new a()", AST.Node{ .new_expr = AST.Node.at(2) } },
         .{ "a", AST.Node{ .simple_value = .{ .kind = .identifier } } },
-        .{ "a.b", AST.Node{ .property_access = .{ .left = 1, .right = 2 } } },
-        .{ "a[0]", AST.Node{ .index_access = .{ .left = 1, .right = 2 } } },
+        .{ "a.b", AST.Node{ .property_access = .{ .left = AST.Node.at(1), .right = AST.Node.at(2) } } },
+        .{ "a[0]", AST.Node{ .index_access = .{ .left = AST.Node.at(1), .right = AST.Node.at(2) } } },
     };
 
     inline for (tests) |test_case| {
@@ -353,19 +353,19 @@ test "should parse chained member expression" {
         .{
             "new a().b",
             &[_]AST.Raw{
-                .{ .tag = .simple_value, .main_token = 1, .data = .{ .lhs = 1, .rhs = 0 } },
-                .{ .tag = .call_expr, .main_token = 4, .data = .{ .lhs = 1, .rhs = 0 } },
-                .{ .tag = .new_expr, .main_token = 4, .data = .{ .lhs = 2, .rhs = 0 } },
-                .{ .tag = .simple_value, .main_token = 5, .data = .{ .lhs = 1, .rhs = 0 } },
-                .{ .tag = .property_access, .main_token = 6, .data = .{ .lhs = 3, .rhs = 4 } },
+                .{ .tag = .simple_value, .main_token = Token.at(1), .data = .{ .lhs = 1, .rhs = 0 } },
+                .{ .tag = .call_expr, .main_token = Token.at(4), .data = .{ .lhs = 1, .rhs = 0 } },
+                .{ .tag = .new_expr, .main_token = Token.at(4), .data = .{ .lhs = 2, .rhs = 0 } },
+                .{ .tag = .simple_value, .main_token = Token.at(5), .data = .{ .lhs = 1, .rhs = 0 } },
+                .{ .tag = .property_access, .main_token = Token.at(6), .data = .{ .lhs = 3, .rhs = 4 } },
             },
         },
         .{
             "a.b",
             &[_]AST.Raw{
-                .{ .tag = .simple_value, .main_token = 0, .data = .{ .lhs = 1, .rhs = 0 } },
-                .{ .tag = .simple_value, .main_token = 2, .data = .{ .lhs = 1, .rhs = 0 } },
-                .{ .tag = .property_access, .main_token = 3, .data = .{ .lhs = 1, .rhs = 2 } },
+                .{ .tag = .simple_value, .main_token = Token.at(0), .data = .{ .lhs = 1, .rhs = 0 } },
+                .{ .tag = .simple_value, .main_token = Token.at(2), .data = .{ .lhs = 1, .rhs = 0 } },
+                .{ .tag = .property_access, .main_token = Token.at(3), .data = .{ .lhs = 1, .rhs = 2 } },
             },
         },
     };
@@ -381,11 +381,26 @@ test "should parse chained member expression" {
 
 test "should parse callable expression" {
     const tests = .{
-        .{ "a()", AST.Node{ .call_expr = .{ .node = 1, .params = @constCast(&[_]AST.Node.Index{}) } } },
-        .{ "a(b)", AST.Node{ .call_expr = .{ .node = 1, .params = @constCast(&[_]AST.Node.Index{3}) } } },
-        .{ "a(b, c)", AST.Node{ .call_expr = .{ .node = 1, .params = @constCast(&[_]AST.Node.Index{ 3, 5 }) } } },
-        .{ "a(b + c)", AST.Node{ .call_expr = .{ .node = 1, .params = @constCast(&[_]AST.Node.Index{5}) } } },
-        .{ "a(b,)", AST.Node{ .call_expr = .{ .node = 1, .params = @constCast(&[_]AST.Node.Index{3}) } } },
+        .{ "a()", AST.Node{ .call_expr = .{
+            .node = AST.Node.at(1),
+            .params = &.{},
+        } } },
+        .{ "a(b)", AST.Node{ .call_expr = .{
+            .node = AST.Node.at(1),
+            .params = @constCast(&[_]AST.Node.Index{AST.Node.at(3)}),
+        } } },
+        .{ "a(b, c)", AST.Node{ .call_expr = .{
+            .node = AST.Node.at(1),
+            .params = @constCast(&[_]AST.Node.Index{ AST.Node.at(3), AST.Node.at(5) }),
+        } } },
+        .{ "a(b + c)", AST.Node{ .call_expr = .{
+            .node = AST.Node.at(1),
+            .params = @constCast(&[_]AST.Node.Index{AST.Node.at(5)}),
+        } } },
+        .{ "a(b,)", AST.Node{ .call_expr = .{
+            .node = AST.Node.at(1),
+            .params = @constCast(&[_]AST.Node.Index{AST.Node.at(3)}),
+        } } },
     };
 
     inline for (tests) |test_case| {

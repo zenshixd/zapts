@@ -17,9 +17,6 @@ const TestParser = @import("../test_parser.zig");
 const MarkerList = @import("../test_parser.zig").MarkerList;
 const Marker = @import("../test_parser.zig").Marker;
 
-const expectAST = @import("../parser.zig").expectAST;
-const expectSyntaxError = @import("../parser.zig").expectSyntaxError;
-
 pub fn parseMethodAsyncGenerator(self: *Parser) ParserError!?AST.Node.Index {
     if (!self.match(TokenType.Async)) {
         return null;
@@ -73,7 +70,7 @@ pub fn parseMethodGetter(self: *Parser) ParserError!?AST.Node.Index {
     if (!self.match(TokenType.Get)) {
         return null;
     }
-    const main_token = self.cur_token - 1;
+    const main_token = self.cur_token.dec(1);
     const elem_name = try parseObjectElementName(self) orelse {
         self.rewind();
         return try parseMethod(self);
@@ -99,7 +96,7 @@ pub fn parseMethodSetter(self: *Parser) ParserError!?AST.Node.Index {
     if (!self.match(TokenType.Set)) {
         return null;
     }
-    const main_token = self.cur_token - 1;
+    const main_token = self.cur_token.dec(1);
     const elem_name = try parseObjectElementName(self) orelse {
         self.rewind();
         return try parseMethod(self);
@@ -125,19 +122,19 @@ pub fn parseObjectElementName(self: *Parser) ParserError!?AST.Node.Index {
     switch (self.token().type) {
         .Identifier, .PrivateIdentifier => {
             _ = self.advance();
-            return self.addNode(self.cur_token - 1, AST.Node{ .simple_value = .{ .kind = .identifier } });
+            return self.addNode(self.cur_token.dec(1), AST.Node{ .simple_value = .{ .kind = .identifier } });
         },
         .StringConstant => {
             _ = self.advance();
-            return self.addNode(self.cur_token - 1, AST.Node{ .simple_value = .{ .kind = .string } });
+            return self.addNode(self.cur_token.dec(1), AST.Node{ .simple_value = .{ .kind = .string } });
         },
         .NumberConstant => {
             _ = self.advance();
-            return self.addNode(self.cur_token - 1, AST.Node{ .simple_value = .{ .kind = .number } });
+            return self.addNode(self.cur_token.dec(1), AST.Node{ .simple_value = .{ .kind = .number } });
         },
         .BigIntConstant => {
             _ = self.advance();
-            return self.addNode(self.cur_token - 1, AST.Node{ .simple_value = .{ .kind = .bigint } });
+            return self.addNode(self.cur_token.dec(1), AST.Node{ .simple_value = .{ .kind = .bigint } });
         },
         .OpenSquareBracket => {
             _ = self.advance();
@@ -147,7 +144,7 @@ pub fn parseObjectElementName(self: *Parser) ParserError!?AST.Node.Index {
         },
         else => {
             if (try parseKeywordAsIdentifier(self)) {
-                return self.addNode(self.cur_token - 1, AST.Node{ .simple_value = .{ .kind = .identifier } });
+                return self.addNode(self.cur_token.dec(1), AST.Node{ .simple_value = .{ .kind = .identifier } });
             }
             return null;
         },
@@ -159,7 +156,7 @@ pub fn parseAsyncFunctionStatement(self: *Parser) ParserError!?AST.Node.Index {
         return null;
     }
 
-    return try parseFunctionStatementExtra(self, self.cur_token - 1, AST.FunctionFlags.Async) orelse self.fail(diagnostics.unexpected_keyword_or_identifier, .{});
+    return try parseFunctionStatementExtra(self, self.cur_token.dec(1), AST.FunctionFlags.Async) orelse self.fail(diagnostics.unexpected_keyword_or_identifier, .{});
 }
 
 pub fn parseFunctionStatement(self: *Parser) ParserError!?AST.Node.Index {
@@ -176,7 +173,7 @@ pub fn parseFunctionStatementExtra(self: *Parser, main_token: Token.Index, flags
         fn_flags |= AST.FunctionFlags.Generator;
     }
 
-    const func_name: AST.Node.Index = self.consumeOrNull(TokenType.Identifier) orelse AST.Node.Empty;
+    const func_name: Token.Index = self.consumeOrNull(TokenType.Identifier) orelse Token.Empty;
 
     _ = try self.consume(TokenType.OpenParen, diagnostics.ARG_expected, .{"("});
 
@@ -204,7 +201,7 @@ pub fn parseFunctionArguments(self: *Parser) ParserError!std.ArrayList(AST.Node.
         const param_type = try parseOptionalDataType(self);
         try args.append(self.addNode(identifier, AST.Node{
             .function_param = .{
-                .node = identifier,
+                .identifier = identifier,
                 .type = param_type,
             },
         }));
@@ -224,7 +221,7 @@ pub fn parseAsyncArrowFunction(self: *Parser) ParserError!?AST.Node.Index {
         return null;
     }
 
-    return try parseArrowFunctionWith1Arg(self, self.cur_token - 1, .async_arrow) orelse try parseArrowFunctionWithParenthesis(self, self.cur_token - 1, .async_arrow);
+    return try parseArrowFunctionWith1Arg(self, self.cur_token.dec(1), .async_arrow) orelse try parseArrowFunctionWithParenthesis(self, self.cur_token.dec(1), .async_arrow);
 }
 
 pub fn parseArrowFunction(self: *Parser) ParserError!?AST.Node.Index {
@@ -248,7 +245,7 @@ fn parseArrowFunctionWith1Arg(self: *Parser, main_token: Token.Index, arrow_type
         .type = arrow_type,
         .params = args.items,
         .body = body,
-        .return_type = 0,
+        .return_type = AST.Node.Empty,
     } });
 }
 
@@ -297,21 +294,21 @@ test "should parse function statement" {
     try TestParser.run(text, parseFunctionStatement, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
             const function_decl = AST.Node.FunctionDeclaration{
-                .name = 0,
+                .name = Token.Empty,
                 .flags = AST.FunctionFlags.None,
-                .params = @constCast(&[_]AST.Node.Index{ 2, 3, 5 }),
-                .body = 6,
-                .return_type = 0,
+                .params = @constCast(&[_]AST.Node.Index{ AST.Node.at(2), AST.Node.at(3), AST.Node.at(5) }),
+                .body = AST.Node.at(6),
+                .return_type = AST.Node.Empty,
             };
             try t.expectAST(node, .{ .function_decl = function_decl });
             try t.expectAST(function_decl.params[0], AST.Node{
-                .function_param = AST.Node.FunctionParam{ .node = 2, .type = 1 },
+                .function_param = AST.Node.FunctionParam{ .identifier = Token.at(2), .type = AST.Node.at(1) },
             });
             try t.expectAST(function_decl.params[1], AST.Node{
-                .function_param = AST.Node.FunctionParam{ .node = 6, .type = 0 },
+                .function_param = AST.Node.FunctionParam{ .identifier = Token.at(6), .type = AST.Node.Empty },
             });
             try t.expectAST(function_decl.params[2], AST.Node{
-                .function_param = AST.Node.FunctionParam{ .node = 8, .type = 4 },
+                .function_param = AST.Node.FunctionParam{ .identifier = Token.at(8), .type = AST.Node.at(4) },
             });
         }
     });
@@ -324,11 +321,11 @@ test "should parse function statement with name" {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
             try t.expectAST(node, .{
                 .function_decl = .{
-                    .name = 1,
+                    .name = Token.at(1),
                     .flags = AST.FunctionFlags.None,
-                    .params = @constCast(&[_]AST.Node.Index{ 2, 3, 5 }),
-                    .body = 7,
-                    .return_type = 6,
+                    .params = @constCast(&[_]AST.Node.Index{ AST.Node.at(2), AST.Node.at(3), AST.Node.at(5) }),
+                    .body = AST.Node.at(7),
+                    .return_type = AST.Node.at(6),
                 },
             });
         }
@@ -342,11 +339,11 @@ test "should allow trailing comma in function params" {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
             try t.expectAST(node, .{
                 .function_decl = .{
-                    .name = 0,
+                    .name = Token.Empty,
                     .flags = AST.FunctionFlags.None,
-                    .params = @constCast(&[_]AST.Node.Index{ 2, 4 }),
-                    .body = 6,
-                    .return_type = 5,
+                    .params = @constCast(&[_]AST.Node.Index{ AST.Node.at(2), AST.Node.at(4) }),
+                    .body = AST.Node.at(6),
+                    .return_type = AST.Node.at(5),
                 },
             });
         }
@@ -370,11 +367,11 @@ test "should parse async function statement" {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
             try t.expectAST(node, .{
                 .function_decl = .{
-                    .name = 0,
+                    .name = Token.Empty,
                     .flags = AST.FunctionFlags.Async,
-                    .params = @constCast(&[_]AST.Node.Index{}),
-                    .body = 2,
-                    .return_type = 1,
+                    .params = &.{},
+                    .body = AST.Node.at(2),
+                    .return_type = AST.Node.at(1),
                 },
             });
         }
@@ -398,11 +395,11 @@ test "should parse generator function statement" {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
             try t.expectAST(node, .{
                 .function_decl = .{
-                    .name = 0,
+                    .name = Token.Empty,
                     .flags = AST.FunctionFlags.Generator,
-                    .params = @constCast(&[_]AST.Node.Index{}),
-                    .body = 2,
-                    .return_type = 1,
+                    .params = &.{},
+                    .body = AST.Node.at(2),
+                    .return_type = AST.Node.at(1),
                 },
             });
         }
@@ -416,11 +413,11 @@ test "should parse async generator function statement" {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
             try t.expectAST(node, .{
                 .function_decl = .{
-                    .name = 0,
+                    .name = Token.Empty,
                     .flags = AST.FunctionFlags.Async | AST.FunctionFlags.Generator,
-                    .params = @constCast(&[_]AST.Node.Index{}),
-                    .body = 2,
-                    .return_type = 1,
+                    .params = &.{},
+                    .body = AST.Node.at(2),
+                    .return_type = AST.Node.at(1),
                 },
             });
         }
@@ -474,10 +471,10 @@ test "should parse method" {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
             try t.expectAST(node, .{
                 .object_method = .{
-                    .name = 1,
-                    .params = @constCast(&[_]AST.Node.Index{ 3, 4 }),
-                    .body = 6,
-                    .return_type = 5,
+                    .name = AST.Node.at(1),
+                    .params = @constCast(&[_]AST.Node.Index{ AST.Node.at(3), AST.Node.at(4) }),
+                    .body = AST.Node.at(6),
+                    .return_type = AST.Node.at(5),
                     .flags = AST.FunctionFlags.None,
                 },
             });
@@ -512,11 +509,11 @@ test "should parse async method" {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
             try t.expectAST(node, .{
                 .object_method = .{
-                    .name = 1,
+                    .name = AST.Node.at(1),
                     .flags = AST.FunctionFlags.Async,
-                    .params = @constCast(&[_]AST.Node.Index{}),
-                    .body = 3,
-                    .return_type = 2,
+                    .params = &.{},
+                    .body = AST.Node.at(3),
+                    .return_type = AST.Node.at(2),
                 },
             });
         }
@@ -540,11 +537,11 @@ test "should parse generator method" {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
             try t.expectAST(node, .{
                 .object_method = .{
-                    .name = 1,
+                    .name = AST.Node.at(1),
                     .flags = AST.FunctionFlags.Generator,
-                    .params = @constCast(&[_]AST.Node.Index{}),
-                    .body = 3,
-                    .return_type = 2,
+                    .params = &.{},
+                    .body = AST.Node.at(3),
+                    .return_type = AST.Node.at(2),
                 },
             });
         }
@@ -558,11 +555,11 @@ test "should parse async generator method" {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
             try t.expectAST(node, .{
                 .object_method = .{
-                    .name = 1,
+                    .name = AST.Node.at(1),
                     .flags = AST.FunctionFlags.Async | AST.FunctionFlags.Generator,
-                    .params = @constCast(&[_]AST.Node.Index{}),
-                    .body = 3,
-                    .return_type = 2,
+                    .params = &.{},
+                    .body = AST.Node.at(3),
+                    .return_type = AST.Node.at(2),
                 },
             });
         }
@@ -575,50 +572,50 @@ test "should parse number, string, bigint and expresions as method names" {
             "123() {}",
             AST.Node{ .object_method = .{
                 .flags = 0,
-                .name = 1,
-                .params = @constCast(&[_]AST.Node.Index{}),
-                .body = 2,
-                .return_type = 0,
+                .name = AST.Node.at(1),
+                .params = &.{},
+                .body = AST.Node.at(2),
+                .return_type = AST.Node.Empty,
             } },
         },
         .{
             "123n() {}",
             AST.Node{ .object_method = .{
                 .flags = 0,
-                .name = 1,
-                .params = @constCast(&[_]AST.Node.Index{}),
-                .body = 2,
-                .return_type = 0,
+                .name = AST.Node.at(1),
+                .params = &.{},
+                .body = AST.Node.at(2),
+                .return_type = AST.Node.Empty,
             } },
         },
         .{
             "\"foo\"() {}",
             AST.Node{ .object_method = .{
                 .flags = 0,
-                .name = 1,
-                .params = @constCast(&[_]AST.Node.Index{}),
-                .body = 2,
-                .return_type = 0,
+                .name = AST.Node.at(1),
+                .params = &.{},
+                .body = AST.Node.at(2),
+                .return_type = AST.Node.Empty,
             } },
         },
         .{
             "#foo() {}",
             AST.Node{ .object_method = .{
                 .flags = 0,
-                .name = 1,
-                .params = @constCast(&[_]AST.Node.Index{}),
-                .body = 2,
-                .return_type = 0,
+                .name = AST.Node.at(1),
+                .params = &.{},
+                .body = AST.Node.at(2),
+                .return_type = AST.Node.Empty,
             } },
         },
         .{
             "[a + b]() {}",
             AST.Node{ .object_method = .{
                 .flags = 0,
-                .name = 5,
-                .params = @constCast(&[_]AST.Node.Index{}),
-                .body = 6,
-                .return_type = 0,
+                .name = AST.Node.at(5),
+                .params = &.{},
+                .body = AST.Node.at(6),
+                .return_type = AST.Node.Empty,
             } },
         },
     };
@@ -649,10 +646,10 @@ test "should parse getter method" {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
             try t.expectAST(node, .{ .object_method = .{
                 .flags = AST.FunctionFlags.Getter,
-                .name = 1,
-                .params = @constCast(&[_]AST.Node.Index{}),
-                .body = 3,
-                .return_type = 2,
+                .name = AST.Node.at(1),
+                .params = &.{},
+                .body = AST.Node.at(3),
+                .return_type = AST.Node.at(2),
             } });
         }
     });
@@ -662,7 +659,7 @@ test "should return syntax error if open bracket is missing when parsing getter"
     const text = "get foo(): void";
 
     try TestParser.runAny(text, parseMethodGetter, struct {
-        pub fn expect(t: TestParser, nodeOrError: Parser.ParserError!?AST.Node.Index, _: MarkerList(text)) !void {
+        pub fn expect(t: TestParser, nodeOrError: ParserError!?AST.Node.Index, _: MarkerList(text)) !void {
             try t.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{"{"});
         }
     });
@@ -672,7 +669,7 @@ test "should return syntax error if open paren is missing when parsing getter" {
     const text = "get foo): void {}";
 
     try TestParser.runAny(text, parseMethodGetter, struct {
-        pub fn expect(t: TestParser, nodeOrError: Parser.ParserError!?AST.Node.Index, _: MarkerList(text)) !void {
+        pub fn expect(t: TestParser, nodeOrError: ParserError!?AST.Node.Index, _: MarkerList(text)) !void {
             try t.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{"("});
         }
     });
@@ -694,11 +691,11 @@ test "should parse setter method" {
     try TestParser.run(text, parseMethodSetter, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
             try t.expectAST(node, .{ .object_method = .{
-                .name = 1,
+                .name = AST.Node.at(1),
                 .flags = AST.FunctionFlags.Setter,
-                .params = @constCast(&[_]AST.Node.Index{3}),
-                .body = 5,
-                .return_type = 4,
+                .params = @constCast(&[_]AST.Node.Index{AST.Node.at(3)}),
+                .body = AST.Node.at(5),
+                .return_type = AST.Node.at(4),
             } });
         }
     });
@@ -731,10 +728,10 @@ test "should parse method with 'get' as name" {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
             try t.expectAST(node, .{ .object_method = .{
                 .flags = AST.FunctionFlags.None,
-                .name = 1,
-                .params = @constCast(&[_]AST.Node.Index{}),
-                .body = 3,
-                .return_type = 2,
+                .name = AST.Node.at(1),
+                .params = &.{},
+                .body = AST.Node.at(3),
+                .return_type = AST.Node.at(2),
             } });
         }
     });
@@ -747,10 +744,10 @@ test "should parse method with 'set' as name" {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
             try t.expectAST(node, .{ .object_method = .{
                 .flags = AST.FunctionFlags.None,
-                .name = 1,
-                .params = @constCast(&[_]AST.Node.Index{3}),
-                .body = 5,
-                .return_type = 4,
+                .name = AST.Node.at(1),
+                .params = @constCast(&[_]AST.Node.Index{AST.Node.at(3)}),
+                .body = AST.Node.at(5),
+                .return_type = AST.Node.at(4),
             } });
         }
     });
@@ -804,9 +801,9 @@ test "should parse arrow function" {
             try t.expectAST(node, .{
                 .arrow_function = .{
                     .type = .arrow,
-                    .params = @constCast(&[_]AST.Node.Index{1}),
-                    .body = 3,
-                    .return_type = 0,
+                    .params = @constCast(&[_]AST.Node.Index{AST.Node.at(1)}),
+                    .body = AST.Node.at(3),
+                    .return_type = AST.Node.Empty,
                 },
             });
         }
@@ -821,9 +818,9 @@ test "should parse async arrow function" {
             try t.expectAST(node, .{
                 .arrow_function = .{
                     .type = .async_arrow,
-                    .params = @constCast(&[_]AST.Node.Index{1}),
-                    .body = 3,
-                    .return_type = 0,
+                    .params = @constCast(&[_]AST.Node.Index{AST.Node.at(1)}),
+                    .body = AST.Node.at(3),
+                    .return_type = AST.Node.Empty,
                 },
             });
         }
@@ -838,9 +835,9 @@ test "should parse arrow function without args" {
             try t.expectAST(node, .{
                 .arrow_function = .{
                     .type = .arrow,
-                    .params = &[_]AST.Node.Index{},
-                    .body = 1,
-                    .return_type = 0,
+                    .params = &.{},
+                    .body = AST.Node.at(1),
+                    .return_type = AST.Node.Empty,
                 },
             });
         }
@@ -855,9 +852,9 @@ test "should parse async arrow function without args" {
             try t.expectAST(node, .{
                 .arrow_function = .{
                     .type = .async_arrow,
-                    .params = &[_]AST.Node.Index{},
-                    .body = 1,
-                    .return_type = 0,
+                    .params = &.{},
+                    .body = AST.Node.at(1),
+                    .return_type = AST.Node.Empty,
                 },
             });
         }
@@ -871,9 +868,9 @@ test "should parse arrow function with args" {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
             try t.expectAST(node, .{ .arrow_function = .{
                 .type = .arrow,
-                .params = @constCast(&[_]AST.Node.Index{ 2, 3 }),
-                .body = 5,
-                .return_type = 4,
+                .params = @constCast(&[_]AST.Node.Index{ AST.Node.at(2), AST.Node.at(3) }),
+                .body = AST.Node.at(5),
+                .return_type = AST.Node.at(4),
             } });
         }
     });

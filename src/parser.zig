@@ -29,21 +29,21 @@ buffer: [:0]const u8,
 tokens: []const Token,
 cur_token: Token.Index,
 nodes: std.ArrayList(AST.Raw),
-extra: std.ArrayList(AST.Node.Index),
+extra: std.ArrayList(u32),
 errors: std.ArrayList(u8),
 
 pub fn init(gpa: std.mem.Allocator, buffer: [:0]const u8) !Self {
     var lexer = Lexer.init(gpa, buffer);
     var nodes = std.ArrayList(AST.Raw).init(gpa);
-    nodes.append(AST.Raw{ .tag = .root, .main_token = 0, .data = .{ .lhs = 0, .rhs = 0 } }) catch unreachable;
+    nodes.append(AST.Raw{ .tag = .root, .main_token = Token.at(0), .data = .{ .lhs = 0, .rhs = 0 } }) catch unreachable;
 
     return Self{
-        .cur_token = 0,
+        .cur_token = Token.at(0),
         .gpa = gpa,
         .buffer = buffer,
         .tokens = try lexer.tokenize(),
         .nodes = nodes,
-        .extra = std.ArrayList(AST.Node.Index).init(gpa),
+        .extra = std.ArrayList(u32).init(gpa),
         .errors = std.ArrayList(u8).init(gpa),
     };
 }
@@ -79,15 +79,15 @@ pub fn parse(self: *Self) ParserError!AST.Node.Index {
 }
 
 pub fn token(self: Self) Token {
-    if (self.cur_token >= self.tokens.len) {
+    if (self.cur_token.int() >= self.tokens.len) {
         return .{ .type = .Eof, .start = 0, .end = 0 };
     }
-    return self.tokens[self.cur_token];
+    return self.tokens[self.cur_token.int()];
 }
 
 pub fn advance(self: *Self) Token.Index {
     //std.debug.print("advancing from {}\n", .{self.lexer.getToken(self.cur_token)});
-    self.cur_token += 1;
+    self.cur_token = self.cur_token.inc(1);
     return self.cur_token;
 }
 
@@ -103,7 +103,7 @@ pub fn match(self: *Self, comptime token_type: anytype) bool {
     }
 
     if (is_array_of_token_type and self.peekMatchMany(token_type)) {
-        self.cur_token += @intCast(token_type.len);
+        self.cur_token = self.cur_token.inc(token_type.len);
         return true;
     }
 
@@ -116,7 +116,7 @@ pub fn peekMatch(self: Self, token_type: TokenType) bool {
 
 pub fn peekMatchMany(self: Self, comptime token_types: anytype) bool {
     inline for (token_types, 0..) |tok_type, i| {
-        if (self.tokens[self.cur_token + i].type != tok_type) {
+        if (self.tokens[self.cur_token.int() + i].type != tok_type) {
             return false;
         }
     }
@@ -142,8 +142,8 @@ pub fn consumeOrNull(self: *Self, token_type: TokenType) ?Token.Index {
 }
 
 pub fn rewind(self: *Self) void {
-    if (self.cur_token - 1 >= 0) {
-        self.cur_token -= 1;
+    if (self.cur_token.int() - 1 >= 0) {
+        self.cur_token = self.cur_token.dec(1);
     }
 }
 
@@ -167,7 +167,7 @@ pub fn needsSemicolon(self: Self, node: AST.Node.Index) bool {
     const nodeRaw = self.getRawNode(node);
     var tag = nodeRaw.tag;
     if (tag == .export_node or tag == .export_default) {
-        tag = self.getRawNode(nodeRaw.data.lhs).tag;
+        tag = self.getRawNode(AST.Node.at(nodeRaw.data.lhs)).tag;
     }
 
     return switch (tag) {

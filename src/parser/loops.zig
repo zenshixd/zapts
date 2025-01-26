@@ -132,9 +132,20 @@ pub fn parseForOfStatement(self: *Parser) ParserError!?AST.Node.Index {
 
 test "should parse breakable statement" {
     const test_cases = .{
-        .{ "for(;;) {}", AST.Node{ .@"for" = .{ .classic = .{ .init = AST.Node.Empty, .cond = AST.Node.Empty, .post = AST.Node.Empty, .body = 1 } } } },
-        .{ "while(true) {}", AST.Node{ .@"while" = .{ .cond = 1, .body = 2 } } },
-        .{ "do {} while(true);", AST.Node{ .do_while = .{ .body = 1, .cond = 2 } } },
+        .{ "for(;;) {}", AST.Node{ .@"for" = .{ .classic = .{
+            .init = AST.Node.Empty,
+            .cond = AST.Node.Empty,
+            .post = AST.Node.Empty,
+            .body = AST.Node.at(1),
+        } } } },
+        .{ "while(true) {}", AST.Node{ .@"while" = .{
+            .cond = AST.Node.at(1),
+            .body = AST.Node.at(2),
+        } } },
+        .{ "do {} while(true);", AST.Node{ .do_while = .{
+            .body = AST.Node.at(1),
+            .cond = AST.Node.at(2),
+        } } },
     };
 
     inline for (test_cases) |test_case| {
@@ -162,8 +173,8 @@ test "should parse while loop" {
     try TestParser.run(text, parseWhileStatement, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
             try t.expectAST(node, AST.Node{ .@"while" = .{
-                .cond = 1,
-                .body = 2,
+                .cond = AST.Node.at(1),
+                .body = AST.Node.at(2),
             } });
         }
     });
@@ -185,8 +196,8 @@ test "should parse do while loop" {
     try TestParser.run(text, parseDoWhileStatement, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
             try t.expectAST(node, AST.Node{ .do_while = .{
-                .cond = 2,
-                .body = 1,
+                .cond = AST.Node.at(2),
+                .body = AST.Node.at(1),
             } });
         }
     });
@@ -209,10 +220,10 @@ test "should parse classic for loops" {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
             try t.expectAST(node, AST.Node{ .@"for" = .{
                 .classic = .{
-                    .init = 3,
-                    .cond = 7,
-                    .post = 10,
-                    .body = 11,
+                    .init = AST.Node.at(3),
+                    .cond = AST.Node.at(7),
+                    .post = AST.Node.at(10),
+                    .body = AST.Node.at(11),
                 },
             } });
         }
@@ -226,10 +237,10 @@ test "should parse empty for loops" {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
             try t.expectAST(node, AST.Node{ .@"for" = .{
                 .classic = .{
-                    .init = 0,
-                    .cond = 0,
-                    .post = 0,
-                    .body = 1,
+                    .init = AST.Node.Empty,
+                    .cond = AST.Node.Empty,
+                    .post = AST.Node.Empty,
+                    .body = AST.Node.at(1),
                 },
             } });
         }
@@ -243,9 +254,9 @@ test "should parse in for loops" {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
             try t.expectAST(node, AST.Node{ .@"for" = .{
                 .in = .{
-                    .left = 4,
-                    .right = 8,
-                    .body = 9,
+                    .left = AST.Node.at(4),
+                    .right = AST.Node.at(8),
+                    .body = AST.Node.at(9),
                 },
             } });
         }
@@ -259,9 +270,9 @@ test "should parse of for loops" {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
             try t.expectAST(node, AST.Node{ .@"for" = .{
                 .of = .{
-                    .left = 6,
-                    .right = 10,
-                    .body = 11,
+                    .left = AST.Node.at(6),
+                    .right = AST.Node.at(10),
+                    .body = AST.Node.at(11),
                 },
             } });
         }
