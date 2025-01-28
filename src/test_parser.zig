@@ -1,10 +1,11 @@
 const std = @import("std");
 
 const AST = @import("ast.zig");
+const Token = @import("consts.zig").Token;
 const TokenType = @import("consts.zig").TokenType;
 const diagnostics = @import("diagnostics.zig");
 const Parser = @import("parser.zig");
-const ParserError = Parser.ParserError;
+const CompilationError = @import("errors.zig").CompilationError;
 
 const ReturnTypeOf = @import("meta.zig").ReturnTypeOf;
 const ErrorUnionOf = @import("meta.zig").ErrorUnionOf;
@@ -51,6 +52,11 @@ pub const Marker = struct {
     pos: u32,
     line: u32,
     col: u32,
+
+    pub fn fromText(comptime text: []const u8) Marker {
+        const pos = std.mem.indexOfScalar(u8, text, '^').?;
+        return Marker{ .pos = @intCast(pos), .line = 0, .col = @intCast(pos + 1) };
+    }
 
     pub fn asText(comptime self: Marker) [self.col]u8 {
         var buffer: [self.col]u8 = undefined;
@@ -155,17 +161,33 @@ pub fn expectTokenAt(t: TestParser, comptime marker: Marker, node: AST.Node.Inde
     const tok = t.parser.tokens[raw.main_token.int()];
 
     if (tok.start != marker.pos) {
-        var cur_marker = std.testing.allocator.alloc(u8, t.parser.buffer.len + 1) catch unreachable;
-        defer std.testing.allocator.free(cur_marker);
-
-        for (0..cur_marker.len) |i| {
-            cur_marker[i] = ' ';
-        }
-        cur_marker[tok.start] = '^';
-
-        std.debug.print("expected main_token at:\n{s}\n{s}\nfound at:\n{s}\n{s}\n", .{ t.parser.buffer, marker.asText(), t.parser.buffer, cur_marker });
-        return error.TestExpectedEqual;
+        return t.tokenPosMismatch(marker, tok);
     }
+}
+
+pub fn getTokenAt(t: TestParser, comptime marker: Marker) Token.Index {
+    var found_token_idx: ?Token.Index = null;
+    for (t.parser.tokens, 0..) |tok, i| {
+        if (tok.start == marker.pos) {
+            found_token_idx = Token.at(@intCast(i));
+            break;
+        }
+    }
+
+    return found_token_idx.?;
+}
+
+pub fn tokenPosMismatch(t: TestParser, comptime expected: Marker, tok: Token) anyerror {
+    var cur_marker = std.testing.allocator.alloc(u8, t.parser.buffer.len + 1) catch unreachable;
+    defer std.testing.allocator.free(cur_marker);
+
+    for (0..cur_marker.len) |i| {
+        cur_marker[i] = ' ';
+    }
+    cur_marker[tok.start] = '^';
+
+    std.debug.print("expected token at:\n{s}\n{s}\nfound at:\n{s}\n{s}\n", .{ t.parser.buffer, expected.asText(), t.parser.buffer, cur_marker });
+    return error.TestExpectedEqual;
 }
 
 pub fn expectSyntaxError(
@@ -174,10 +196,28 @@ pub fn expectSyntaxError(
     comptime expected_error: diagnostics.DiagnosticMessage,
     args: anytype,
 ) !void {
-    try expectError(ParserError.SyntaxError, nodeOrError);
-    var buffer: [512]u8 = undefined;
-    const expected_string = try std.fmt.bufPrint(&buffer, "TS" ++ expected_error.code ++ ": " ++ expected_error.message ++ "\n", args);
-    try expectStringStartsWith(t.parser.errors.items, expected_string);
+    try expectError(CompilationError.SyntaxError, nodeOrError);
+    const expected_string = try std.fmt.allocPrint(std.testing.allocator, "TS" ++ expected_error.code ++ ": " ++ expected_error.message, args);
+    defer std.testing.allocator.free(expected_string);
+
+    try expectStringStartsWith(t.parser.errors.items(.message)[0], expected_string);
+}
+
+pub fn expectSyntaxErrorAt(
+    t: TestParser,
+    nodeOrError: anytype,
+    comptime expected_error: diagnostics.DiagnosticMessage,
+    args: anytype,
+    comptime expected_location: Marker,
+) !void {
+    try t.expectSyntaxError(nodeOrError, expected_error, args);
+
+    const loc = t.parser.errors.items(.location)[0];
+    const error_token = t.parser.tokens[loc.int()];
+
+    if (error_token.start != expected_location.pos) {
+        return t.tokenPosMismatch(expected_location, error_token);
+    }
 }
 
 pub fn expectToken(t: TestParser, expected_tok_type: TokenType, expected_value: []const u8, node: AST.Node.Index) !void {

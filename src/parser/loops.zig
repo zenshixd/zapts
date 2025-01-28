@@ -1,8 +1,9 @@
 const std = @import("std");
+const Token = @import("../consts.zig").Token;
 const Parser = @import("../parser.zig");
 const AST = @import("../ast.zig");
 const TokenType = @import("../consts.zig").TokenType;
-const ParserError = Parser.ParserError;
+const CompilationError = @import("../errors.zig").CompilationError;
 const diagnostics = @import("../diagnostics.zig");
 
 const parseStatement = @import("statements.zig").parseStatement;
@@ -18,13 +19,14 @@ const expectEqualDeep = std.testing.expectEqualDeep;
 const expectEqualStrings = std.testing.expectEqualStrings;
 const expectError = std.testing.expectError;
 
-pub fn parseBreakableStatement(parser: *Parser) ParserError!?AST.Node.Index {
+pub fn parseBreakableStatement(parser: *Parser) CompilationError!?AST.Node.Index {
     return try parseDoWhileStatement(parser) orelse
         try parseWhileStatement(parser) orelse
         try parseForStatement(parser);
 }
 
-pub fn parseDoWhileStatement(self: *Parser) ParserError!?AST.Node.Index {
+pub fn parseDoWhileStatement(self: *Parser) CompilationError!?AST.Node.Index {
+    const main_token = self.cur_token;
     if (!self.match(TokenType.Do)) {
         return null;
     }
@@ -36,13 +38,16 @@ pub fn parseDoWhileStatement(self: *Parser) ParserError!?AST.Node.Index {
     _ = try self.consume(TokenType.CloseParen, diagnostics.ARG_expected, .{")"});
     _ = try self.consume(TokenType.Semicolon, diagnostics.ARG_expected, .{";"});
 
-    return self.addNode(self.cur_token, AST.Node{ .do_while = .{
-        .cond = condition,
-        .body = node,
-    } });
+    return self.addNode(main_token, AST.Node{
+        .do_while = .{
+            .cond = condition,
+            .body = node,
+        },
+    });
 }
 
-pub fn parseWhileStatement(self: *Parser) ParserError!?AST.Node.Index {
+pub fn parseWhileStatement(self: *Parser) CompilationError!?AST.Node.Index {
+    const main_token = self.cur_token;
     if (!self.match(TokenType.While)) {
         return null;
     }
@@ -51,28 +56,31 @@ pub fn parseWhileStatement(self: *Parser) ParserError!?AST.Node.Index {
     const condition = try parseExpression(self);
     _ = try self.consume(TokenType.CloseParen, diagnostics.ARG_expected, .{")"});
 
-    return self.addNode(self.cur_token, AST.Node{ .@"while" = .{
-        .cond = condition,
-        .body = try parseStatement(self),
-    } });
+    return self.addNode(main_token, AST.Node{
+        .@"while" = .{
+            .cond = condition,
+            .body = try parseStatement(self),
+        },
+    });
 }
 
-pub fn parseForStatement(self: *Parser) ParserError!?AST.Node.Index {
+pub fn parseForStatement(self: *Parser) CompilationError!?AST.Node.Index {
+    const main_token = self.cur_token;
     if (!self.match(TokenType.For)) {
         return null;
     }
 
     _ = try self.consume(TokenType.OpenParen, diagnostics.ARG_expected, .{"("});
 
-    const for_inner = try parseForClassicStatement(self) orelse
-        try parseForInStatement(self) orelse
-        try parseForOfStatement(self) orelse
+    const for_inner = try parseForClassicStatement(self, main_token) orelse
+        try parseForInStatement(self, main_token) orelse
+        try parseForOfStatement(self, main_token) orelse
         return self.fail(diagnostics.declaration_or_statement_expected, .{});
 
     return for_inner;
 }
 
-pub fn parseForClassicStatement(self: *Parser) ParserError!?AST.Node.Index {
+pub fn parseForClassicStatement(self: *Parser, main_token: Token.Index) CompilationError!?AST.Node.Index {
     const cp = self.cur_token;
     const init_node = if (self.peekMatch(TokenType.Semicolon)) AST.Node.Empty else try parseDeclaration(self) orelse try parseExpression(self);
 
@@ -86,15 +94,17 @@ pub fn parseForClassicStatement(self: *Parser) ParserError!?AST.Node.Index {
     const post_node = if (self.peekMatch(TokenType.CloseParen)) AST.Node.Empty else try parseExpression(self);
     _ = try self.consume(TokenType.CloseParen, diagnostics.ARG_expected, .{")"});
 
-    return self.addNode(self.cur_token, AST.Node{ .@"for" = .{ .classic = .{
-        .init = init_node,
-        .cond = cond_node,
-        .post = post_node,
-        .body = try parseStatement(self),
-    } } });
+    return self.addNode(main_token, AST.Node{ .@"for" = .{
+        .classic = .{
+            .init = init_node,
+            .cond = cond_node,
+            .post = post_node,
+            .body = try parseStatement(self),
+        },
+    } });
 }
 
-pub fn parseForInStatement(self: *Parser) ParserError!?AST.Node.Index {
+pub fn parseForInStatement(self: *Parser, main_token: Token.Index) CompilationError!?AST.Node.Index {
     const cp = self.cur_token;
     const init_node = try parseDeclaration(self) orelse try parseExpression(self);
     if (!self.match(TokenType.In)) {
@@ -105,14 +115,16 @@ pub fn parseForInStatement(self: *Parser) ParserError!?AST.Node.Index {
     const right = try parseExpression(self);
     _ = try self.consume(TokenType.CloseParen, diagnostics.ARG_expected, .{")"});
 
-    return self.addNode(self.cur_token, AST.Node{ .@"for" = .{ .in = .{
-        .left = init_node,
-        .right = right,
-        .body = try parseStatement(self),
-    } } });
+    return self.addNode(main_token, AST.Node{ .@"for" = .{
+        .in = .{
+            .left = init_node,
+            .right = right,
+            .body = try parseStatement(self),
+        },
+    } });
 }
 
-pub fn parseForOfStatement(self: *Parser) ParserError!?AST.Node.Index {
+pub fn parseForOfStatement(self: *Parser, main_token: Token.Index) CompilationError!?AST.Node.Index {
     const cp = self.cur_token;
 
     const init_node = try parseDeclaration(self) orelse try parseExpression(self);
@@ -123,35 +135,53 @@ pub fn parseForOfStatement(self: *Parser) ParserError!?AST.Node.Index {
     const right = try parseExpression(self);
     _ = try self.consume(TokenType.CloseParen, diagnostics.ARG_expected, .{")"});
 
-    return self.addNode(self.cur_token, AST.Node{ .@"for" = .{ .of = .{
-        .left = init_node,
-        .right = right,
-        .body = try parseStatement(self),
-    } } });
+    return self.addNode(main_token, AST.Node{ .@"for" = .{
+        .of = .{
+            .left = init_node,
+            .right = right,
+            .body = try parseStatement(self),
+        },
+    } });
 }
 
 test "should parse breakable statement" {
     const test_cases = .{
-        .{ "for(;;) {}", AST.Node{ .@"for" = .{ .classic = .{
-            .init = AST.Node.Empty,
-            .cond = AST.Node.Empty,
-            .post = AST.Node.Empty,
-            .body = AST.Node.at(1),
-        } } } },
-        .{ "while(true) {}", AST.Node{ .@"while" = .{
-            .cond = AST.Node.at(1),
-            .body = AST.Node.at(2),
-        } } },
-        .{ "do {} while(true);", AST.Node{ .do_while = .{
-            .body = AST.Node.at(1),
-            .cond = AST.Node.at(2),
-        } } },
+        .{
+            \\ for(;;) {}
+            \\>^
+            ,
+            AST.Node{ .@"for" = .{ .classic = .{
+                .init = AST.Node.Empty,
+                .cond = AST.Node.Empty,
+                .post = AST.Node.Empty,
+                .body = AST.Node.at(1),
+            } } },
+        },
+        .{
+            \\ while(true) {}
+            \\>^
+            ,
+            AST.Node{ .@"while" = .{
+                .cond = AST.Node.at(1),
+                .body = AST.Node.at(2),
+            } },
+        },
+        .{
+            \\ do {} while(true);
+            \\>^
+            ,
+            AST.Node{ .do_while = .{
+                .body = AST.Node.at(1),
+                .cond = AST.Node.at(2),
+            } },
+        },
     };
 
     inline for (test_cases) |test_case| {
         try TestParser.run(test_case[0], parseBreakableStatement, struct {
-            pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(test_case[0])) !void {
+            pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(test_case[0])) !void {
                 try t.expectAST(node, test_case[1]);
+                try t.expectTokenAt(markers[0], node.?);
             }
         });
     }
@@ -214,7 +244,10 @@ test "should return null if for loop is not a for loop" {
 }
 
 test "should parse classic for loops" {
-    const text = "for (let i = 0; i < 10; i++) {}";
+    const text =
+        \\ for (let i = 0; i < 10; i++) {}
+        \\>^
+    ;
 
     try TestParser.run(text, parseForStatement, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
@@ -248,7 +281,10 @@ test "should parse empty for loops" {
 }
 
 test "should parse in for loops" {
-    const text = "for (let i in [1, 2, 3]) {}";
+    const text =
+        \\ for (let i in [1, 2, 3]) {}
+        \\>^
+    ;
 
     try TestParser.run(text, parseForStatement, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
@@ -264,7 +300,10 @@ test "should parse in for loops" {
 }
 
 test "should parse of for loops" {
-    const text = "for (let i of [1, 2, 3]) {}";
+    const text =
+        \\ for (let i of [1, 2, 3]) {}
+        \\>^
+    ;
 
     try TestParser.run(text, parseForStatement, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
@@ -283,7 +322,7 @@ test "should throw SyntaxError if for loop if its not of or in loop" {
     const text = "for (let i as [1, 2, 3]) {}";
 
     try TestParser.runAny(text, parseForStatement, struct {
-        pub fn expect(t: TestParser, nodeOrError: Parser.ParserError!?AST.Node.Index, _: MarkerList(text)) !void {
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, _: MarkerList(text)) !void {
             try t.expectSyntaxError(nodeOrError, diagnostics.declaration_or_statement_expected, .{});
         }
     });

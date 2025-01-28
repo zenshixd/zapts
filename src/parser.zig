@@ -1,5 +1,8 @@
 const std = @import("std");
 
+const CompilationError = @import("errors.zig").CompilationError;
+const CompilationErrorMessage = @import("errors.zig").CompilationErrorMessage;
+
 const ErrorUnionOf = @import("meta.zig").ErrorUnionOf;
 const ReturnTypeOf = @import("meta.zig").ReturnTypeOf;
 
@@ -20,8 +23,6 @@ const parseStatement = @import("parser/statements.zig").parseStatement;
 const Token = @import("consts.zig").Token;
 const TokenType = @import("consts.zig").TokenType;
 
-pub const ParserError = error{ SyntaxError, OutOfMemory };
-
 const Self = @This();
 
 gpa: std.mem.Allocator,
@@ -30,7 +31,7 @@ tokens: []const Token,
 cur_token: Token.Index,
 nodes: std.ArrayList(AST.Raw),
 extra: std.ArrayList(u32),
-errors: std.ArrayList(u8),
+errors: std.MultiArrayList(CompilationErrorMessage),
 
 pub fn init(gpa: std.mem.Allocator, buffer: [:0]const u8) !Self {
     var lexer = Lexer.init(gpa, buffer);
@@ -44,12 +45,15 @@ pub fn init(gpa: std.mem.Allocator, buffer: [:0]const u8) !Self {
         .tokens = try lexer.tokenize(),
         .nodes = nodes,
         .extra = std.ArrayList(u32).init(gpa),
-        .errors = std.ArrayList(u8).init(gpa),
+        .errors = std.MultiArrayList(CompilationErrorMessage){},
     };
 }
 
 pub fn deinit(self: *Self) void {
-    self.errors.deinit();
+    for (self.errors.items(.message)) |message| {
+        self.gpa.free(message);
+    }
+    self.errors.deinit(self.gpa);
     self.nodes.deinit();
     self.extra.deinit();
     self.gpa.free(self.tokens);
@@ -59,7 +63,7 @@ pub const getNode = AST.getNode;
 pub const getRawNode = AST.getRawNode;
 pub const addNode = AST.addNode;
 
-pub fn parse(self: *Self) ParserError!AST.Node.Index {
+pub fn parse(self: *Self) CompilationError!AST.Node.Index {
     var nodes = std.ArrayList(AST.Node.Index).init(self.gpa);
     defer nodes.deinit();
 
@@ -123,7 +127,7 @@ pub fn peekMatchMany(self: Self, comptime token_types: anytype) bool {
     return true;
 }
 
-pub fn consume(self: *Self, token_type: TokenType, comptime error_msg: diagnostics.DiagnosticMessage, args: anytype) ParserError!Token.Index {
+pub fn consume(self: *Self, token_type: TokenType, comptime error_msg: diagnostics.DiagnosticMessage, args: anytype) CompilationError!Token.Index {
     if (self.consumeOrNull(token_type)) |tok| {
         return tok;
     }
@@ -147,17 +151,9 @@ pub fn rewind(self: *Self) void {
     }
 }
 
-pub fn fail(self: *Self, comptime error_msg: diagnostics.DiagnosticMessage, args: anytype) ParserError {
-    self.emitError(error_msg, args);
-    return ParserError.SyntaxError;
-}
-
-pub fn emitError(self: *Self, comptime error_msg: diagnostics.DiagnosticMessage, args: anytype) void {
-    // std.debug.print("TS" ++ error_msg.code ++ ": " ++ error_msg.message ++ "\n", args);
-    // std.debug.print("Token {}\n", .{self.token()});
-
-    std.fmt.format(self.errors.writer(), "TS" ++ error_msg.code ++ ": " ++ error_msg.message ++ "\n", args) catch unreachable;
-    std.fmt.format(self.errors.writer(), "Token: {}\n", .{self.token()}) catch unreachable;
+pub fn fail(self: *Self, comptime error_msg: diagnostics.DiagnosticMessage, args: anytype) CompilationError {
+    self.errors.append(self.gpa, CompilationErrorMessage.init(self.gpa, error_msg, args, self.cur_token)) catch @panic("Out of memory");
+    return CompilationError.SyntaxError;
 }
 
 pub fn needsSemicolon(self: Self, node: AST.Node.Index) bool {

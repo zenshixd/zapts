@@ -37,6 +37,7 @@ pub fn main() !void {
 
 test {
     _ = @import("ast.zig");
+    _ = @import("consts.zig");
     _ = @import("compile.zig");
     _ = @import("lexer.zig");
     _ = @import("parser.zig");

@@ -3,7 +3,7 @@ const Parser = @import("../parser.zig");
 const AST = @import("../ast.zig");
 const Token = @import("../consts.zig").Token;
 const TokenType = @import("../consts.zig").TokenType;
-const ParserError = Parser.ParserError;
+const CompilationError = @import("../errors.zig").CompilationError;
 const diagnostics = @import("../diagnostics.zig");
 
 const parseIdentifier = @import("primary.zig").parseIdentifier;
@@ -15,27 +15,28 @@ const TestParser = @import("../test_parser.zig");
 
 const expectEqual = std.testing.expectEqual;
 
-pub fn parseOptionalDataType(self: *Parser) ParserError!AST.Node.Index {
+pub fn parseOptionalDataType(self: *Parser) CompilationError!AST.Node.Index {
     if (self.match(TokenType.Colon)) {
-        return try parseSymbolType(self);
+        return try parseType(self);
     }
 
     return AST.Node.Empty;
 }
 
-pub fn parseSymbolType(self: *Parser) ParserError!AST.Node.Index {
-    return try parseSymbolUnionType(self) orelse
+pub fn parseType(self: *Parser) CompilationError!AST.Node.Index {
+    return try parseUnionType(self) orelse
         return self.fail(diagnostics.type_expected, .{});
 }
 
-fn parseSymbolUnionType(self: *Parser) ParserError!?AST.Node.Index {
-    var node = try parseSymbolIntersectionType(self) orelse return null;
+fn parseUnionType(self: *Parser) CompilationError!?AST.Node.Index {
+    var node = try parseIntersectionType(self) orelse return null;
 
+    const main_token = self.cur_token;
     if (self.match(TokenType.Bar)) {
-        const new_node = self.addNode(self.cur_token, AST.Node{
+        const new_node = self.addNode(main_token, AST.Node{
             .type_union = .{
                 .left = node,
-                .right = try parseSymbolUnionType(self) orelse return self.fail(diagnostics.type_expected, .{}),
+                .right = try parseUnionType(self) orelse return self.fail(diagnostics.type_expected, .{}),
             },
         });
 
@@ -45,14 +46,15 @@ fn parseSymbolUnionType(self: *Parser) ParserError!?AST.Node.Index {
     return node;
 }
 
-fn parseSymbolIntersectionType(self: *Parser) ParserError!?AST.Node.Index {
-    var node = try parseSymbolTypeUnary(self) orelse return null;
+fn parseIntersectionType(self: *Parser) CompilationError!?AST.Node.Index {
+    var node = try parseTypeUnary(self) orelse return null;
 
+    const main_token = self.cur_token;
     if (self.match(TokenType.Ampersand)) {
-        const new_node = self.addNode(self.cur_token, AST.Node{
+        const new_node = self.addNode(main_token, AST.Node{
             .type_intersection = .{
                 .left = node,
-                .right = try parseSymbolIntersectionType(self) orelse return self.fail(diagnostics.type_expected, .{}),
+                .right = try parseIntersectionType(self) orelse return self.fail(diagnostics.type_expected, .{}),
             },
         });
 
@@ -62,26 +64,28 @@ fn parseSymbolIntersectionType(self: *Parser) ParserError!?AST.Node.Index {
     return node;
 }
 
-fn parseSymbolTypeUnary(self: *Parser) ParserError!?AST.Node.Index {
+fn parseTypeUnary(self: *Parser) CompilationError!?AST.Node.Index {
+    const main_token = self.cur_token;
     if (self.match(TokenType.Typeof)) {
-        return self.addNode(self.cur_token, AST.Node{
-            .typeof = try parseSymbolType(self),
+        return self.addNode(main_token, AST.Node{
+            .typeof = try parseType(self),
         });
     } else if (self.match(TokenType.Keyof)) {
-        return self.addNode(self.cur_token, AST.Node{
-            .keyof = try parseSymbolType(self),
+        return self.addNode(main_token, AST.Node{
+            .keyof = try parseType(self),
         });
     }
 
-    return try parseSymbolArrayType(self);
+    return try parseArrayType(self);
 }
 
-fn parseSymbolArrayType(self: *Parser) ParserError!?AST.Node.Index {
-    const node = try parsePrimarySymbolType(self) orelse return null;
+fn parseArrayType(self: *Parser) CompilationError!?AST.Node.Index {
+    const main_token = self.cur_token;
+    const node = try parsePrimaryType(self) orelse return null;
 
     if (self.match(TokenType.OpenSquareBracket)) {
         if (self.match(TokenType.CloseSquareBracket)) {
-            return self.addNode(self.cur_token, AST.Node{ .array_type = node });
+            return self.addNode(main_token, AST.Node{ .array_type = node });
         }
         return self.fail(diagnostics.unexpected_token, .{});
     }
@@ -89,14 +93,15 @@ fn parseSymbolArrayType(self: *Parser) ParserError!?AST.Node.Index {
     return node;
 }
 
-fn parsePrimarySymbolType(self: *Parser) ParserError!?AST.Node.Index {
+fn parsePrimaryType(self: *Parser) CompilationError!?AST.Node.Index {
     return try parseObjectType(self) orelse
         try parseTupleType(self) orelse
         try parsePrimitiveType(self) orelse
         try parseGenericType(self);
 }
 
-fn parseObjectType(self: *Parser) ParserError!?AST.Node.Index {
+fn parseObjectType(self: *Parser) CompilationError!?AST.Node.Index {
+    const main_token = self.cur_token;
     if (!self.match(TokenType.OpenCurlyBrace)) {
         return null;
     }
@@ -117,19 +122,20 @@ fn parseObjectType(self: *Parser) ParserError!?AST.Node.Index {
         _ = self.consumeOrNull(TokenType.Comma) orelse self.consumeOrNull(TokenType.Semicolon) orelse return self.fail(diagnostics.ARG_expected, .{","});
     }
 
-    return self.addNode(self.cur_token, AST.Node{ .object_type = list.items });
+    return self.addNode(main_token, AST.Node{ .object_type = list.items });
 }
 
-fn parseObjectPropertyType(self: *Parser) ParserError!?AST.Node.Index {
+fn parseObjectPropertyType(self: *Parser) CompilationError!?AST.Node.Index {
+    const main_token = self.cur_token;
     const identifier = try parseIdentifier(self) orelse return null;
 
     var right: AST.Node.Index = AST.Node.Empty;
 
     if (self.match(TokenType.Colon)) {
-        right = try parseSymbolType(self);
+        right = try parseType(self);
     }
 
-    return self.addNode(self.cur_token, AST.Node{
+    return self.addNode(main_token, AST.Node{
         .object_type_field = .{
             .name = identifier,
             .type = right,
@@ -137,7 +143,7 @@ fn parseObjectPropertyType(self: *Parser) ParserError!?AST.Node.Index {
     });
 }
 
-fn parseObjectMethodType(self: *Parser) ParserError!?AST.Node.Index {
+fn parseObjectMethodType(self: *Parser) CompilationError!?AST.Node.Index {
     const cp = self.cur_token;
     const identifier = try parseIdentifier(self) orelse {
         self.cur_token = cp;
@@ -174,7 +180,7 @@ fn parseObjectMethodType(self: *Parser) ParserError!?AST.Node.Index {
     });
 }
 
-fn parseFunctionType(self: *Parser) ParserError!?AST.Node.Index {
+fn parseFunctionType(self: *Parser) CompilationError!?AST.Node.Index {
     const cur_token = self.cur_token;
     const generics = if (self.match(TokenType.LessThan)) try parseGenericParams(self) else null;
     defer {
@@ -193,7 +199,7 @@ fn parseFunctionType(self: *Parser) ParserError!?AST.Node.Index {
 
     _ = try self.consume(TokenType.Arrow, diagnostics.ARG_expected, .{"=>"});
 
-    const return_type = try parseSymbolType(self);
+    const return_type = try parseType(self);
 
     return self.addNode(start_token, AST.Node{ .function_type = .{
         .generic_params = if (generics) |g| g.items else &.{},
@@ -202,7 +208,7 @@ fn parseFunctionType(self: *Parser) ParserError!?AST.Node.Index {
     } });
 }
 
-fn parseFunctionArgumentsType(self: *Parser) ParserError!std.ArrayList(AST.Node.Index) {
+fn parseFunctionArgumentsType(self: *Parser) CompilationError!std.ArrayList(AST.Node.Index) {
     var args = std.ArrayList(AST.Node.Index).init(self.gpa);
     errdefer args.deinit();
 
@@ -224,7 +230,8 @@ fn parseFunctionArgumentsType(self: *Parser) ParserError!std.ArrayList(AST.Node.
     return args;
 }
 
-fn parseTupleType(self: *Parser) ParserError!?AST.Node.Index {
+fn parseTupleType(self: *Parser) CompilationError!?AST.Node.Index {
+    const main_token = self.cur_token;
     if (!self.match(TokenType.OpenSquareBracket)) {
         return null;
     }
@@ -233,7 +240,7 @@ fn parseTupleType(self: *Parser) ParserError!?AST.Node.Index {
     defer list.deinit();
 
     while (!self.match(TokenType.CloseSquareBracket)) {
-        const node = try parseSymbolType(self);
+        const node = try parseType(self);
         try list.append(node);
 
         if (self.match(TokenType.CloseSquareBracket)) {
@@ -243,7 +250,7 @@ fn parseTupleType(self: *Parser) ParserError!?AST.Node.Index {
         _ = try self.consume(TokenType.Comma, diagnostics.ARG_expected, .{","});
     }
 
-    return self.addNode(self.cur_token, AST.Node{ .tuple_type = list.items });
+    return self.addNode(main_token, AST.Node{ .tuple_type = list.items });
 }
 
 const primitive_types = .{
@@ -259,7 +266,7 @@ const primitive_types = .{
     .{ TokenType.Unknown, .unknown },
 };
 
-fn parsePrimitiveType(self: *Parser) ParserError!?AST.Node.Index {
+fn parsePrimitiveType(self: *Parser) CompilationError!?AST.Node.Index {
     inline for (primitive_types) |primitive_type| {
         if (self.match(primitive_type[0])) {
             return self.addNode(self.cur_token.dec(1), AST.Node{ .simple_type = .{ .kind = primitive_type[1] } });
@@ -268,7 +275,7 @@ fn parsePrimitiveType(self: *Parser) ParserError!?AST.Node.Index {
 
     return null;
 }
-fn parseGenericType(self: *Parser) ParserError!?AST.Node.Index {
+fn parseGenericType(self: *Parser) CompilationError!?AST.Node.Index {
     const identifier = self.consumeOrNull(TokenType.Identifier) orelse return null;
 
     if (self.match(TokenType.LessThan)) {
@@ -284,12 +291,12 @@ fn parseGenericType(self: *Parser) ParserError!?AST.Node.Index {
     return parseTypeIdentifier(self, identifier);
 }
 
-fn parseGenericParams(self: *Parser) ParserError!std.ArrayList(AST.Node.Index) {
+fn parseGenericParams(self: *Parser) CompilationError!std.ArrayList(AST.Node.Index) {
     var params = std.ArrayList(AST.Node.Index).init(self.gpa);
     errdefer params.deinit();
 
     while (!self.match(TokenType.GreaterThan)) {
-        try params.append(try parseSymbolType(self));
+        try params.append(try parseType(self));
 
         if (self.match(TokenType.GreaterThan)) {
             break;
@@ -319,7 +326,7 @@ fn parseTypeIdentifier(self: *Parser, identifier: Token.Index) ?AST.Node.Index {
     return self.addNode(identifier, AST.Node{ .simple_type = .{ .kind = .identifier } });
 }
 
-fn parseTypeDeclaration(self: *Parser) ParserError!?AST.Node.Index {
+fn parseTypeDeclaration(self: *Parser) CompilationError!?AST.Node.Index {
     if (!self.match(TokenType.Type)) {
         return null;
     }
@@ -330,7 +337,7 @@ fn parseTypeDeclaration(self: *Parser) ParserError!?AST.Node.Index {
 
     _ = try self.consume(TokenType.Equal, diagnostics.ARG_expected, .{"="});
 
-    const identifier_data_type = try parseSymbolType(self);
+    const identifier_data_type = try parseType(self);
 
     return self.addNode(self.cur_token, AST.Node{ .type_decl = .{
         .left = identifier,
@@ -338,7 +345,7 @@ fn parseTypeDeclaration(self: *Parser) ParserError!?AST.Node.Index {
     } });
 }
 
-fn parseInterfaceDeclaration(self: *Parser) ParserError!?AST.Node.Index {
+fn parseInterfaceDeclaration(self: *Parser) CompilationError!?AST.Node.Index {
     if (!self.match(TokenType.Interface)) {
         return null;
     }
@@ -372,11 +379,15 @@ fn parseInterfaceDeclaration(self: *Parser) ParserError!?AST.Node.Index {
 }
 
 test "should parse optional data type" {
-    const text = ": number";
+    const text =
+        \\: number
+        \\> ^
+    ;
 
     try TestParser.run(text, parseOptionalDataType, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
             try t.expectAST(node, AST.Node{ .simple_type = .{ .kind = .number } });
+            try t.expectTokenAt(markers[0], node.?);
         }
     });
 }
@@ -393,21 +404,67 @@ test "should return Empty node if no data type" {
 
 test "should parse primary symbol type" {
     const tests = .{
-        .{ "number", AST.Node{ .simple_type = .{ .kind = .number } } },
-        .{ "bigint", AST.Node{ .simple_type = .{ .kind = .bigint } } },
-        .{ "string", AST.Node{ .simple_type = .{ .kind = .string } } },
-        .{ "boolean", AST.Node{ .simple_type = .{ .kind = .boolean } } },
-        .{ "null", AST.Node{ .simple_type = .{ .kind = .null } } },
-        .{ "undefined", AST.Node{ .simple_type = .{ .kind = .undefined } } },
-        .{ "void", AST.Node{ .simple_type = .{ .kind = .void } } },
-        .{ "any", AST.Node{ .simple_type = .{ .kind = .any } } },
-        .{ "unknown", AST.Node{ .simple_type = .{ .kind = .unknown } } },
+        .{
+            \\ number
+            \\>^
+            ,
+            AST.Node{ .simple_type = .{ .kind = .number } },
+        },
+        .{
+            \\ bigint
+            \\>^
+            ,
+            AST.Node{ .simple_type = .{ .kind = .bigint } },
+        },
+        .{
+            \\ string
+            \\>^
+            ,
+            AST.Node{ .simple_type = .{ .kind = .string } },
+        },
+        .{
+            \\ boolean
+            \\>^
+            ,
+            AST.Node{ .simple_type = .{ .kind = .boolean } },
+        },
+        .{
+            \\ null
+            \\>^
+            ,
+            AST.Node{ .simple_type = .{ .kind = .null } },
+        },
+        .{
+            \\ undefined
+            \\>^
+            ,
+            AST.Node{ .simple_type = .{ .kind = .undefined } },
+        },
+        .{
+            \\ void
+            \\>^
+            ,
+            AST.Node{ .simple_type = .{ .kind = .void } },
+        },
+        .{
+            \\ any
+            \\>^
+            ,
+            AST.Node{ .simple_type = .{ .kind = .any } },
+        },
+        .{
+            \\ unknown
+            \\>^
+            ,
+            AST.Node{ .simple_type = .{ .kind = .unknown } },
+        },
     };
 
     inline for (tests) |test_case| {
-        try TestParser.run(test_case[0], parseSymbolType, struct {
-            pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(test_case[0])) !void {
+        try TestParser.run(test_case[0], parseType, struct {
+            pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(test_case[0])) !void {
                 try t.expectAST(node, test_case[1]);
+                try t.expectTokenAt(markers[0], node.?);
             }
         });
     }
@@ -416,8 +473,8 @@ test "should parse primary symbol type" {
 test "should return syntax error if its not a symbol type" {
     const text = "+";
 
-    try TestParser.runAny(text, parseSymbolType, struct {
-        pub fn expect(t: TestParser, nodeOrError: Parser.ParserError!AST.Node.Index, _: MarkerList(text)) !void {
+    try TestParser.runAny(text, parseType, struct {
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!AST.Node.Index, _: MarkerList(text)) !void {
             try t.expectSyntaxError(nodeOrError, diagnostics.type_expected, .{});
         }
     });
@@ -425,98 +482,157 @@ test "should return syntax error if its not a symbol type" {
 
 test "should parse unary type operators" {
     const tests = .{
-        .{ "keyof Array", AST.Node{ .keyof = AST.Node.at(1) } },
-        .{ "typeof Array", AST.Node{ .typeof = AST.Node.at(1) } },
+        .{
+            \\ keyof Array
+            \\>^
+            ,
+            AST.Node{ .keyof = AST.Node.at(1) },
+        },
+        .{
+            \\ typeof Array
+            \\>^
+            ,
+            AST.Node{ .typeof = AST.Node.at(1) },
+        },
     };
 
     inline for (tests) |test_case| {
-        try TestParser.run(test_case[0], parseSymbolType, struct {
-            pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(test_case[0])) !void {
+        try TestParser.run(test_case[0], parseType, struct {
+            pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(test_case[0])) !void {
                 try t.expectAST(node, test_case[1]);
+                try t.expectTokenAt(markers[0], node.?);
             }
         });
     }
 }
 
 test "should parse generic type" {
-    const text = "Array<number>";
+    const text =
+        \\ Array<number>
+        \\>^     ^
+    ;
 
-    try TestParser.run(text, parseSymbolType, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .generic_type = .{
+    try TestParser.run(text, parseType, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            const generic = AST.Node{ .generic_type = .{
                 .name = Token.at(0),
                 .params = @constCast(&[_]AST.Node.Index{AST.Node.at(1)}),
-            } });
+            } };
+            try t.expectAST(node, generic);
+            try t.expectTokenAt(markers[0], node.?);
+
+            try t.expectAST(generic.generic_type.params[0], AST.Node{
+                .simple_type = .{ .kind = .number },
+            });
+            try t.expectTokenAt(markers[1], generic.generic_type.params[0]);
         }
     });
 }
 
 test "should parse generic type with multiple params" {
-    const text = "Array<number, string>";
+    const text =
+        \\ Array<number, string>
+        \\>^
+    ;
 
-    try TestParser.run(text, parseSymbolType, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .generic_type = .{
-                .name = Token.at(0),
-                .params = @constCast(&[_]AST.Node.Index{ AST.Node.at(1), AST.Node.at(2) }),
-            } });
+    try TestParser.run(text, parseType, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectAST(node, AST.Node{
+                .generic_type = .{
+                    .name = Token.at(0),
+                    .params = @constCast(&[_]AST.Node.Index{ AST.Node.at(1), AST.Node.at(2) }),
+                },
+            });
+            try t.expectTokenAt(markers[0], node.?);
         }
     });
 }
 
 test "should parse nested generic type" {
-    const text = "Array<Array<number>>";
+    const text =
+        \\ Array<Array<number>>
+        \\>^     ^
+    ;
 
-    try TestParser.run(text, parseSymbolType, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .generic_type = .{
-                .name = Token.at(0),
-                .params = @constCast(&[_]AST.Node.Index{AST.Node.at(2)}),
-            } });
+    try TestParser.run(text, parseType, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            const generic_type = AST.Node{
+                .generic_type = .{
+                    .name = Token.at(0),
+                    .params = @constCast(&[_]AST.Node.Index{AST.Node.at(2)}),
+                },
+            };
+            try t.expectAST(node, generic_type);
+            try t.expectTokenAt(markers[0], node.?);
+
+            try t.expectAST(generic_type.generic_type.params[0], AST.Node{
+                .generic_type = .{
+                    .name = Token.at(2),
+                    .params = @constCast(&[_]AST.Node.Index{AST.Node.at(1)}),
+                },
+            });
+            try t.expectTokenAt(markers[1], generic_type.generic_type.params[0]);
         }
     });
 }
 
 test "should parse array type" {
-    const text = "number[]";
+    const text =
+        \\ number[]
+        \\>^
+    ;
 
-    try TestParser.run(text, parseSymbolType, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .array_type = AST.Node.at(1) });
+    try TestParser.run(text, parseType, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectAST(node, AST.Node{
+                .array_type = AST.Node.at(1),
+            });
+            try t.expectTokenAt(markers[0], node.?);
         }
     });
 }
 
 test "should parse tuple type" {
-    const text = "[number, string]";
+    const text =
+        \\ [number, string]
+        \\>^
+    ;
 
-    try TestParser.run(text, parseSymbolType, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .tuple_type = @constCast(&[_]AST.Node.Index{ AST.Node.at(1), AST.Node.at(2) }) });
+    try TestParser.run(text, parseType, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectAST(node, AST.Node{
+                .tuple_type = @constCast(&[_]AST.Node.Index{ AST.Node.at(1), AST.Node.at(2) }),
+            });
+            try t.expectTokenAt(markers[0], node.?);
         }
     });
 }
 
 test "should parse object type" {
     const texts = .{
-        "{ a: number, b: string }",
-        "{ a: number; b: string }",
+        \\ { a: number, b: string }
+        \\>^ ^          ^
+        ,
+        \\ { a: number; b: string }
+        \\>^ ^          ^
+        ,
     };
 
     inline for (texts) |text| {
         try TestParser.run(text, parseObjectType, struct {
-            pub fn expect(t: TestParser, _: ?AST.Node.Index, _: MarkerList(text)) !void {
+            pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
                 try t.expectNodesToEqual(&[_]AST.Raw{
                     .{ .tag = .simple_value, .main_token = Token.at(1), .data = .{ .lhs = 1, .rhs = 0 } },
                     .{ .tag = .simple_value, .main_token = Token.at(1), .data = .{ .lhs = 1, .rhs = 0 } },
                     .{ .tag = .simple_type, .main_token = Token.at(3), .data = .{ .lhs = 3, .rhs = 0 } },
-                    .{ .tag = .object_type_field, .main_token = Token.at(4), .data = .{ .lhs = 2, .rhs = 3 } },
+                    .{ .tag = .object_type_field, .main_token = t.getTokenAt(markers[1]), .data = .{ .lhs = 2, .rhs = 3 } },
                     .{ .tag = .simple_value, .main_token = Token.at(5), .data = .{ .lhs = 1, .rhs = 0 } },
                     .{ .tag = .simple_value, .main_token = Token.at(5), .data = .{ .lhs = 1, .rhs = 0 } },
                     .{ .tag = .simple_type, .main_token = Token.at(7), .data = .{ .lhs = 5, .rhs = 0 } },
-                    .{ .tag = .object_type_field, .main_token = Token.at(8), .data = .{ .lhs = 6, .rhs = 7 } },
-                    .{ .tag = .object_type, .main_token = Token.at(9), .data = .{ .lhs = 0, .rhs = 2 } },
+                    .{ .tag = .object_type_field, .main_token = t.getTokenAt(markers[2]), .data = .{ .lhs = 6, .rhs = 7 } },
+                    .{ .tag = .object_type, .main_token = t.getTokenAt(markers[0]), .data = .{ .lhs = 0, .rhs = 2 } },
                 });
+                try t.expectTokenAt(markers[0], node.?);
             }
         });
     }
@@ -524,22 +640,26 @@ test "should parse object type" {
 
 test "should parse method type" {
     const texts = .{
-        "fn(a: number, b: string): boolean",
-        "fn(a: number, b: string,): boolean",
+        \\ fn(a: number, b: string): boolean
+        \\>^ ^^          ^
+        ,
+        \\ fn(a: number, b: string,): boolean
+        \\>^ ^^          ^
+        ,
     };
 
     inline for (texts, 0..) |text, i| {
         try TestParser.run(text, parseObjectMethodType, struct {
-            pub fn expect(t: TestParser, _: ?AST.Node.Index, _: MarkerList(text)) !void {
+            pub fn expect(t: TestParser, _: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
                 try t.expectNodesToEqual(&[_]AST.Raw{
                     .{ .tag = .simple_value, .main_token = Token.at(0), .data = .{ .lhs = 1, .rhs = 0 } },
                     .{ .tag = .simple_type, .main_token = Token.at(4), .data = .{ .lhs = 3, .rhs = 0 } },
-                    .{ .tag = .function_param, .main_token = Token.at(2), .data = .{ .lhs = 2, .rhs = 2 } },
+                    .{ .tag = .function_param, .main_token = t.getTokenAt(markers[2]), .data = .{ .lhs = 2, .rhs = 2 } },
                     .{ .tag = .simple_type, .main_token = Token.at(8), .data = .{ .lhs = 5, .rhs = 0 } },
-                    .{ .tag = .function_param, .main_token = Token.at(6), .data = .{ .lhs = 6, .rhs = 4 } },
+                    .{ .tag = .function_param, .main_token = t.getTokenAt(markers[3]), .data = .{ .lhs = 6, .rhs = 4 } },
                     .{ .tag = .simple_type, .main_token = Token.at(11).inc(i), .data = .{ .lhs = 6, .rhs = 0 } },
-                    .{ .tag = .function_type, .main_token = Token.at(1), .data = .{ .lhs = 2, .rhs = 6 } },
-                    .{ .tag = .object_type_field, .main_token = Token.at(0), .data = .{ .lhs = 1, .rhs = 7 } },
+                    .{ .tag = .function_type, .main_token = t.getTokenAt(markers[1]), .data = .{ .lhs = 2, .rhs = 6 } },
+                    .{ .tag = .object_type_field, .main_token = t.getTokenAt(markers[0]), .data = .{ .lhs = 1, .rhs = 7 } },
                 });
             }
         });
@@ -575,13 +695,13 @@ test "should return syntax error if there is no comma between generic params" {
     const text = "fn<T B>(a: T): boolean";
 
     try TestParser.runAny(text, parseObjectMethodType, struct {
-        pub fn expect(t: TestParser, nodeOrError: Parser.ParserError!?AST.Node.Index, _: MarkerList(text)) !void {
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, _: MarkerList(text)) !void {
             try t.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{","});
         }
     });
 }
 
-test "should parse method type with types" {
+test "should parse method type without types" {
     const text = "fn(a, b)";
 
     try TestParser.run(text, parseObjectMethodType, struct {
@@ -611,7 +731,7 @@ test "should return syntax error if there is no comma after params" {
     const text = "fn(a: number b: string): boolean";
 
     try TestParser.runAny(text, parseObjectMethodType, struct {
-        pub fn expect(t: TestParser, nodeOrError: Parser.ParserError!?AST.Node.Index, _: MarkerList(text)) !void {
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, _: MarkerList(text)) !void {
             try t.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{","});
         }
     });
@@ -621,44 +741,56 @@ test "should return syntax error if param is not identifier" {
     const text = "fn(void): boolean";
 
     try TestParser.runAny(text, parseObjectMethodType, struct {
-        pub fn expect(t: TestParser, nodeOrError: Parser.ParserError!?AST.Node.Index, _: MarkerList(text)) !void {
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, _: MarkerList(text)) !void {
             try t.expectSyntaxError(nodeOrError, diagnostics.identifier_expected, .{});
         }
     });
 }
 
 test "should parse type identifier" {
-    const text = "Array";
+    const text =
+        \\ Array
+        \\>^   
+    ;
 
-    try TestParser.run(text, parseSymbolType, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+    try TestParser.run(text, parseType, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
             try t.expectAST(node, AST.Node{ .simple_type = .{ .kind = .identifier } });
+            try t.expectTokenAt(markers[0], node.?);
         }
     });
 }
 
 test "should parse type union" {
-    const text = "number | string";
+    const text =
+        \\ number | string
+        \\>       ^
+    ;
 
-    try TestParser.run(text, parseSymbolType, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+    try TestParser.run(text, parseType, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
             try t.expectAST(node, AST.Node{ .type_union = .{
                 .left = AST.Node.at(1),
                 .right = AST.Node.at(2),
             } });
+            try t.expectTokenAt(markers[0], node.?);
         }
     });
 }
 
 test "should parse type intersection" {
-    const text = "number & string";
+    const text =
+        \\ number & string
+        \\>       ^
+    ;
 
-    try TestParser.run(text, parseSymbolType, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+    try TestParser.run(text, parseType, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
             try t.expectAST(node, AST.Node{ .type_intersection = .{
                 .left = AST.Node.at(1),
                 .right = AST.Node.at(2),
             } });
+            try t.expectTokenAt(markers[0], node.?);
         }
     });
 }

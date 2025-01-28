@@ -20,7 +20,7 @@ const parseMethod = @import("functions.zig").parseMethod;
 const parseObjectElementName = @import("functions.zig").parseObjectElementName;
 const parseExpression = @import("expressions.zig").parseExpression;
 
-const ParserError = Parser.ParserError;
+const CompilationError = @import("../errors.zig").CompilationError;
 
 const Marker = @import("../test_parser.zig").Marker;
 const MarkerList = @import("../test_parser.zig").MarkerList;
@@ -31,7 +31,7 @@ const expectEqualDeep = std.testing.expectEqualDeep;
 const expectEqualStrings = std.testing.expectEqualStrings;
 const expectError = std.testing.expectError;
 
-pub fn parsePrimaryExpression(parser: *Parser) ParserError!?AST.Node.Index {
+pub fn parsePrimaryExpression(parser: *Parser) CompilationError!?AST.Node.Index {
     return try parseIdentifier(parser) orelse
         try parseLiteral(parser) orelse
         try parseArrayLiteral(parser) orelse
@@ -42,7 +42,7 @@ pub fn parsePrimaryExpression(parser: *Parser) ParserError!?AST.Node.Index {
         try parseGroupingExpression(parser);
 }
 
-pub fn parseIdentifier(parser: *Parser) ParserError!?AST.Node.Index {
+pub fn parseIdentifier(parser: *Parser) CompilationError!?AST.Node.Index {
     if (parser.match(TokenType.Identifier) or try parseKeywordAsIdentifier(parser)) {
         return parser.addNode(parser.cur_token.dec(1), AST.Node{ .simple_value = .{ .kind = .identifier } });
     }
@@ -50,7 +50,7 @@ pub fn parseIdentifier(parser: *Parser) ParserError!?AST.Node.Index {
     return null;
 }
 
-pub fn parseKeywordAsIdentifier(parser: *Parser) ParserError!bool {
+pub fn parseKeywordAsIdentifier(parser: *Parser) CompilationError!bool {
     if (parser.peekMatchMany(.{ TokenType.Async, TokenType.Function })) {
         return false;
     }
@@ -74,7 +74,7 @@ const literal_map = .{
     .{ TokenType.StringConstant, .string },
 };
 
-pub fn parseLiteral(parser: *Parser) ParserError!?AST.Node.Index {
+pub fn parseLiteral(parser: *Parser) CompilationError!?AST.Node.Index {
     inline for (literal_map) |literal| {
         if (parser.match(literal[0])) {
             return parser.addNode(parser.cur_token.dec(1), AST.Node{ .simple_value = .{ .kind = literal[1] } });
@@ -84,7 +84,7 @@ pub fn parseLiteral(parser: *Parser) ParserError!?AST.Node.Index {
     return null;
 }
 
-pub fn parseArrayLiteral(parser: *Parser) ParserError!?AST.Node.Index {
+pub fn parseArrayLiteral(parser: *Parser) CompilationError!?AST.Node.Index {
     if (!parser.match(TokenType.OpenSquareBracket)) {
         return null;
     }
@@ -117,7 +117,7 @@ pub fn parseArrayLiteral(parser: *Parser) ParserError!?AST.Node.Index {
     });
 }
 
-pub fn parseObjectLiteral(parser: *Parser) ParserError!?AST.Node.Index {
+pub fn parseObjectLiteral(parser: *Parser) CompilationError!?AST.Node.Index {
     if (!parser.match(TokenType.OpenCurlyBrace)) {
         return null;
     }
@@ -145,7 +145,7 @@ pub fn parseObjectLiteral(parser: *Parser) ParserError!?AST.Node.Index {
     });
 }
 
-pub fn parseObjectField(parser: *Parser) ParserError!?AST.Node.Index {
+pub fn parseObjectField(parser: *Parser) CompilationError!?AST.Node.Index {
     const method_node = try parseMethodGetter(parser) orelse
         try parseMethodSetter(parser) orelse
         try parseMethodGenerator(parser) orelse
@@ -179,7 +179,7 @@ pub fn parseObjectField(parser: *Parser) ParserError!?AST.Node.Index {
     return null;
 }
 
-pub fn parseSpreadExpression(parser: *Parser) ParserError!?AST.Node.Index {
+pub fn parseSpreadExpression(parser: *Parser) CompilationError!?AST.Node.Index {
     if (!parser.match(TokenType.DotDotDot)) {
         return null;
     }
@@ -189,7 +189,7 @@ pub fn parseSpreadExpression(parser: *Parser) ParserError!?AST.Node.Index {
     });
 }
 
-pub fn parseGroupingExpression(parser: *Parser) ParserError!?AST.Node.Index {
+pub fn parseGroupingExpression(parser: *Parser) CompilationError!?AST.Node.Index {
     if (parser.match(TokenType.OpenParen)) {
         const node = parser.addNode(parser.cur_token.dec(1), AST.Node{
             .grouping = try parseExpression(parser),
@@ -567,7 +567,7 @@ test "should fail parsing object literal if comma is missing between fields" {
     ;
 
     try TestParser.runAny(text, parseObjectLiteral, struct {
-        pub fn expect(t: TestParser, nodeOrError: Parser.ParserError!?AST.Node.Index, _: MarkerList(text)) !void {
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, _: MarkerList(text)) !void {
             try t.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{","});
         }
     });
@@ -578,7 +578,7 @@ test "should fail parsing object literal if field name is invalid" {
 
     inline for (test_cases) |test_case| {
         try TestParser.runAny(test_case, parseObjectLiteral, struct {
-            pub fn expect(t: TestParser, nodeOrError: Parser.ParserError!?AST.Node.Index, _: MarkerList(test_case)) !void {
+            pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, _: MarkerList(test_case)) !void {
                 try t.expectSyntaxError(nodeOrError, diagnostics.property_assignment_expected, .{});
             }
         });
@@ -593,7 +593,7 @@ test "should fail parsing object literal if there is multiple closing commas" {
     ;
 
     try TestParser.runAny(text, parseObjectLiteral, struct {
-        pub fn expect(t: TestParser, nodeOrError: Parser.ParserError!?AST.Node.Index, _: MarkerList(text)) !void {
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, _: MarkerList(text)) !void {
             try t.expectSyntaxError(nodeOrError, diagnostics.property_assignment_expected, .{});
         }
     });

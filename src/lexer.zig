@@ -1,12 +1,17 @@
 const std = @import("std");
 const consts = @import("consts.zig");
+
+const diagnostics = @import("diagnostics.zig");
+const CompilationError = @import("errors.zig").CompilationError;
 const Token = consts.Token;
 const TokenType = consts.TokenType;
+
 const keywords_map = consts.keywords_map;
 const PUNCTUATION_CHARS = consts.PUNCTUATION_CHARS;
 const OPERATOR_CHARS = consts.OPERATOR_CHARS;
 const WHITESPACE = consts.WHITESPACE;
 const KEYWORDS = consts.KEYWORDS;
+
 const File = std.fs.File;
 const FixedBufferStream = std.io.FixedBufferStream;
 const Allocator = std.mem.Allocator;
@@ -17,7 +22,6 @@ const expectEqualStrings = std.testing.expectEqualStrings;
 
 const Self = @This();
 const Lexer = @This();
-const LexerError = error{SyntaxError};
 
 allocator: Allocator,
 buffer: [:0]const u8,
@@ -70,8 +74,8 @@ const State = enum {
     identifier,
 };
 
-pub fn fail(comptime error_msg: []const u8, args: anytype) LexerError {
-    std.debug.print(error_msg ++ "\n", args);
+pub fn fail(comptime error_msg: diagnostics.DiagnosticMessage, args: anytype) CompilationError {
+    std.debug.print(error_msg.message ++ "\n", args);
     return error.SyntaxError;
 }
 
@@ -89,7 +93,7 @@ pub fn tokenize(self: *Self) ![]const Token {
     return tokens.toOwnedSlice() catch unreachable;
 }
 
-pub fn next(self: *Self) LexerError!Token {
+pub fn next(self: *Self) CompilationError!Token {
     var result: Token = .{
         .type = undefined,
         .start = self.index,
@@ -454,6 +458,7 @@ pub fn next(self: *Self) LexerError!Token {
                     result.type = .StringConstant;
                     break;
                 },
+                '\n' => return fail(diagnostics.unterminated_string_literal, .{}),
                 else => {},
             },
             .string_double_quote => switch (self.buffer[self.index]) {
@@ -461,6 +466,7 @@ pub fn next(self: *Self) LexerError!Token {
                     result.type = .StringConstant;
                     break;
                 },
+                '\n' => return fail(diagnostics.unterminated_string_literal, .{}),
                 else => {},
             },
             .number => switch (self.buffer[self.index]) {
@@ -533,12 +539,12 @@ pub fn next(self: *Self) LexerError!Token {
             },
             .escape_sequence => switch (self.buffer[self.index]) {
                 'u' => state = .escape_sequence_unicode,
-                else => return fail("Invalid escape sequence", .{}),
+                else => return fail(diagnostics.invalid_character, .{}),
             },
             .escape_sequence_unicode => switch (self.buffer[self.index]) {
                 '0'...'9', 'a'...'f', 'A'...'F' => state = .escape_sequence_hex,
                 '{' => state = .escape_sequence_code_point,
-                else => return fail("Invalid escape sequence", .{}),
+                else => return fail(diagnostics.invalid_character, .{}),
             },
             .escape_sequence_hex => switch (self.buffer[self.index]) {
                 '0'...'9', 'a'...'f', 'A'...'F' => {
@@ -547,14 +553,14 @@ pub fn next(self: *Self) LexerError!Token {
                         state = .identifier;
                     }
                 },
-                else => return fail("Invalid escape sequence", .{}),
+                else => return fail(diagnostics.invalid_character, .{}),
             },
             .escape_sequence_code_point => switch (self.buffer[self.index]) {
                 '0'...'9', 'a'...'f', 'A'...'F' => {},
                 '}' => {
                     state = .identifier;
                 },
-                else => return fail("Invalid escape sequence", .{}),
+                else => return fail(diagnostics.invalid_character, .{}),
             },
             .identifier => switch (self.buffer[self.index]) {
                 'a'...'z', 'A'...'Z', '_', '$', '0'...'9' => {},

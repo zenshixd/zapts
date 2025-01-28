@@ -180,6 +180,11 @@ pub const Raw = struct {
     main_token: Token.Index,
     data: Data = .{},
 
+    comptime {
+        assert(@sizeOf(Raw) == @sizeOf(u128));
+        assert(@bitSizeOf(Raw) == @bitSizeOf(u128));
+    }
+
     pub const Data = struct {
         lhs: u32 = 0,
         rhs: u32 = 0,

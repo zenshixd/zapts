@@ -2,10 +2,11 @@ const std = @import("std");
 const Parser = @import("../parser.zig");
 const AST = @import("../ast.zig");
 const TokenType = @import("../consts.zig").TokenType;
-const ParserError = Parser.ParserError;
+
+const CompilationError = @import("../errors.zig").CompilationError;
 const diagnostics = @import("../diagnostics.zig");
 
-const parseSymbolType = @import("types.zig").parseSymbolType;
+const parseType = @import("types.zig").parseType;
 const parseUnary = @import("expressions.zig").parseUnary;
 const parseAsyncArrowFunction = @import("functions.zig").parseAsyncArrowFunction;
 const parseArrowFunction = @import("functions.zig").parseArrowFunction;
@@ -36,15 +37,16 @@ const assignment_map = .{
     .{ TokenType.LessThanLessThanEqual, "bitwise_shift_left_assign" },
     .{ TokenType.QuestionMarkQuestionMarkEqual, "coalesce_assign" },
 };
-pub fn parseAssignment(parser: *Parser) ParserError!AST.Node.Index {
+pub fn parseAssignment(parser: *Parser) CompilationError!AST.Node.Index {
     const node = try parseAsyncArrowFunction(parser) orelse
         try parseArrowFunction(parser) orelse
         try parseConditionalExpression(parser);
 
     inline for (assignment_map) |assignment| {
+        const main_token = parser.cur_token;
         if (parser.match(assignment[0])) {
             const tag = assignment[1];
-            return parser.addNode(parser.cur_token, @unionInit(AST.Node, tag, .{
+            return parser.addNode(main_token, @unionInit(AST.Node, tag, .{
                 .left = node,
                 .right = try parseAssignment(parser),
             }));
@@ -110,18 +112,19 @@ fn binaryOperatorMatches(parser: *Parser, operator_index: comptime_int) bool {
     return parser.match(binary_operators[operator_index][0]);
 }
 
-pub fn parseBinaryExpression(parser: *Parser) ParserError!AST.Node.Index {
+pub fn parseBinaryExpression(parser: *Parser) CompilationError!AST.Node.Index {
     return try parseBinaryExpressionExtra(parser, 0);
 }
 
-pub fn parseBinaryExpressionExtra(parser: *Parser, operator_index: comptime_int) ParserError!AST.Node.Index {
+pub fn parseBinaryExpressionExtra(parser: *Parser, operator_index: comptime_int) CompilationError!AST.Node.Index {
     var node = if (operator_index + 1 < binary_operators.len)
         try parseBinaryExpressionExtra(parser, operator_index + 1)
     else
         try parseUnary(parser);
 
+    var main_token = parser.cur_token;
     while (binaryOperatorMatches(parser, operator_index)) {
-        const new_node = parser.addNode(parser.cur_token, @unionInit(AST.Node, binary_operators[operator_index][1], .{
+        const new_node = parser.addNode(main_token, @unionInit(AST.Node, binary_operators[operator_index][1], .{
             .left = node,
             .right = if (operator_index + 1 < binary_operators.len)
                 try parseBinaryExpressionExtra(parser, operator_index + 1)
@@ -129,6 +132,7 @@ pub fn parseBinaryExpressionExtra(parser: *Parser, operator_index: comptime_int)
                 try parseUnary(parser),
         }));
         node = new_node;
+        main_token = parser.cur_token;
     }
     return node;
 }
@@ -161,6 +165,7 @@ test "should parse binary expression" {
         "a % b",
         "a ** b",
     };
+    const marker = "  ^";
 
     try expectEqual(test_cases.len, binary_operators.len);
     inline for (test_cases, 0..) |test_case, i| {
@@ -170,6 +175,7 @@ test "should parse binary expression" {
                     .left = AST.Node.at(1),
                     .right = AST.Node.at(2),
                 }));
+                try t.expectTokenAt(comptime Marker.fromText(marker), node.?);
             }
         });
     }
@@ -201,6 +207,7 @@ test "should parse assignment expression" {
         "a <<= b",
         "a ??= b",
     };
+    const marker = "  ^";
 
     try expectEqual(test_cases.len, assignment_map.len);
     inline for (test_cases, 0..) |test_case, i| {
@@ -210,6 +217,7 @@ test "should parse assignment expression" {
                     .left = AST.Node.at(2),
                     .right = AST.Node.at(4),
                 }));
+                try t.expectTokenAt(comptime Marker.fromText(marker), node.?);
             }
         });
     }
