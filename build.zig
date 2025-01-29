@@ -58,6 +58,14 @@ pub fn build(b: *std.Build) void {
     const unit_tests_step = b.step("test", "Run unit tests");
     unit_tests_step.dependOn(&run_unit_tests.step);
 
+    const run_test_artifact_path = b.addSystemCommand(&.{
+        "echo",
+    });
+    run_test_artifact_path.addArtifactArg(exe_unit_tests);
+
+    const test_artifact_path_step = b.step("test:artifact", "Print test artifact path");
+    test_artifact_path_step.dependOn(&run_test_artifact_path.step);
+
     const compile_tests = b.addTest(.{
         .root_source_file = b.path("tests/e2e_tests_runner.zig"),
         .target = target,

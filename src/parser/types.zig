@@ -692,11 +692,14 @@ test "should parse method with generics" {
 }
 
 test "should return syntax error if there is no comma between generic params" {
-    const text = "fn<T B>(a: T): boolean";
+    const text =
+        \\fn<T B>(a: T): boolean
+        \\>    ^
+    ;
 
     try TestParser.runAny(text, parseObjectMethodType, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{","});
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{","}, markers[0]);
         }
     });
 }
@@ -728,21 +731,27 @@ test "should return null if its not method type" {
 }
 
 test "should return syntax error if there is no comma after params" {
-    const text = "fn(a: number b: string): boolean";
+    const text =
+        \\fn(a: number b: string): boolean
+        \\>            ^
+    ;
 
     try TestParser.runAny(text, parseObjectMethodType, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{","});
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{","}, markers[0]);
         }
     });
 }
 
 test "should return syntax error if param is not identifier" {
-    const text = "fn(void): boolean";
+    const text =
+        \\fn(void): boolean
+        \\>  ^
+    ;
 
     try TestParser.runAny(text, parseObjectMethodType, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectSyntaxError(nodeOrError, diagnostics.identifier_expected, .{});
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.identifier_expected, .{}, markers[0]);
         }
     });
 }

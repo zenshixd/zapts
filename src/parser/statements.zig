@@ -16,14 +16,16 @@ const parseFunctionStatement = @import("functions.zig").parseFunctionStatement;
 const parseAsyncFunctionStatement = @import("functions.zig").parseAsyncFunctionStatement;
 const parseBreakableStatement = @import("loops.zig").parseBreakableStatement;
 const parseAssignment = @import("binary.zig").parseAssignment;
+const expectAssignment = @import("binary.zig").expectAssignment;
 const parseExpression = @import("expressions.zig").parseExpression;
+const expectExpression = @import("expressions.zig").expectExpression;
 const parseOptionalDataType = @import("types.zig").parseOptionalDataType;
 
 const TestParser = @import("../test_parser.zig");
 const MarkerList = @import("../test_parser.zig").MarkerList;
 const Marker = @import("../test_parser.zig").Marker;
 
-pub fn parseStatement(self: *Parser) CompilationError!AST.Node.Index {
+pub fn parseStatement(self: *Parser) CompilationError!?AST.Node.Index {
     const node = try parseBlock(self) orelse
         try parseDeclaration(self) orelse
         try parseClassStatement(self) orelse
@@ -36,12 +38,17 @@ pub fn parseStatement(self: *Parser) CompilationError!AST.Node.Index {
         try parseReturnStatement(self) orelse
         //try self.parseTypeDeclaration() orelse
         //try self.parseInterfaceDeclaration() orelse
-        try parseExpression(self);
+        try parseExpression(self) orelse
+        return null;
 
     if (self.needsSemicolon(node)) {
         _ = try self.consume(TokenType.Semicolon, diagnostics.ARG_expected, .{";"});
     }
     return node;
+}
+
+pub fn expectStatement(self: *Parser) CompilationError!AST.Node.Index {
+    return try parseStatement(self) orelse self.fail(diagnostics.statement_expected, .{});
 }
 
 pub fn parseBlock(self: *Parser) CompilationError!?AST.Node.Index {
@@ -54,7 +61,7 @@ pub fn parseBlock(self: *Parser) CompilationError!?AST.Node.Index {
     defer statements.deinit();
 
     while (true) {
-        if (self.match(TokenType.Eof)) {
+        if (self.peekMatch(TokenType.Eof)) {
             return self.fail(diagnostics.ARG_expected, .{"}"});
         }
 
@@ -62,7 +69,7 @@ pub fn parseBlock(self: *Parser) CompilationError!?AST.Node.Index {
             break;
         }
 
-        try statements.append(try parseStatement(self));
+        try statements.append(try expectStatement(self));
 
         while (self.match(TokenType.NewLine)) {}
 
@@ -94,7 +101,7 @@ pub fn parseDeclaration(self: *Parser) CompilationError!?AST.Node.Index {
         var value: AST.Node.Index = AST.Node.Empty;
 
         if (self.match(TokenType.Equal)) {
-            value = try parseAssignment(self);
+            value = try expectAssignment(self);
         }
 
         try nodes.append(self.addNode(binding_main_token, AST.Node{
@@ -127,7 +134,7 @@ fn parseReturnStatement(self: *Parser) CompilationError!?AST.Node.Index {
         return self.addNode(main_token, .{ .@"return" = AST.Node.Empty });
     }
 
-    return self.addNode(main_token, AST.Node{ .@"return" = try parseExpression(self) });
+    return self.addNode(main_token, AST.Node{ .@"return" = try expectExpression(self) });
 }
 
 fn parseEmptyStatement(self: *Parser) CompilationError!?AST.Node.Index {
@@ -145,11 +152,11 @@ fn parseIfStatement(self: *Parser) CompilationError!?AST.Node.Index {
     }
 
     _ = try self.consume(TokenType.OpenParen, diagnostics.ARG_expected, .{"("});
-    const cond = try parseExpression(self);
+    const cond = try expectExpression(self);
     _ = try self.consume(TokenType.CloseParen, diagnostics.ARG_expected, .{")"});
-    const then = try parseStatement(self);
+    const then = try expectStatement(self);
 
-    const else_node = if (self.match(TokenType.Else)) try parseStatement(self) else AST.Node.Empty;
+    const else_node = if (self.match(TokenType.Else)) try expectStatement(self) else AST.Node.Empty;
 
     return self.addNode(main_token, AST.Node{ .@"if" = AST.Node.If{
         .expr = cond,
@@ -243,12 +250,15 @@ test "should parse block" {
     });
 }
 
-test "should return syntax error if block is missing" {
-    const text = "{a; ";
+test "should return syntax error if closing bracket for block is missing" {
+    const text =
+        \\{a;
+        \\>  ^
+    ;
 
     try TestParser.runAny(text, parseBlock, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{"}"});
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{"}"}, markers[0]);
         }
     });
 }
@@ -379,31 +389,40 @@ test "should parse if statement with else" {
 }
 
 test "should return syntax error if open paren is missing" {
-    const text = "if a) {} else";
+    const text =
+        \\if a) {} else
+        \\>  ^
+    ;
 
     try TestParser.runAny(text, parseIfStatement, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{"("});
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{"("}, markers[0]);
         }
     });
 }
 
 test "should return syntax error if close paren is missing" {
-    const text = "if (a {}";
+    const text =
+        \\if (a {}
+        \\>     ^
+    ;
 
     try TestParser.runAny(text, parseIfStatement, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{")"});
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{")"}, markers[0]);
         }
     });
 }
 
 test "should return syntax error if body is missing" {
-    const text = "if (a)";
+    const text =
+        \\if (a)
+        \\>     ^
+    ;
 
     try TestParser.runAny(text, parseIfStatement, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectSyntaxError(nodeOrError, diagnostics.identifier_expected, .{});
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.statement_expected, .{}, markers[0]);
         }
     });
 }

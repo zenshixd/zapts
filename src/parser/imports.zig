@@ -408,31 +408,40 @@ test "should parse named bindings with aliases in import statement" {
 }
 
 test "should return syntax error if alias in import binding is not a string" {
-    const text = "import { foo as 123 } from 'bar'";
+    const text =
+        \\import { foo as 123 } from 'bar'
+        \\>               ^
+    ;
 
     try TestParser.runAny(text, parseImportStatement, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectSyntaxError(nodeOrError, diagnostics.identifier_expected, .{});
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.identifier_expected, .{}, markers[0]);
         }
     });
 }
 
 test "should return error if comma is missing" {
-    const text = "import {foo bar} from 'bar'";
+    const text =
+        \\import {foo bar} from 'bar'
+        \\>           ^
+    ;
 
     try TestParser.runAny(text, parseImportStatement, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{","});
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{","}, markers[0]);
         }
     });
 }
 
 test "should return error if its not binding" {
-    const text = "import + from 'bar'";
+    const text =
+        \\import + from 'bar'
+        \\>      ^
+    ;
 
     try TestParser.runAny(text, parseImportStatement, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectSyntaxError(nodeOrError, diagnostics.declaration_or_statement_expected, .{});
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.declaration_or_statement_expected, .{}, markers[0]);
         }
     });
 }
@@ -510,11 +519,14 @@ test "should parse default import and named binding" {
 }
 
 test "should return error if second binding list is not valid binding" {
-    const text = "import foo, + from 'bar'";
+    const text =
+        \\import foo, + from 'bar'
+        \\>           ^
+    ;
 
     try TestParser.runAny(text, parseImportStatement, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{"{"});
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{"{"}, markers[0]);
         }
     });
 }
@@ -628,11 +640,14 @@ test "should parse export statement with aliased bindings" {
 }
 
 test "should return syntax error if path is not a string" {
-    const text = "export { foo, bar } from 123;";
+    const text =
+        \\export { foo, bar } from 123
+        \\>                        ^
+    ;
 
     try TestParser.runAny(text, parseExportStatement, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectSyntaxError(nodeOrError, diagnostics.string_literal_expected, .{});
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.string_literal_expected, .{}, markers[0]);
         }
     });
 }
@@ -678,21 +693,27 @@ test "should parse export statement without path" {
 }
 
 test "should return syntax error if comma is missing" {
-    const text = "export { foo bar } from './foo';";
+    const text =
+        \\export { foo bar } from './foo'
+        \\>            ^
+    ;
 
     try TestParser.runAny(text, parseExportStatement, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{","});
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{","}, markers[0]);
         }
     });
 }
 
 test "should return syntax error if binding is not identifier" {
-    const text = "export { 123 }";
+    const text =
+        \\export { 123 }
+        \\>        ^
+    ;
 
     try TestParser.runAny(text, parseExportStatement, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectSyntaxError(nodeOrError, diagnostics.identifier_expected, .{});
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.identifier_expected, .{}, markers[0]);
         }
     });
 }
@@ -717,21 +738,27 @@ test "should parse from all export statement" {
 }
 
 test "should return syntax error if from clause is missing" {
-    const text = "export * as alias";
+    const text =
+        \\export * as alias
+        \\>                ^
+    ;
 
     try TestParser.runAny(text, parseExportStatement, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{"from"});
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{"from"}, markers[0]);
         }
     });
 }
 
 test "should return syntax error for from all clause if path is not a string" {
-    const text = "export * as alias from 123";
+    const text =
+        \\export * as alias from 123
+        \\>                      ^
+    ;
 
     try TestParser.runAny(text, parseExportStatement, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectSyntaxError(nodeOrError, diagnostics.string_literal_expected, .{});
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.string_literal_expected, .{}, markers[0]);
         }
     });
 }

@@ -7,7 +7,10 @@ const CompilationError = @import("../errors.zig").CompilationError;
 const diagnostics = @import("../diagnostics.zig");
 
 const parseStatement = @import("statements.zig").parseStatement;
+const expectStatement = @import("statements.zig").expectStatement;
+const parseEmptyStatement = @import("statements.zig").parseEmptyStatement;
 const parseExpression = @import("expressions.zig").parseExpression;
+const expectExpression = @import("expressions.zig").expectExpression;
 const parseDeclaration = @import("statements.zig").parseDeclaration;
 
 const TestParser = @import("../test_parser.zig");
@@ -31,10 +34,10 @@ pub fn parseDoWhileStatement(self: *Parser) CompilationError!?AST.Node.Index {
         return null;
     }
 
-    const node = try parseStatement(self);
+    const node = try expectStatement(self);
     _ = try self.consume(TokenType.While, diagnostics.ARG_expected, .{"while"});
     _ = try self.consume(TokenType.OpenParen, diagnostics.ARG_expected, .{"("});
-    const condition = try parseExpression(self);
+    const condition = try expectExpression(self);
     _ = try self.consume(TokenType.CloseParen, diagnostics.ARG_expected, .{")"});
     _ = try self.consume(TokenType.Semicolon, diagnostics.ARG_expected, .{";"});
 
@@ -53,13 +56,13 @@ pub fn parseWhileStatement(self: *Parser) CompilationError!?AST.Node.Index {
     }
 
     _ = try self.consume(TokenType.OpenParen, diagnostics.ARG_expected, .{"("});
-    const condition = try parseExpression(self);
+    const condition = try expectExpression(self);
     _ = try self.consume(TokenType.CloseParen, diagnostics.ARG_expected, .{")"});
 
     return self.addNode(main_token, AST.Node{
         .@"while" = .{
             .cond = condition,
-            .body = try parseStatement(self),
+            .body = try expectStatement(self),
         },
     });
 }
@@ -72,26 +75,20 @@ pub fn parseForStatement(self: *Parser) CompilationError!?AST.Node.Index {
 
     _ = try self.consume(TokenType.OpenParen, diagnostics.ARG_expected, .{"("});
 
-    const for_inner = try parseForClassicStatement(self, main_token) orelse
-        try parseForInStatement(self, main_token) orelse
+    const for_inner = try parseForInStatement(self, main_token) orelse
         try parseForOfStatement(self, main_token) orelse
-        return self.fail(diagnostics.declaration_or_statement_expected, .{});
+        try parseForClassicStatement(self, main_token);
 
     return for_inner;
 }
 
-pub fn parseForClassicStatement(self: *Parser, main_token: Token.Index) CompilationError!?AST.Node.Index {
-    const cp = self.cur_token;
-    const init_node = if (self.peekMatch(TokenType.Semicolon)) AST.Node.Empty else try parseDeclaration(self) orelse try parseExpression(self);
+pub fn parseForClassicStatement(self: *Parser, main_token: Token.Index) CompilationError!AST.Node.Index {
+    const init_node = if (self.peekMatch(TokenType.Semicolon)) AST.Node.Empty else try parseDeclaration(self) orelse try expectExpression(self);
 
-    if (!self.match(TokenType.Semicolon)) {
-        // TODO: there is no cleanup of created AST nodes - need to figure out how to do it
-        self.cur_token = cp;
-        return null;
-    }
-    const cond_node = if (self.peekMatch(TokenType.Semicolon)) AST.Node.Empty else try parseExpression(self);
     _ = try self.consume(TokenType.Semicolon, diagnostics.ARG_expected, .{";"});
-    const post_node = if (self.peekMatch(TokenType.CloseParen)) AST.Node.Empty else try parseExpression(self);
+    const cond_node = if (self.peekMatch(TokenType.Semicolon)) AST.Node.Empty else try expectExpression(self);
+    _ = try self.consume(TokenType.Semicolon, diagnostics.ARG_expected, .{";"});
+    const post_node = if (self.peekMatch(TokenType.CloseParen)) AST.Node.Empty else try expectExpression(self);
     _ = try self.consume(TokenType.CloseParen, diagnostics.ARG_expected, .{")"});
 
     return self.addNode(main_token, AST.Node{ .@"for" = .{
@@ -99,27 +96,27 @@ pub fn parseForClassicStatement(self: *Parser, main_token: Token.Index) Compilat
             .init = init_node,
             .cond = cond_node,
             .post = post_node,
-            .body = try parseStatement(self),
+            .body = try expectStatement(self),
         },
     } });
 }
 
 pub fn parseForInStatement(self: *Parser, main_token: Token.Index) CompilationError!?AST.Node.Index {
     const cp = self.cur_token;
-    const init_node = try parseDeclaration(self) orelse try parseExpression(self);
+    const init_node = try parseDeclaration(self) orelse try parseExpression(self) orelse return null;
     if (!self.match(TokenType.In)) {
         // TODO: there is no cleanup of created AST nodes - need to figure out how to do it
         self.cur_token = cp;
         return null;
     }
-    const right = try parseExpression(self);
+    const right = try expectExpression(self);
     _ = try self.consume(TokenType.CloseParen, diagnostics.ARG_expected, .{")"});
 
     return self.addNode(main_token, AST.Node{ .@"for" = .{
         .in = .{
             .left = init_node,
             .right = right,
-            .body = try parseStatement(self),
+            .body = try expectStatement(self),
         },
     } });
 }
@@ -127,19 +124,19 @@ pub fn parseForInStatement(self: *Parser, main_token: Token.Index) CompilationEr
 pub fn parseForOfStatement(self: *Parser, main_token: Token.Index) CompilationError!?AST.Node.Index {
     const cp = self.cur_token;
 
-    const init_node = try parseDeclaration(self) orelse try parseExpression(self);
+    const init_node = try parseDeclaration(self) orelse try parseExpression(self) orelse return null;
     if (!self.match(TokenType.Of)) {
         self.cur_token = cp;
         return null;
     }
-    const right = try parseExpression(self);
+    const right = try expectExpression(self);
     _ = try self.consume(TokenType.CloseParen, diagnostics.ARG_expected, .{")"});
 
     return self.addNode(main_token, AST.Node{ .@"for" = .{
         .of = .{
             .left = init_node,
             .right = right,
-            .body = try parseStatement(self),
+            .body = try expectStatement(self),
         },
     } });
 }
@@ -210,6 +207,58 @@ test "should parse while loop" {
     });
 }
 
+test "should return syntax error if loop condition is missing" {
+    const text =
+        \\while () {}
+        \\>      ^
+    ;
+
+    try TestParser.runAny(text, parseWhileStatement, struct {
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.expression_expected, .{}, markers[0]);
+        }
+    });
+}
+
+test "should return syntax error if opening paren is missing" {
+    const text =
+        \\while true) {}
+        \\>     ^
+    ;
+
+    try TestParser.runAny(text, parseWhileStatement, struct {
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{"("}, markers[0]);
+        }
+    });
+}
+
+test "should return syntax error if closing paren is missing" {
+    const text =
+        \\while (true {}
+        \\>           ^
+    ;
+
+    try TestParser.runAny(text, parseWhileStatement, struct {
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{")"}, markers[0]);
+        }
+    });
+}
+
+test "should return syntax error if body is missing" {
+    const text =
+        \\while (true)
+        \\>           ^
+    ;
+
+    try TestParser.runAny(text, parseWhileStatement, struct {
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.statement_expected, .{}, markers[0]);
+        }
+    });
+}
+
 test "should return null if do while loop is empty" {
     const text = "identifier";
 
@@ -229,6 +278,71 @@ test "should parse do while loop" {
                 .cond = AST.Node.at(2),
                 .body = AST.Node.at(1),
             } });
+        }
+    });
+}
+
+test "should return syntax error if body missing in do while loop" {
+    const text =
+        \\ do while(true)
+        \\>              ^
+    ;
+
+    try TestParser.runAny(text, parseDoWhileStatement, struct {
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.statement_expected, .{}, markers[0]);
+        }
+    });
+}
+
+test "should return syntax error if condition missing in do while loop" {
+    const text =
+        \\ do {} while()
+        \\>            ^
+    ;
+
+    try TestParser.runAny(text, parseDoWhileStatement, struct {
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.expression_expected, .{}, markers[0]);
+        }
+    });
+}
+
+test "should return syntax error if while is missing" {
+    const text =
+        \\ do {} (true)
+        \\>      ^
+    ;
+
+    try TestParser.runAny(text, parseDoWhileStatement, struct {
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{"while"}, markers[0]);
+        }
+    });
+}
+
+test "should return syntax error if open paren is missing in do while loop" {
+    const text =
+        \\do {} while 1)
+        \\>           ^
+    ;
+
+    try TestParser.runAny(text, parseDoWhileStatement, struct {
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{"("}, markers[0]);
+        }
+    });
+}
+
+test "should return syntax error if close paren is missing in do while loop" {
+    const text =
+        \\do {} while(1
+        \\>            ^
+    ;
+
+    try TestParser.runAny(text, parseDoWhileStatement, struct {
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{")"}, markers[0]);
         }
     });
 }
@@ -253,12 +367,25 @@ test "should parse classic for loops" {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
             try t.expectAST(node, AST.Node{ .@"for" = .{
                 .classic = .{
-                    .init = AST.Node.at(3),
-                    .cond = AST.Node.at(7),
-                    .post = AST.Node.at(10),
-                    .body = AST.Node.at(11),
+                    .init = AST.Node.at(9),
+                    .cond = AST.Node.at(13),
+                    .post = AST.Node.at(16),
+                    .body = AST.Node.at(17),
                 },
             } });
+        }
+    });
+}
+
+test "should return syntax error if semicolon is missing in classic for loop" {
+    const text =
+        \\for (let i = 0 i < 10 i++) {}
+        \\>              ^
+    ;
+
+    try TestParser.runAny(text, parseForStatement, struct {
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{";"}, markers[0]);
         }
     });
 }
@@ -290,9 +417,9 @@ test "should parse in for loops" {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
             try t.expectAST(node, AST.Node{ .@"for" = .{
                 .in = .{
-                    .left = AST.Node.at(4),
-                    .right = AST.Node.at(8),
-                    .body = AST.Node.at(9),
+                    .left = AST.Node.at(2),
+                    .right = AST.Node.at(6),
+                    .body = AST.Node.at(7),
                 },
             } });
         }
@@ -309,9 +436,9 @@ test "should parse of for loops" {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
             try t.expectAST(node, AST.Node{ .@"for" = .{
                 .of = .{
-                    .left = AST.Node.at(6),
-                    .right = AST.Node.at(10),
-                    .body = AST.Node.at(11),
+                    .left = AST.Node.at(4),
+                    .right = AST.Node.at(8),
+                    .body = AST.Node.at(9),
                 },
             } });
         }
@@ -319,11 +446,14 @@ test "should parse of for loops" {
 }
 
 test "should throw SyntaxError if for loop if its not of or in loop" {
-    const text = "for (let i as [1, 2, 3]) {}";
+    const text =
+        \\for (let i as [1, 2, 3]) {}
+        \\>          ^
+    ;
 
     try TestParser.runAny(text, parseForStatement, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectSyntaxError(nodeOrError, diagnostics.declaration_or_statement_expected, .{});
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{";"}, markers[0]);
         }
     });
 }

@@ -8,6 +8,7 @@ const diagnostics = @import("../diagnostics.zig");
 
 const parseType = @import("types.zig").parseType;
 const parseUnary = @import("expressions.zig").parseUnary;
+const expectUnary = @import("expressions.zig").expectUnary;
 const parseAsyncArrowFunction = @import("functions.zig").parseAsyncArrowFunction;
 const parseArrowFunction = @import("functions.zig").parseArrowFunction;
 const parseConditionalExpression = @import("expressions.zig").parseConditionalExpression;
@@ -37,10 +38,11 @@ const assignment_map = .{
     .{ TokenType.LessThanLessThanEqual, "bitwise_shift_left_assign" },
     .{ TokenType.QuestionMarkQuestionMarkEqual, "coalesce_assign" },
 };
-pub fn parseAssignment(parser: *Parser) CompilationError!AST.Node.Index {
+pub fn parseAssignment(parser: *Parser) CompilationError!?AST.Node.Index {
     const node = try parseAsyncArrowFunction(parser) orelse
         try parseArrowFunction(parser) orelse
-        try parseConditionalExpression(parser);
+        try parseConditionalExpression(parser) orelse
+        return null;
 
     inline for (assignment_map) |assignment| {
         const main_token = parser.cur_token;
@@ -48,12 +50,16 @@ pub fn parseAssignment(parser: *Parser) CompilationError!AST.Node.Index {
             const tag = assignment[1];
             return parser.addNode(main_token, @unionInit(AST.Node, tag, .{
                 .left = node,
-                .right = try parseAssignment(parser),
+                .right = try expectAssignment(parser),
             }));
         }
     }
 
     return node;
+}
+
+pub fn expectAssignment(parser: *Parser) CompilationError!AST.Node.Index {
+    return try parseAssignment(parser) orelse parser.fail(diagnostics.expression_expected, .{});
 }
 
 pub const binary_operators = .{
@@ -112,29 +118,35 @@ fn binaryOperatorMatches(parser: *Parser, operator_index: comptime_int) bool {
     return parser.match(binary_operators[operator_index][0]);
 }
 
-pub fn parseBinaryExpression(parser: *Parser) CompilationError!AST.Node.Index {
+pub fn parseBinaryExpression(parser: *Parser) CompilationError!?AST.Node.Index {
     return try parseBinaryExpressionExtra(parser, 0);
 }
 
-pub fn parseBinaryExpressionExtra(parser: *Parser, operator_index: comptime_int) CompilationError!AST.Node.Index {
+pub fn parseBinaryExpressionExtra(parser: *Parser, operator_index: comptime_int) CompilationError!?AST.Node.Index {
     var node = if (operator_index + 1 < binary_operators.len)
-        try parseBinaryExpressionExtra(parser, operator_index + 1)
+        try parseBinaryExpressionExtra(parser, operator_index + 1) orelse return null
     else
-        try parseUnary(parser);
+        try parseUnary(parser) orelse return null;
 
     var main_token = parser.cur_token;
     while (binaryOperatorMatches(parser, operator_index)) {
+        const right = if (operator_index + 1 < binary_operators.len)
+            try expectBinaryExpressionExtra(parser, operator_index + 1)
+        else
+            try expectUnary(parser);
+
         const new_node = parser.addNode(main_token, @unionInit(AST.Node, binary_operators[operator_index][1], .{
             .left = node,
-            .right = if (operator_index + 1 < binary_operators.len)
-                try parseBinaryExpressionExtra(parser, operator_index + 1)
-            else
-                try parseUnary(parser),
+            .right = right,
         }));
         node = new_node;
         main_token = parser.cur_token;
     }
     return node;
+}
+
+pub fn expectBinaryExpressionExtra(parser: *Parser, operator_index: comptime_int) CompilationError!AST.Node.Index {
+    return try parseBinaryExpressionExtra(parser, operator_index) orelse parser.fail(diagnostics.expression_expected, .{});
 }
 
 test "should parse binary expression" {

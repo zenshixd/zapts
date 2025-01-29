@@ -7,6 +7,7 @@ const CompilationError = @import("../errors.zig").CompilationError;
 const diagnostics = @import("../diagnostics.zig");
 
 const parseAssignment = @import("binary.zig").parseAssignment;
+const expectAssignment = @import("binary.zig").expectAssignment;
 const parseMethodGetter = @import("functions.zig").parseMethodGetter;
 const parseMethodSetter = @import("functions.zig").parseMethodSetter;
 const parseMethodGenerator = @import("functions.zig").parseMethodGenerator;
@@ -166,7 +167,7 @@ pub fn parseClassField(self: *Parser) CompilationError!?AST.Node.Index {
 
     var value: AST.Node.Index = AST.Node.Empty;
     if (self.match(TokenType.Equal)) {
-        value = try parseAssignment(self);
+        value = try expectAssignment(self);
     }
 
     _ = try self.consume(TokenType.Semicolon, diagnostics.ARG_expected, .{";"});
@@ -211,11 +212,14 @@ test "should return syntax error if class name is not an identifier" {
 }
 
 test "should return syntax error if open curly brace is missing" {
-    const text = "class Foo";
+    const text =
+        \\class Foo
+        \\>        ^
+    ;
 
     try TestParser.runAny(text, parseClassStatement, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{"{"});
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{"{"}, markers[0]);
         }
     });
 }
@@ -286,11 +290,14 @@ test "should parse class declaration with implements" {
 }
 
 test "should return syntax error if interface name is not an identifier" {
-    const text = "class Foo implements 123 {}";
+    const text =
+        \\class Foo implements 123 {}
+        \\>                    ^
+    ;
 
     try TestParser.runAny(text, parseClassStatement, struct {
-        pub fn expect(t: TestParser, node: CompilationError!?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectSyntaxError(node, diagnostics.identifier_expected, .{});
+        pub fn expect(t: TestParser, node: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectSyntaxErrorAt(node, diagnostics.identifier_expected, .{}, markers[0]);
         }
     });
 }
@@ -432,11 +439,14 @@ test "should parse class member with modifiers" {
 }
 
 test "should return syntax error if class field is not closed with semicolon" {
-    const text = "a = 1";
+    const text =
+        \\a = 1
+        \\>    ^
+    ;
 
     try TestParser.runAny(text, parseClassField, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{";"});
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{";"}, markers[0]);
         }
     });
 }
@@ -461,11 +471,14 @@ test "should parse class methods" {
 }
 
 test "should return syntax error if there is no identifier" {
-    const text = "+";
+    const text =
+        \\ +
+        \\>^
+    ;
 
     try TestParser.runAny(text, parseClassMember, struct {
-        pub fn expect(t: TestParser, node: CompilationError!AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectSyntaxError(node, diagnostics.identifier_expected, .{});
+        pub fn expect(t: TestParser, node: CompilationError!AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectSyntaxErrorAt(node, diagnostics.identifier_expected, .{}, markers[0]);
         }
     });
 }

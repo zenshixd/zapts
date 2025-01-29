@@ -9,6 +9,7 @@ const Parser = @import("../parser.zig");
 const diagnostics = @import("../diagnostics.zig");
 
 const parseAssignment = @import("binary.zig").parseAssignment;
+const expectAssignment = @import("binary.zig").expectAssignment;
 const parseClassStatement = @import("classes.zig").parseClassStatement;
 const parseFunctionStatement = @import("functions.zig").parseFunctionStatement;
 const parseAsyncFunctionStatement = @import("functions.zig").parseAsyncFunctionStatement;
@@ -19,6 +20,7 @@ const parseMethodAsyncGenerator = @import("functions.zig").parseMethodAsyncGener
 const parseMethod = @import("functions.zig").parseMethod;
 const parseObjectElementName = @import("functions.zig").parseObjectElementName;
 const parseExpression = @import("expressions.zig").parseExpression;
+const expectExpression = @import("expressions.zig").expectExpression;
 
 const CompilationError = @import("../errors.zig").CompilationError;
 
@@ -48,6 +50,10 @@ pub fn parseIdentifier(parser: *Parser) CompilationError!?AST.Node.Index {
     }
 
     return null;
+}
+
+pub fn expectIdentifier(parser: *Parser) CompilationError!AST.Node.Index {
+    return try parseIdentifier(parser) orelse parser.fail(diagnostics.identifier_expected, .{});
 }
 
 pub fn parseKeywordAsIdentifier(parser: *Parser) CompilationError!bool {
@@ -102,7 +108,7 @@ pub fn parseArrayLiteral(parser: *Parser) CompilationError!?AST.Node.Index {
             break;
         }
 
-        try values.append(try parseSpreadExpression(parser) orelse try parseAssignment(parser));
+        try values.append(try parseSpreadExpression(parser) orelse try expectAssignment(parser));
         const comma = parser.consumeOrNull(TokenType.Comma);
 
         if (parser.match(TokenType.CloseSquareBracket)) {
@@ -167,7 +173,7 @@ pub fn parseObjectField(parser: *Parser) CompilationError!?AST.Node.Index {
         return parser.addNode(main_token, AST.Node{
             .object_literal_field = .{
                 .left = identifier.?,
-                .right = try parseAssignment(parser),
+                .right = try expectAssignment(parser),
             },
         });
     } else if (parser.peekMatch(TokenType.Comma) or parser.peekMatch(TokenType.CloseCurlyBrace)) {
@@ -185,14 +191,14 @@ pub fn parseSpreadExpression(parser: *Parser) CompilationError!?AST.Node.Index {
     }
 
     return parser.addNode(parser.cur_token.dec(1), AST.Node{
-        .spread = try parseAssignment(parser),
+        .spread = try expectAssignment(parser),
     });
 }
 
 pub fn parseGroupingExpression(parser: *Parser) CompilationError!?AST.Node.Index {
     if (parser.match(TokenType.OpenParen)) {
         const node = parser.addNode(parser.cur_token.dec(1), AST.Node{
-            .grouping = try parseExpression(parser),
+            .grouping = try expectExpression(parser),
         });
 
         _ = try parser.consume(TokenType.CloseParen, diagnostics.ARG_expected, .{")"});

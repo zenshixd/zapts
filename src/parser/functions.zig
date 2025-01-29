@@ -9,6 +9,7 @@ const CompilationError = @import("../errors.zig").CompilationError;
 const diagnostics = @import("../diagnostics.zig");
 
 const parseAssignment = @import("binary.zig").parseAssignment;
+const expectAssignment = @import("binary.zig").expectAssignment;
 const parseKeywordAsIdentifier = @import("primary.zig").parseKeywordAsIdentifier;
 const parseIdentifier = @import("primary.zig").parseIdentifier;
 const parseOptionalDataType = @import("types.zig").parseOptionalDataType;
@@ -141,7 +142,7 @@ pub fn parseObjectElementName(self: *Parser) CompilationError!?AST.Node.Index {
         },
         .OpenSquareBracket => {
             _ = self.advance();
-            const node = try parseAssignment(self);
+            const node = try expectAssignment(self);
             _ = try self.consume(TokenType.CloseSquareBracket, diagnostics.ARG_expected, .{"]"});
             return self.addNode(self.cur_token, AST.Node{ .computed_identifier = node });
         },
@@ -278,7 +279,7 @@ fn parseArrowFunctionWithParenthesis(self: *Parser, main_token: Token.Index, arr
 
 fn parseConciseBody(self: *Parser) CompilationError!AST.Node.Index {
     return try parseBlock(self) orelse
-        try parseAssignment(self);
+        try expectAssignment(self);
 }
 
 test "should return null if its not function statement" {
@@ -718,21 +719,27 @@ test "should parse getter method" {
 }
 
 test "should return syntax error if open bracket is missing when parsing getter" {
-    const text = "get foo(): void";
+    const text =
+        \\get foo(): void
+        \\>              ^
+    ;
 
     try TestParser.runAny(text, parseMethodGetter, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{"{"});
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{"{"}, markers[0]);
         }
     });
 }
 
 test "should return syntax error if open paren is missing when parsing getter" {
-    const text = "get foo): void {}";
+    const text =
+        \\get foo): void {}
+        \\>      ^
+    ;
 
     try TestParser.runAny(text, parseMethodGetter, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{"("});
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{"("}, markers[0]);
         }
     });
 }
@@ -768,21 +775,27 @@ test "should parse setter method" {
 }
 
 test "should return syntax error if open paren is missing when parsing setter" {
-    const text = "set foo): void {}";
+    const text =
+        \\set foo): void {}
+        \\>      ^
+    ;
 
     try TestParser.runAny(text, parseMethodSetter, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{"("});
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{"("}, markers[0]);
         }
     });
 }
 
 test "should return syntax error if open bracket is missing when parsing setter" {
-    const text = "set foo(a: number): void";
+    const text =
+        \\set foo(a: number): void
+        \\>                       ^
+    ;
 
     try TestParser.runAny(text, parseMethodSetter, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{"{"});
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{"{"}, markers[0]);
         }
     });
 }
