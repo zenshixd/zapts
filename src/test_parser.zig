@@ -5,7 +5,8 @@ const Token = @import("consts.zig").Token;
 const TokenType = @import("consts.zig").TokenType;
 const diagnostics = @import("diagnostics.zig");
 const Parser = @import("parser.zig");
-const CompilationError = @import("errors.zig").CompilationError;
+const CompilationError = @import("consts.zig").CompilationError;
+const Reporter = @import("reporter.zig");
 
 const ReturnTypeOf = @import("meta.zig").ReturnTypeOf;
 const ErrorUnionOf = @import("meta.zig").ErrorUnionOf;
@@ -20,15 +21,19 @@ const expectError = std.testing.expectError;
 
 const TestParser = @This();
 
-parser: Parser,
+reporter: *Reporter,
+parser: *Parser,
 
 pub fn run(comptime text: []const u8, comptime fn_ptr: anytype, Expects: type) !void {
+    var reporter = Reporter.init(std.testing.allocator);
+    defer reporter.deinit();
+
     const sourceText, const markers = comptime getMarkers(text);
-    var parser = try Parser.init(std.testing.allocator, &sourceText);
+    var parser = try Parser.init(std.testing.allocator, &sourceText, &reporter);
     defer parser.deinit();
 
     const node = try fn_ptr(&parser);
-    const t = TestParser{ .parser = parser };
+    const t = TestParser{ .parser = &parser, .reporter = &reporter };
     Expects.expect(t, node, markers) catch |err| {
         std.debug.print("Parsing failed, text: {s}\n", .{sourceText});
         return err;
@@ -36,12 +41,15 @@ pub fn run(comptime text: []const u8, comptime fn_ptr: anytype, Expects: type) !
 }
 
 pub fn runAny(comptime text: []const u8, comptime fn_ptr: anytype, Expects: type) !void {
+    var reporter = Reporter.init(std.testing.allocator);
+    defer reporter.deinit();
+
     const sourceText, const markers = comptime getMarkers(text);
-    var parser = try Parser.init(std.testing.allocator, &sourceText);
+    var parser = try Parser.init(std.testing.allocator, &sourceText, &reporter);
     defer parser.deinit();
 
     const nodeOrError = fn_ptr(&parser);
-    const t = TestParser{ .parser = parser };
+    const t = TestParser{ .parser = &parser, .reporter = &reporter };
     Expects.expect(t, nodeOrError, markers) catch |err| {
         std.debug.print("Parsing failed, text: {s}\n", .{sourceText});
         return err;
@@ -197,10 +205,10 @@ pub fn expectSyntaxError(
     args: anytype,
 ) !void {
     try expectError(CompilationError.SyntaxError, nodeOrError);
-    const expected_string = try std.fmt.allocPrint(std.testing.allocator, "TS" ++ expected_error.code ++ ": " ++ expected_error.message, args);
+    const expected_string = try std.fmt.allocPrint(std.testing.allocator, expected_error.format(), args);
     defer std.testing.allocator.free(expected_string);
 
-    try expectStringStartsWith(t.parser.errors.items(.message)[0], expected_string);
+    try expectEqualStrings(t.reporter.errors.items(.message)[0], expected_string);
 }
 
 pub fn expectSyntaxErrorAt(
@@ -212,7 +220,7 @@ pub fn expectSyntaxErrorAt(
 ) !void {
     try t.expectSyntaxError(nodeOrError, expected_error, args);
 
-    const loc = t.parser.errors.items(.location)[0];
+    const loc = t.reporter.errors.items(.location)[0];
     const error_token = t.parser.tokens[loc.int()];
 
     if (error_token.start != expected_location.pos) {
@@ -237,10 +245,4 @@ pub fn expectSimpleMethod(t: TestParser, node_idx: AST.Node.Index, expected_flag
 
 pub fn expectNodesToEqual(t: TestParser, expected_nodes: []const AST.Raw) !void {
     try expectEqualSlices(AST.Raw, expected_nodes, t.parser.nodes.items[1..]);
-}
-
-pub fn expectTSError(t: TestParser, comptime expected_error: diagnostics.DiagnosticMessage, comptime args: anytype) !void {
-    var buffer: [512]u8 = undefined;
-    const expected_string = try std.fmt.bufPrint(&buffer, "TS" ++ expected_error.code ++ ": " ++ expected_error.message, args);
-    try expectEqualStrings(expected_string, t.parser.errors.items[0]);
 }

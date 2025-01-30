@@ -3,7 +3,7 @@ const Parser = @import("../parser.zig");
 const AST = @import("../ast.zig");
 const Token = @import("../consts.zig").Token;
 const TokenType = @import("../consts.zig").TokenType;
-const CompilationError = @import("../errors.zig").CompilationError;
+const CompilationError = @import("../consts.zig").CompilationError;
 const diagnostics = @import("../diagnostics.zig");
 
 const parseIdentifier = @import("primary.zig").parseIdentifier;
@@ -17,15 +17,18 @@ const expectEqual = std.testing.expectEqual;
 
 pub fn parseOptionalDataType(self: *Parser) CompilationError!AST.Node.Index {
     if (self.match(TokenType.Colon)) {
-        return try parseType(self);
+        return try expectType(self);
     }
 
     return AST.Node.Empty;
 }
 
-pub fn parseType(self: *Parser) CompilationError!AST.Node.Index {
-    return try parseUnionType(self) orelse
-        return self.fail(diagnostics.type_expected, .{});
+pub fn parseType(self: *Parser) CompilationError!?AST.Node.Index {
+    return try parseUnionType(self);
+}
+
+pub fn expectType(self: *Parser) CompilationError!AST.Node.Index {
+    return try parseType(self) orelse self.fail(diagnostics.type_expected, .{});
 }
 
 fn parseUnionType(self: *Parser) CompilationError!?AST.Node.Index {
@@ -68,11 +71,11 @@ fn parseTypeUnary(self: *Parser) CompilationError!?AST.Node.Index {
     const main_token = self.cur_token;
     if (self.match(TokenType.Typeof)) {
         return self.addNode(main_token, AST.Node{
-            .typeof = try parseType(self),
+            .typeof = try expectType(self),
         });
     } else if (self.match(TokenType.Keyof)) {
         return self.addNode(main_token, AST.Node{
-            .keyof = try parseType(self),
+            .keyof = try expectType(self),
         });
     }
 
@@ -80,14 +83,16 @@ fn parseTypeUnary(self: *Parser) CompilationError!?AST.Node.Index {
 }
 
 fn parseArrayType(self: *Parser) CompilationError!?AST.Node.Index {
-    const main_token = self.cur_token;
     const node = try parsePrimaryType(self) orelse return null;
+    const main_token = self.cur_token;
 
     if (self.match(TokenType.OpenSquareBracket)) {
         if (self.match(TokenType.CloseSquareBracket)) {
             return self.addNode(main_token, AST.Node{ .array_type = node });
         }
-        return self.fail(diagnostics.unexpected_token, .{});
+
+        const index_type = try expectType(self);
+        return self.addNode(main_token, AST.Node{ .index_type = index_type });
     }
 
     return node;
@@ -132,7 +137,7 @@ fn parseObjectPropertyType(self: *Parser) CompilationError!?AST.Node.Index {
     var right: AST.Node.Index = AST.Node.Empty;
 
     if (self.match(TokenType.Colon)) {
-        right = try parseType(self);
+        right = try expectType(self);
     }
 
     return self.addNode(main_token, AST.Node{
@@ -199,7 +204,7 @@ fn parseFunctionType(self: *Parser) CompilationError!?AST.Node.Index {
 
     _ = try self.consume(TokenType.Arrow, diagnostics.ARG_expected, .{"=>"});
 
-    const return_type = try parseType(self);
+    const return_type = try expectType(self);
 
     return self.addNode(start_token, AST.Node{ .function_type = .{
         .generic_params = if (generics) |g| g.items else &.{},
@@ -240,7 +245,7 @@ fn parseTupleType(self: *Parser) CompilationError!?AST.Node.Index {
     defer list.deinit();
 
     while (!self.match(TokenType.CloseSquareBracket)) {
-        const node = try parseType(self);
+        const node = try expectType(self);
         try list.append(node);
 
         if (self.match(TokenType.CloseSquareBracket)) {
@@ -296,7 +301,7 @@ fn parseGenericParams(self: *Parser) CompilationError!std.ArrayList(AST.Node.Ind
     errdefer params.deinit();
 
     while (!self.match(TokenType.GreaterThan)) {
-        try params.append(try parseType(self));
+        try params.append(try expectType(self));
 
         if (self.match(TokenType.GreaterThan)) {
             break;
@@ -337,7 +342,7 @@ fn parseTypeDeclaration(self: *Parser) CompilationError!?AST.Node.Index {
 
     _ = try self.consume(TokenType.Equal, diagnostics.ARG_expected, .{"="});
 
-    const identifier_data_type = try parseType(self);
+    const identifier_data_type = try expectType(self);
 
     return self.addNode(self.cur_token, AST.Node{ .type_decl = .{
         .left = identifier,
@@ -473,7 +478,7 @@ test "should parse primary symbol type" {
 test "should return syntax error if its not a symbol type" {
     const text = "+";
 
-    try TestParser.runAny(text, parseType, struct {
+    try TestParser.runAny(text, expectType, struct {
         pub fn expect(t: TestParser, nodeOrError: CompilationError!AST.Node.Index, _: MarkerList(text)) !void {
             try t.expectSyntaxError(nodeOrError, diagnostics.type_expected, .{});
         }
@@ -504,6 +509,19 @@ test "should parse unary type operators" {
             }
         });
     }
+}
+
+test "should return syntax error if type after unary operator is missing" {
+    const text =
+        \\ keyof
+        \\>     ^
+    ;
+
+    try TestParser.runAny(text, expectType, struct {
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.type_expected, .{}, markers[0]);
+        }
+    });
 }
 
 test "should parse generic type" {
@@ -579,13 +597,42 @@ test "should parse nested generic type" {
 test "should parse array type" {
     const text =
         \\ number[]
-        \\>^
+        \\>      ^
     ;
 
     try TestParser.run(text, parseType, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
             try t.expectAST(node, AST.Node{
                 .array_type = AST.Node.at(1),
+            });
+            try t.expectTokenAt(markers[0], node.?);
+        }
+    });
+}
+
+test "should return syntax error if closing bracket is missing" {
+    const text =
+        \\ number[
+        \\>       ^
+    ;
+
+    try TestParser.runAny(text, parseType, struct {
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.type_expected, .{}, markers[0]);
+        }
+    });
+}
+
+test "should parse index type" {
+    const text =
+        \\ obj[number]
+        \\>   ^
+    ;
+
+    try TestParser.run(text, parseType, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectAST(node, AST.Node{
+                .index_type = AST.Node.at(2),
             });
             try t.expectTokenAt(markers[0], node.?);
         }
@@ -787,6 +834,19 @@ test "should parse type union" {
     });
 }
 
+test "should return syntax error if right is missing in union operator" {
+    const text =
+        \\ number |
+        \\>        ^
+    ;
+
+    try TestParser.runAny(text, parseType, struct {
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.type_expected, .{}, markers[0]);
+        }
+    });
+}
+
 test "should parse type intersection" {
     const text =
         \\ number & string
@@ -800,6 +860,19 @@ test "should parse type intersection" {
                 .right = AST.Node.at(2),
             } });
             try t.expectTokenAt(markers[0], node.?);
+        }
+    });
+}
+
+test "should return syntax error if right is missing in intersection operator" {
+    const text =
+        \\ number &
+        \\>        ^
+    ;
+
+    try TestParser.runAny(text, parseType, struct {
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.type_expected, .{}, markers[0]);
         }
     });
 }

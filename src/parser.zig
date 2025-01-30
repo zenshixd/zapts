@@ -1,7 +1,7 @@
 const std = @import("std");
 
-const CompilationError = @import("errors.zig").CompilationError;
-const CompilationErrorMessage = @import("errors.zig").CompilationErrorMessage;
+const CompilationError = @import("consts.zig").CompilationError;
+const Reporter = @import("reporter.zig");
 
 const ErrorUnionOf = @import("meta.zig").ErrorUnionOf;
 const ReturnTypeOf = @import("meta.zig").ReturnTypeOf;
@@ -26,15 +26,15 @@ const TokenType = @import("consts.zig").TokenType;
 const Self = @This();
 
 gpa: std.mem.Allocator,
+reporter: *Reporter,
 buffer: [:0]const u8,
 tokens: []const Token,
 cur_token: Token.Index,
 nodes: std.ArrayList(AST.Raw),
 extra: std.ArrayList(u32),
-errors: std.MultiArrayList(CompilationErrorMessage),
 
-pub fn init(gpa: std.mem.Allocator, buffer: [:0]const u8) !Self {
-    var lexer = Lexer.init(gpa, buffer);
+pub fn init(gpa: std.mem.Allocator, buffer: [:0]const u8, reporter: *Reporter) !Self {
+    var lexer = Lexer.init(gpa, buffer, reporter);
     var nodes = std.ArrayList(AST.Raw).init(gpa);
     nodes.append(AST.Raw{ .tag = .root, .main_token = Token.at(0), .data = .{ .lhs = 0, .rhs = 0 } }) catch unreachable;
 
@@ -45,15 +45,11 @@ pub fn init(gpa: std.mem.Allocator, buffer: [:0]const u8) !Self {
         .tokens = try lexer.tokenize(),
         .nodes = nodes,
         .extra = std.ArrayList(u32).init(gpa),
-        .errors = std.MultiArrayList(CompilationErrorMessage){},
+        .reporter = reporter,
     };
 }
 
 pub fn deinit(self: *Self) void {
-    for (self.errors.items(.message)) |message| {
-        self.gpa.free(message);
-    }
-    self.errors.deinit(self.gpa);
     self.nodes.deinit();
     self.extra.deinit();
     self.gpa.free(self.tokens);
@@ -152,7 +148,7 @@ pub fn rewind(self: *Self) void {
 }
 
 pub fn fail(self: *Self, comptime error_msg: diagnostics.DiagnosticMessage, args: anytype) CompilationError {
-    self.errors.append(self.gpa, CompilationErrorMessage.init(self.gpa, error_msg, args, self.cur_token)) catch @panic("Out of memory");
+    self.reporter.put(error_msg, args, self.cur_token);
     return CompilationError.SyntaxError;
 }
 

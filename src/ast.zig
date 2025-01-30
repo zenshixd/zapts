@@ -1,6 +1,7 @@
 const std = @import("std");
 const Token = @import("consts.zig").Token;
 const Parser = @import("parser.zig");
+const Reporter = @import("reporter.zig");
 const assert = std.debug.assert;
 const expectEqual = std.testing.expectEqual;
 const expectEqualDeep = std.testing.expectEqualDeep;
@@ -164,6 +165,7 @@ pub const Tag = enum {
 
     simple_type,
     array_type,
+    index_type,
     tuple_type,
     function_type,
     object_type,
@@ -434,6 +436,7 @@ pub const Node = union(enum) {
     simple_type: SimpleValue,
     generic_type: GenericType,
     array_type: Node.Index,
+    index_type: Node.Index,
     tuple_type: []Node.Index,
     function_type: FunctionType,
     object_type: []Node.Index,
@@ -1207,6 +1210,7 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
         .computed_identifier,
         .object_literal_field_shorthand,
         .array_type,
+        .index_type,
         => |node| {
             const tag: Tag = switch (key) {
                 .@"return" => .@"return",
@@ -1228,6 +1232,7 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                 .computed_identifier => .computed_identifier,
                 .object_literal_field_shorthand => .object_literal_field_shorthand,
                 .array_type => .array_type,
+                .index_type => .index_type,
                 else => unreachable, // LCOV_EXCL_LINE
             };
             return addRawNode(self, .{
@@ -1743,6 +1748,7 @@ pub fn getNode(self: Parser, index: Node.Index) Node {
         .computed_identifier,
         .object_literal_field_shorthand,
         .array_type,
+        .index_type,
         => {
             return switch (node.tag) {
                 .@"return" => .{ .@"return" = Node.at(node.data.lhs) },
@@ -1764,6 +1770,7 @@ pub fn getNode(self: Parser, index: Node.Index) Node {
                 .computed_identifier => .{ .computed_identifier = Node.at(node.data.lhs) },
                 .object_literal_field_shorthand => .{ .object_literal_field_shorthand = Node.at(node.data.lhs) },
                 .array_type => .{ .array_type = Node.at(node.data.lhs) },
+                .index_type => .{ .index_type = Node.at(node.data.lhs) },
                 else => unreachable, // LCOV_EXCL_LINE
             };
         },
@@ -1881,7 +1888,10 @@ pub fn listToSubrange(self: *Parser, list: anytype) Extra.Subrange {
 }
 
 fn expectRawNode(expected_raw: Raw, node: Node) !void {
-    var parser = try Parser.init(std.testing.allocator, "1");
+    var reporter = Reporter.init(std.testing.allocator);
+    defer reporter.deinit();
+
+    var parser = try Parser.init(std.testing.allocator, "1", &reporter);
     defer parser.deinit();
 
     const node_idx = addNode(&parser, Token.at(0), node);
@@ -2346,6 +2356,7 @@ test "Pool single node" {
         .{ Node{ .computed_identifier = node }, .computed_identifier },
         .{ Node{ .object_literal_field_shorthand = node }, .object_literal_field_shorthand },
         .{ Node{ .array_type = node }, .array_type },
+        .{ Node{ .index_type = node }, .index_type },
         .{ Node{ .keyof = node }, .keyof },
         .{ Node{ .@"return" = node }, .@"return" },
     };

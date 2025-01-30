@@ -1,8 +1,9 @@
 const std = @import("std");
 const consts = @import("consts.zig");
+const CompilationError = @import("consts.zig").CompilationError;
 
+const Reporter = @import("reporter.zig");
 const diagnostics = @import("diagnostics.zig");
-const CompilationError = @import("errors.zig").CompilationError;
 const Token = consts.Token;
 const TokenType = consts.TokenType;
 
@@ -24,12 +25,16 @@ const Self = @This();
 const Lexer = @This();
 
 allocator: Allocator,
+reporter: *Reporter,
 buffer: [:0]const u8,
 index: u32 = 0,
+in_template: bool = false,
+bracket_level: u32 = 0,
 
-pub fn init(allocator: Allocator, buffer: [:0]const u8) Self {
+pub fn init(allocator: Allocator, buffer: [:0]const u8, reporter: *Reporter) Self {
     return .{
         .allocator = allocator,
+        .reporter = reporter,
         .buffer = buffer,
     };
 }
@@ -63,6 +68,10 @@ const State = enum {
     dot,
     string_single_quote,
     string_double_quote,
+    template,
+    template_maybe_substitution,
+    template_middle,
+    template_middle_maybe_substitution,
     number,
     number_dot,
     number_exponent,
@@ -74,13 +83,18 @@ const State = enum {
     identifier,
 };
 
-pub fn fail(comptime error_msg: diagnostics.DiagnosticMessage, args: anytype) CompilationError {
-    std.debug.print(error_msg.message ++ "\n", args);
+pub fn is_eof(self: Self, index: u32) bool {
+    return self.buffer[index] == 0;
+}
+
+pub fn fail(self: *Self, comptime error_msg: diagnostics.DiagnosticMessage, args: anytype) CompilationError {
+    self.reporter.put(error_msg, args, Token.at(self.index));
     return error.SyntaxError;
 }
 
 pub fn tokenize(self: *Self) ![]const Token {
     var tokens = std.ArrayList(Token).init(self.allocator);
+    errdefer tokens.deinit();
 
     while (true) {
         const tok = try self.next();
@@ -143,12 +157,18 @@ pub fn next(self: *Self) CompilationError!Token {
                     break;
                 },
                 '{' => {
+                    self.bracket_level += 1;
                     result.type = .OpenCurlyBrace;
                     break;
                 },
                 '}' => {
-                    result.type = .CloseCurlyBrace;
-                    break;
+                    if (self.in_template and self.bracket_level == 0) {
+                        state = .template_middle;
+                    } else {
+                        self.bracket_level -= 1;
+                        result.type = .CloseCurlyBrace;
+                        break;
+                    }
                 },
                 '[' => {
                     result.type = .OpenSquareBracket;
@@ -178,6 +198,7 @@ pub fn next(self: *Self) CompilationError!Token {
                 '\'' => state = .string_single_quote,
                 '"' => state = .string_double_quote,
                 '\\' => state = .escape_sequence,
+                '`' => state = .template,
                 else => state = .identifier,
             },
             .ampersand => switch (self.buffer[self.index]) {
@@ -451,23 +472,89 @@ pub fn next(self: *Self) CompilationError!Token {
                         self.index -= 1;
                     }
                 },
-                else => {},
+                else => {
+                    if (self.is_eof(self.index)) {
+                        return self.fail(diagnostics.ARG_expected, .{"*/"});
+                    }
+                },
             },
             .string_single_quote => switch (self.buffer[self.index]) {
                 '\'' => {
                     result.type = .StringConstant;
                     break;
                 },
-                '\n' => return fail(diagnostics.unterminated_string_literal, .{}),
-                else => {},
+                '\n' => return self.fail(diagnostics.unterminated_string_literal, .{}),
+                else => {
+                    if (self.is_eof(self.index)) {
+                        return self.fail(diagnostics.unterminated_string_literal, .{});
+                    }
+                },
             },
             .string_double_quote => switch (self.buffer[self.index]) {
                 '"' => {
                     result.type = .StringConstant;
                     break;
                 },
-                '\n' => return fail(diagnostics.unterminated_string_literal, .{}),
-                else => {},
+                '\n' => return self.fail(diagnostics.unterminated_string_literal, .{}),
+                else => {
+                    if (self.is_eof(self.index)) {
+                        return self.fail(diagnostics.unterminated_string_literal, .{});
+                    }
+                },
+            },
+            .template => switch (self.buffer[self.index]) {
+                '$' => state = .template_maybe_substitution,
+                '`' => {
+                    self.in_template = false;
+                    result.type = .TemplateNoSubstitution;
+                    break;
+                },
+                else => {
+                    if (self.is_eof(self.index)) {
+                        return self.fail(diagnostics.unterminated_template_literal, .{});
+                    }
+                },
+            },
+            .template_maybe_substitution => switch (self.buffer[self.index]) {
+                '{' => {
+                    self.in_template = true;
+                    self.bracket_level = 0;
+                    result.type = .TemplateHead;
+                    break;
+                },
+                else => {
+                    if (self.is_eof(self.index)) {
+                        return self.fail(diagnostics.unterminated_template_literal, .{});
+                    }
+                    state = .template;
+                },
+            },
+            .template_middle => switch (self.buffer[self.index]) {
+                '$' => state = .template_middle_maybe_substitution,
+                '`' => {
+                    self.in_template = false;
+                    result.type = .TemplateTail;
+                    break;
+                },
+                else => {
+                    if (self.is_eof(self.index)) {
+                        return self.fail(diagnostics.unterminated_template_literal, .{});
+                    }
+                },
+            },
+            .template_middle_maybe_substitution => switch (self.buffer[self.index]) {
+                '{' => {
+                    self.in_template = true;
+                    self.bracket_level = 0;
+                    result.type = .TemplateMiddle;
+                    break;
+                },
+                else => {
+                    if (self.is_eof(self.index)) {
+                        return self.fail(diagnostics.unterminated_template_literal, .{});
+                    }
+                    state = .template_middle;
+                },
             },
             .number => switch (self.buffer[self.index]) {
                 '0'...'9', '_' => {},
@@ -539,12 +626,12 @@ pub fn next(self: *Self) CompilationError!Token {
             },
             .escape_sequence => switch (self.buffer[self.index]) {
                 'u' => state = .escape_sequence_unicode,
-                else => return fail(diagnostics.invalid_character, .{}),
+                else => return self.fail(diagnostics.invalid_character, .{}),
             },
             .escape_sequence_unicode => switch (self.buffer[self.index]) {
                 '0'...'9', 'a'...'f', 'A'...'F' => state = .escape_sequence_hex,
                 '{' => state = .escape_sequence_code_point,
-                else => return fail(diagnostics.invalid_character, .{}),
+                else => return self.fail(diagnostics.invalid_character, .{}),
             },
             .escape_sequence_hex => switch (self.buffer[self.index]) {
                 '0'...'9', 'a'...'f', 'A'...'F' => {
@@ -553,14 +640,14 @@ pub fn next(self: *Self) CompilationError!Token {
                         state = .identifier;
                     }
                 },
-                else => return fail(diagnostics.invalid_character, .{}),
+                else => return self.fail(diagnostics.invalid_character, .{}),
             },
             .escape_sequence_code_point => switch (self.buffer[self.index]) {
                 '0'...'9', 'a'...'f', 'A'...'F' => {},
                 '}' => {
                     state = .identifier;
                 },
-                else => return fail(diagnostics.invalid_character, .{}),
+                else => return self.fail(diagnostics.invalid_character, .{}),
             },
             .identifier => switch (self.buffer[self.index]) {
                 'a'...'z', 'A'...'Z', '_', '$', '0'...'9' => {},
@@ -599,7 +686,10 @@ fn is_operator(s: u8) bool {
 const ExpectedToken = struct { TokenType, []const u8 };
 
 fn expectTokens(text: [:0]const u8, expected: []const ExpectedToken) !void {
-    var lexer = Lexer.init(std.testing.allocator, text);
+    var reporter = Reporter.init(std.testing.allocator);
+    defer reporter.deinit();
+
+    var lexer = Lexer.init(std.testing.allocator, text, &reporter);
     const tokens = try lexer.tokenize();
     defer std.testing.allocator.free(tokens);
 
@@ -619,6 +709,20 @@ fn expectTokens(text: [:0]const u8, expected: []const ExpectedToken) !void {
             return error.TestExpectedEqual;
         }
     }
+}
+
+fn expectSyntaxError(text: [:0]const u8, comptime expected_error: diagnostics.DiagnosticMessage, args: anytype) !void {
+    var reporter = Reporter.init(std.testing.allocator);
+    defer reporter.deinit();
+
+    var lexer = Lexer.init(std.testing.allocator, text, &reporter);
+    const tokens = lexer.tokenize();
+
+    try std.testing.expectError(CompilationError.SyntaxError, tokens);
+
+    var buffer: [512]u8 = undefined;
+    const expected_string = try std.fmt.bufPrint(&buffer, expected_error.format(), args);
+    try expectEqualStrings(expected_string, reporter.errors.items(.message)[0]);
 }
 
 test "is_whitespace" {
@@ -972,4 +1076,49 @@ test "should tokenize decimal numbers" {
     const buffer = "123 123.456 123e456 123.456e456 123n 123_456 123_456n .123 .123e456";
 
     try expectTokens(buffer, &expected_tokens);
+}
+
+test "should parse template literals without middle" {
+    const buffer = "`a${b}c`";
+
+    try expectTokens(buffer, &[_]ExpectedToken{
+        .{ TokenType.TemplateHead, "`a${" },
+        .{ TokenType.Identifier, "b" },
+        .{ TokenType.TemplateTail, "}c`" },
+        .{ TokenType.Eof, "" },
+    });
+}
+
+test "should parse template literals with middle" {
+    const buffer = "`a${b}c${d}e`";
+
+    try expectTokens(buffer, &[_]ExpectedToken{
+        .{ TokenType.TemplateHead, "`a${" },
+        .{ TokenType.Identifier, "b" },
+        .{ TokenType.TemplateMiddle, "}c${" },
+        .{ TokenType.Identifier, "d" },
+        .{ TokenType.TemplateTail, "}e`" },
+        .{ TokenType.Eof, "" },
+    });
+}
+
+test "should parse template literals with objects in substitution" {
+    const buffer = "`a${{a: 1}}d`";
+
+    try expectTokens(buffer, &[_]ExpectedToken{
+        .{ TokenType.TemplateHead, "`a${" },
+        .{ TokenType.OpenCurlyBrace, "{" },
+        .{ TokenType.Identifier, "a" },
+        .{ TokenType.Colon, ":" },
+        .{ TokenType.NumberConstant, "1" },
+        .{ TokenType.CloseCurlyBrace, "}" },
+        .{ TokenType.TemplateTail, "}d`" },
+        .{ TokenType.Eof, "" },
+    });
+}
+
+test "should return syntax error if template is unclosed" {
+    const buffer = "`a${b}c";
+
+    try expectSyntaxError(buffer, diagnostics.unterminated_template_literal, .{});
 }

@@ -5,7 +5,7 @@ const AST = @import("../ast.zig");
 const Token = @import("../consts.zig").Token;
 const TokenType = @import("../consts.zig").TokenType;
 
-const CompilationError = @import("../errors.zig").CompilationError;
+const CompilationError = @import("../consts.zig").CompilationError;
 const diagnostics = @import("../diagnostics.zig");
 
 const parseAssignment = @import("binary.zig").parseAssignment;

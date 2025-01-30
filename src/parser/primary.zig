@@ -22,7 +22,7 @@ const parseObjectElementName = @import("functions.zig").parseObjectElementName;
 const parseExpression = @import("expressions.zig").parseExpression;
 const expectExpression = @import("expressions.zig").expectExpression;
 
-const CompilationError = @import("../errors.zig").CompilationError;
+const CompilationError = @import("../consts.zig").CompilationError;
 
 const Marker = @import("../test_parser.zig").Marker;
 const MarkerList = @import("../test_parser.zig").MarkerList;

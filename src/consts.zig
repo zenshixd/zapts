@@ -5,6 +5,8 @@ pub const PUNCTUATION_CHARS = ".,:;()[]'\"{}";
 pub const OPERATOR_CHARS = "<>?+-=*|&!%/\\";
 pub const WHITESPACE = " \t\r\n";
 
+pub const CompilationError = error{ SyntaxError, OutOfMemory };
+
 pub const keywords_map = std.StaticStringMap(TokenType).initComptime(.{
     .{ "var", TokenType.Var },
     .{ "let", TokenType.Let },
@@ -78,6 +80,10 @@ pub const TokenType = enum(u8) {
     Identifier,
     Keyword,
     StringConstant,
+    TemplateNoSubstitution,
+    TemplateHead,
+    TemplateMiddle,
+    TemplateTail,
     NumberConstant,
     BigIntConstant,
     Arrow,

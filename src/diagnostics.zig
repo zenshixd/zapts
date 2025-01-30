@@ -4,7 +4,12 @@ pub const DiagnosticMessage = struct {
     message: []const u8,
     category: []const u8,
     code: []const u8,
+
+    pub fn format(comptime self: DiagnosticMessage) []const u8 {
+        return "TS" ++ self.code ++ ": " ++ self.message;
+    }
 };
+
 pub const unterminated_string_literal = DiagnosticMessage{
     .message = "Unterminated string literal.",
     .category = "Error",
