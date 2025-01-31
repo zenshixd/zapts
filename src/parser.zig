@@ -79,9 +79,7 @@ pub fn parse(self: *Self) CompilationError!AST.Node.Index {
 }
 
 pub fn token(self: Self) Token {
-    if (self.cur_token.int() >= self.tokens.len) {
-        return .{ .type = .Eof, .start = 0, .end = 0 };
-    }
+    assert(self.cur_token.int() < self.tokens.len);
     return self.tokens[self.cur_token.int()];
 }
 

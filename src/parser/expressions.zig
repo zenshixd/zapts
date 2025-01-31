@@ -121,15 +121,9 @@ pub fn parseNewExpression(self: *Parser) CompilationError!?AST.Node.Index {
         return null;
     }
 
-    const maybe_node = try parseCallableExpression(self);
-    if (maybe_node) |node| {
-        return self.addNode(main_token, AST.Node{
-            .new_expr = node,
-        });
-    }
-
-    self.rewind();
-    return null;
+    return self.addNode(main_token, AST.Node{
+        .new_expr = try expectCallableExpression(self),
+    });
 }
 
 pub fn parseMemberExpression(self: *Parser) CompilationError!?AST.Node.Index {
@@ -176,6 +170,10 @@ pub fn parseCallableExpression(self: *Parser) CompilationError!?AST.Node.Index {
     }
 
     return node;
+}
+
+pub fn expectCallableExpression(self: *Parser) CompilationError!AST.Node.Index {
+    return try parseCallableExpression(self) orelse self.fail(diagnostics.expression_expected, .{});
 }
 
 pub fn parseIndexAccess(self: *Parser, expr: AST.Node.Index) CompilationError!?AST.Node.Index {

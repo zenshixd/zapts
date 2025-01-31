@@ -35,8 +35,10 @@ pub fn run(comptime text: []const u8, comptime fn_ptr: anytype, Expects: type) !
     const node = try fn_ptr(&parser);
     const t = TestParser{ .parser = &parser, .reporter = &reporter };
     Expects.expect(t, node, markers) catch |err| {
+        // LCOV_EXCL_START
         std.debug.print("Parsing failed, text: {s}\n", .{sourceText});
         return err;
+        // LCOV_EXCL_STOP
     };
 }
 
@@ -51,8 +53,10 @@ pub fn runAny(comptime text: []const u8, comptime fn_ptr: anytype, Expects: type
     const nodeOrError = fn_ptr(&parser);
     const t = TestParser{ .parser = &parser, .reporter = &reporter };
     Expects.expect(t, nodeOrError, markers) catch |err| {
+        // LCOV_EXCL_START
         std.debug.print("Parsing failed, text: {s}\n", .{sourceText});
         return err;
+        // LCOV_EXCL_STOP
     };
 }
 
@@ -66,6 +70,7 @@ pub const Marker = struct {
         return Marker{ .pos = @intCast(pos), .line = 0, .col = @intCast(pos + 1) };
     }
 
+    // LCOV_EXCL_START
     pub fn asText(comptime self: Marker) [self.col]u8 {
         var buffer: [self.col]u8 = undefined;
         for (0..self.col) |i| {
@@ -74,6 +79,7 @@ pub const Marker = struct {
         buffer[self.col - 1] = '^';
         return buffer;
     }
+    // LCOV_EXCL_STOP
 };
 
 pub fn MarkerList(comptime text: []const u8) type {
@@ -185,6 +191,7 @@ pub fn getTokenAt(t: TestParser, comptime marker: Marker) Token.Index {
     return found_token_idx.?;
 }
 
+// LCOV_EXCL_START
 pub fn tokenPosMismatch(t: TestParser, comptime expected: Marker, tok: Token) anyerror {
     var cur_marker = std.testing.allocator.alloc(u8, t.parser.buffer.len + 1) catch unreachable;
     defer std.testing.allocator.free(cur_marker);
@@ -197,6 +204,7 @@ pub fn tokenPosMismatch(t: TestParser, comptime expected: Marker, tok: Token) an
     std.debug.print("expected token at:\n{s}\n{s}\nfound at:\n{s}\n{s}\n", .{ t.parser.buffer, expected.asText(), t.parser.buffer, cur_marker });
     return error.TestExpectedEqual;
 }
+// LCOV_EXCL_STOP
 
 pub fn expectSyntaxError(
     t: TestParser,

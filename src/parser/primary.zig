@@ -692,6 +692,36 @@ test "should parse template literal" {
     });
 }
 
+test "should parse template literal with multiple substitutions" {
+    const text =
+        \\ `a${b}c${d}e`
+        \\>^
+    ;
+
+    try TestParser.run(text, parseTemplateLiteral, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            const expected_node = AST.Node{
+                .template_literal = @constCast(&[_]AST.Node.Index{ AST.Node.at(1), AST.Node.at(3), AST.Node.at(4), AST.Node.at(6), AST.Node.at(7) }),
+            };
+            try t.expectAST(node, expected_node);
+            try t.expectTokenAt(markers[0], node.?);
+        }
+    });
+}
+
+test "should return syntax error if substitution is unclosed" {
+    const text =
+        \\ `a${b
+        \\>     ^
+    ;
+
+    try TestParser.runAny(text, parseTemplateLiteral, struct {
+        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{"}"}, markers[0]);
+        }
+    });
+}
+
 test "should return null if no grouping expression" {
     const text =
         \\1
