@@ -41,7 +41,8 @@ pub fn parsePrimaryExpression(parser: *Parser) CompilationError!?AST.Node.Index 
         try parseFunctionStatement(parser) orelse
         try parseAsyncFunctionStatement(parser) orelse
         try parseClassStatement(parser) orelse
-        try parseGroupingExpression(parser);
+        try parseGroupingExpression(parser) orelse
+        try parseTemplateLiteral(parser);
 }
 
 pub fn parseIdentifier(parser: *Parser) CompilationError!?AST.Node.Index {
@@ -208,6 +209,40 @@ pub fn parseGroupingExpression(parser: *Parser) CompilationError!?AST.Node.Index
     return null;
 }
 
+pub fn parseTemplateLiteral(parser: *Parser) CompilationError!?AST.Node.Index {
+    const main_token = parser.cur_token;
+    var list = std.ArrayList(AST.Node.Index).init(parser.gpa);
+    defer list.deinit();
+
+    if (parser.consumeOrNull(TokenType.TemplateNoSubstitution)) |tok| {
+        try list.append(parser.addNode(tok, AST.Node{ .template_part = tok }));
+
+        return parser.addNode(main_token, AST.Node{
+            .template_literal = list.items,
+        });
+    }
+
+    const head = parser.consumeOrNull(TokenType.TemplateHead) orelse return null;
+
+    try list.append(parser.addNode(head, AST.Node{ .template_part = head }));
+    while (true) {
+        try list.append(try expectExpression(parser));
+
+        if (parser.consumeOrNull(TokenType.TemplateTail)) |tok| {
+            try list.append(parser.addNode(tok, AST.Node{ .template_part = tok }));
+            break;
+        }
+
+        const tok = try parser.consume(TokenType.TemplateMiddle, diagnostics.ARG_expected, .{"}"});
+
+        try list.append(parser.addNode(tok, AST.Node{ .template_part = tok }));
+    }
+
+    return parser.addNode(main_token, AST.Node{
+        .template_literal = list.items,
+    });
+}
+
 test "should parse primary expression" {
     const test_cases = .{
         .{
@@ -281,6 +316,12 @@ test "should parse primary expression" {
             \\>^       
             ,
             AST.Node{ .class = .{ .abstract = false, .name = Token.Empty, .implements = &.{}, .super_class = AST.Node.Empty, .body = &.{} } },
+        },
+        .{
+            \\ `aaaa`
+            \\>^
+            ,
+            AST.Node{ .template_literal = @constCast(&[_]AST.Node.Index{AST.Node.at(1)}) },
         },
     };
 
@@ -611,6 +652,42 @@ test "should parse grouping expression" {
     try TestParser.run(text, parseGroupingExpression, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
             try t.expectAST(node, AST.Node{ .grouping = AST.Node.at(5) });
+        }
+    });
+}
+
+test "should parse template literal with no substitution" {
+    const text =
+        \\ `aaaaaa`
+        \\>^
+    ;
+
+    try TestParser.run(text, parseTemplateLiteral, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            const expected_node = AST.Node{ .template_literal = @constCast(&[_]AST.Node.Index{AST.Node.at(1)}) };
+            try t.expectAST(node, expected_node);
+            try t.expectTokenAt(markers[0], node.?);
+        }
+    });
+}
+
+test "should parse template literal" {
+    const text =
+        \\ `a${b}c`
+        \\>^
+    ;
+
+    try TestParser.run(text, parseTemplateLiteral, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            const expected_node = AST.Node{
+                .template_literal = @constCast(&[_]AST.Node.Index{ AST.Node.at(1), AST.Node.at(3), AST.Node.at(4) }),
+            };
+            try t.expectAST(node, expected_node);
+            try t.expectTokenAt(markers[0], node.?);
+
+            try t.expectAST(expected_node.template_literal[0], AST.Node{ .template_part = Token.at(0) });
+            try t.expectAST(expected_node.template_literal[1], AST.Node{ .simple_value = .{ .kind = .identifier } });
+            try t.expectAST(expected_node.template_literal[2], AST.Node{ .template_part = Token.at(2) });
         }
     });
 }

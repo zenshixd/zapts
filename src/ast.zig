@@ -162,6 +162,8 @@ pub const Tag = enum {
     computed_identifier,
 
     simple_value,
+    template_literal,
+    template_part,
 
     simple_type,
     array_type,
@@ -432,6 +434,8 @@ pub const Node = union(enum) {
 
     computed_identifier: Node.Index,
     simple_value: SimpleValue,
+    template_literal: []Node.Index,
+    template_part: Token.Index,
 
     simple_type: SimpleValue,
     generic_type: GenericType,
@@ -1049,15 +1053,28 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                 },
             });
         },
-        .object_type, .tuple_type => |obj_type| {
+        .object_type, .tuple_type, .template_literal => |obj_type| {
             const subrange = listToSubrange(self, obj_type);
+            const tag: Tag = switch (key) {
+                .object_type => .object_type,
+                .tuple_type => .tuple_type,
+                .template_literal => .template_literal,
+                else => unreachable, // LCOV_EXCL_LINE
+            };
             return addRawNode(self, .{
-                .tag = if (key == .object_type) .object_type else .tuple_type,
+                .tag = tag,
                 .main_token = main_token,
                 .data = .{
                     .lhs = subrange.start.int(),
                     .rhs = subrange.end.int(),
                 },
+            });
+        },
+        .template_part => |template_part| {
+            return addRawNode(self, .{
+                .tag = .template_part,
+                .main_token = main_token,
+                .data = .{ .lhs = template_part.int() },
             });
         },
         .function_type => |func_type| {
@@ -1805,12 +1822,17 @@ pub fn getNode(self: Parser, index: Node.Index) Node {
             } };
         },
 
-        .object_type, .tuple_type => {
+        .object_type, .tuple_type, .template_literal => {
+            const items = getExtraItems(self, Node.Index, node.data.lhs, node.data.rhs);
             return switch (node.tag) {
-                .object_type => .{ .object_type = getExtraItems(self, Node.Index, node.data.lhs, node.data.rhs) },
-                .tuple_type => .{ .tuple_type = getExtraItems(self, Node.Index, node.data.lhs, node.data.rhs) },
+                .object_type => .{ .object_type = items },
+                .tuple_type => .{ .tuple_type = items },
+                .template_literal => .{ .template_literal = items },
                 else => unreachable, // LCOV_EXCL_LINE
             };
+        },
+        .template_part => {
+            return .{ .template_part = Token.at(node.data.lhs) };
         },
 
         .object_type_field => {
@@ -2420,6 +2442,24 @@ test "Pool object type" {
         .{
             Node{ .tuple_type = &field_list },
             Raw{ .tag = .tuple_type, .main_token = Token.at(0), .data = .{ .lhs = 0, .rhs = @intCast(field_list.len) } },
+        },
+        .{
+            Node{ .template_literal = &field_list },
+            Raw{ .tag = .template_literal, .main_token = Token.at(0), .data = .{ .lhs = 0, .rhs = @intCast(field_list.len) } },
+        },
+    };
+
+    inline for (tests) |test_case| {
+        try expectRawNode(test_case[1], test_case[0]);
+    }
+}
+
+test "Pool template_part" {
+    const part = Token.at(1);
+    const tests = .{
+        .{
+            Node{ .template_part = part },
+            Raw{ .tag = .template_part, .main_token = Token.at(0), .data = .{ .lhs = part.int() } },
         },
     };
 
