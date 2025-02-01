@@ -51,7 +51,7 @@ pub fn parseMethodExtra(self: *Parser, main_token: Token.Index, flags: u4) Compi
     const elem_name = try parseObjectElementName(self) orelse return null;
 
     if (!self.match(TokenType.OpenParen)) {
-        self.cur_token = cur_token;
+        self.rewindTo(cur_token);
         return null;
     }
 
@@ -123,35 +123,24 @@ pub fn parseMethodSetter(self: *Parser) CompilationError!?AST.Node.Index {
 }
 
 pub fn parseObjectElementName(self: *Parser) CompilationError!?AST.Node.Index {
-    switch (self.token().type) {
-        .Identifier, .PrivateIdentifier => {
-            _ = self.advance();
-            return self.addNode(self.cur_token.dec(1), AST.Node{ .simple_value = .{ .kind = .identifier } });
-        },
-        .StringConstant => {
-            _ = self.advance();
-            return self.addNode(self.cur_token.dec(1), AST.Node{ .simple_value = .{ .kind = .string } });
-        },
-        .NumberConstant => {
-            _ = self.advance();
-            return self.addNode(self.cur_token.dec(1), AST.Node{ .simple_value = .{ .kind = .number } });
-        },
-        .BigIntConstant => {
-            _ = self.advance();
-            return self.addNode(self.cur_token.dec(1), AST.Node{ .simple_value = .{ .kind = .bigint } });
-        },
-        .OpenSquareBracket => {
-            _ = self.advance();
-            const node = try expectAssignment(self);
-            _ = try self.consume(TokenType.CloseSquareBracket, diagnostics.ARG_expected, .{"]"});
-            return self.addNode(self.cur_token, AST.Node{ .computed_identifier = node });
-        },
-        else => {
-            if (try parseKeywordAsIdentifier(self)) {
-                return self.addNode(self.cur_token.dec(1), AST.Node{ .simple_value = .{ .kind = .identifier } });
-            }
-            return null;
-        },
+    const main_token = self.cur_token;
+    if (self.match(TokenType.Identifier) or self.match(TokenType.PrivateIdentifier)) {
+        return self.addNode(main_token, AST.Node{ .simple_value = .{ .kind = .identifier } });
+    } else if (self.match(TokenType.StringConstant)) {
+        return self.addNode(main_token, AST.Node{ .simple_value = .{ .kind = .string } });
+    } else if (self.match(TokenType.NumberConstant)) {
+        return self.addNode(main_token, AST.Node{ .simple_value = .{ .kind = .number } });
+    } else if (self.match(TokenType.BigIntConstant)) {
+        return self.addNode(main_token, AST.Node{ .simple_value = .{ .kind = .bigint } });
+    } else if (self.match(TokenType.OpenSquareBracket)) {
+        const node = try expectAssignment(self);
+        _ = try self.consume(TokenType.CloseSquareBracket, diagnostics.ARG_expected, .{"]"});
+        return self.addNode(main_token, AST.Node{ .computed_identifier = node });
+    } else {
+        if (try parseKeywordAsIdentifier(self)) {
+            return self.addNode(main_token, AST.Node{ .simple_value = .{ .kind = .identifier } });
+        }
+        return null;
     }
 }
 
@@ -264,7 +253,7 @@ fn parseArrowFunctionWithParenthesis(self: *Parser, main_token: Token.Index, arr
 
     const return_type = try parseOptionalDataType(self);
     if (!self.match(TokenType.Arrow)) {
-        self.cur_token = cp;
+        self.rewindTo(cp);
         return null;
     }
 

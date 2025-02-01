@@ -15,6 +15,7 @@ const expectStringStartsWith = std.testing.expectStringStartsWith;
 const expectError = std.testing.expectError;
 
 const Lexer = @import("lexer.zig");
+const Context = @import("lexer.zig").Context;
 const AST = @import("ast.zig");
 const diagnostics = @import("diagnostics.zig");
 
@@ -27,32 +28,33 @@ const Self = @This();
 
 gpa: std.mem.Allocator,
 reporter: *Reporter,
+lexer: Lexer,
 buffer: [:0]const u8,
-tokens: []const Token,
+tokens: std.ArrayList(Token),
 cur_token: Token.Index,
 nodes: std.ArrayList(AST.Raw),
 extra: std.ArrayList(u32),
 
 pub fn init(gpa: std.mem.Allocator, buffer: [:0]const u8, reporter: *Reporter) !Self {
-    var lexer = Lexer.init(gpa, buffer, reporter);
     var nodes = std.ArrayList(AST.Raw).init(gpa);
     nodes.append(AST.Raw{ .tag = .root, .main_token = Token.at(0), .data = .{ .lhs = 0, .rhs = 0 } }) catch unreachable;
 
     return Self{
-        .cur_token = Token.at(0),
         .gpa = gpa,
+        .reporter = reporter,
+        .lexer = Lexer.init(gpa, buffer, reporter),
         .buffer = buffer,
-        .tokens = try lexer.tokenize(),
+        .tokens = std.ArrayList(Token).init(gpa),
+        .cur_token = Token.at(0),
         .nodes = nodes,
         .extra = std.ArrayList(u32).init(gpa),
-        .reporter = reporter,
     };
 }
 
 pub fn deinit(self: *Self) void {
     self.nodes.deinit();
     self.extra.deinit();
-    self.gpa.free(self.tokens);
+    self.tokens.deinit();
 }
 
 pub const getNode = AST.getNode;
@@ -78,13 +80,32 @@ pub fn parse(self: *Self) CompilationError!AST.Node.Index {
     return 0;
 }
 
-pub fn token(self: Self) Token {
-    assert(self.cur_token.int() < self.tokens.len);
-    return self.tokens[self.cur_token.int()];
+pub fn lastIndex(self: *Self) u32 {
+    if (self.cur_token.int() == 0) {
+        return 0;
+    }
+
+    return self.tokens.items[self.cur_token.int() - 1].end;
+}
+
+pub fn nextToken(self: *Self) Token {
+    const index = self.lastIndex();
+    return self.lexer.next(index);
 }
 
 pub fn advance(self: *Self) Token.Index {
     //std.debug.print("advancing from {}\n", .{self.lexer.getToken(self.cur_token)});
+    self.cur_token = self.cur_token.inc(1);
+    return self.cur_token;
+}
+
+pub fn advanceBy(self: *Self, offset: u32) Token.Index {
+    self.cur_token = self.cur_token.inc(offset);
+    return self.cur_token;
+}
+
+pub fn addToken(self: *Self, token: Token) Token.Index {
+    self.tokens.append(token) catch unreachable;
     self.cur_token = self.cur_token.inc(1);
     return self.cur_token;
 }
@@ -108,16 +129,32 @@ pub fn match(self: *Self, comptime token_type: anytype) bool {
     return false;
 }
 
-pub fn peekMatch(self: Self, token_type: TokenType) bool {
-    return self.token().type == token_type;
+pub fn peekMatch(self: *Self, token_type: TokenType) bool {
+    const index = self.lastIndex();
+    const tok = self.lexer.next(index);
+    const matched = tok.type == token_type;
+    if (matched) {
+        if (self.tokens.items.len <= self.cur_token.int()) {
+            _ = self.tokens.addOne() catch @panic("Out of memory");
+        }
+        self.tokens.items[self.cur_token.int()] = tok;
+    }
+    return matched;
 }
 
-pub fn peekMatchMany(self: Self, comptime token_types: anytype) bool {
+pub fn peekMatchMany(self: *Self, comptime token_types: anytype) bool {
+    var index = self.lastIndex();
+    var toks: [token_types.len]Token = undefined;
     inline for (token_types, 0..) |tok_type, i| {
-        if (self.tokens[self.cur_token.int() + i].type != tok_type) {
+        toks[i] = self.lexer.next(index);
+        index = toks[i].end;
+        if (toks[i].type != tok_type) {
             return false;
         }
     }
+
+    const ptr = self.tokens.addManyAt(self.cur_token.int(), token_types.len) catch @panic("Out of memory");
+    @memcpy(ptr, &toks);
     return true;
 }
 
@@ -130,7 +167,7 @@ pub fn consume(self: *Self, token_type: TokenType, comptime error_msg: diagnosti
 }
 
 pub fn consumeOrNull(self: *Self, token_type: TokenType) ?Token.Index {
-    if (self.token().type == token_type) {
+    if (self.peekMatch(token_type)) {
         const tok = self.cur_token;
         _ = self.advance();
         return tok;
@@ -142,7 +179,21 @@ pub fn consumeOrNull(self: *Self, token_type: TokenType) ?Token.Index {
 pub fn rewind(self: *Self) void {
     if (self.cur_token.int() - 1 >= 0) {
         self.cur_token = self.cur_token.dec(1);
+        self.tokens.items.len -= 1;
     }
+}
+
+pub fn rewindTo(self: *Self, token: Token.Index) void {
+    self.cur_token = token;
+    self.tokens.items.len = token.int() + 1;
+}
+
+pub fn setContext(self: *Self, context: Context) void {
+    self.lexer.setContext(context);
+}
+
+pub fn unsetContext(self: *Self, context: Context) void {
+    self.lexer.unsetContext(context);
 }
 
 pub fn fail(self: *Self, comptime error_msg: diagnostics.DiagnosticMessage, args: anytype) CompilationError {

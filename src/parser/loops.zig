@@ -106,7 +106,7 @@ pub fn parseForInStatement(self: *Parser, main_token: Token.Index) CompilationEr
     const init_node = try parseDeclaration(self) orelse try parseExpression(self) orelse return null;
     if (!self.match(TokenType.In)) {
         // TODO: there is no cleanup of created AST nodes - need to figure out how to do it
-        self.cur_token = cp;
+        self.rewindTo(cp);
         return null;
     }
     const right = try expectExpression(self);
@@ -126,7 +126,7 @@ pub fn parseForOfStatement(self: *Parser, main_token: Token.Index) CompilationEr
 
     const init_node = try parseDeclaration(self) orelse try parseExpression(self) orelse return null;
     if (!self.match(TokenType.Of)) {
-        self.cur_token = cp;
+        self.rewindTo(cp);
         return null;
     }
     const right = try expectExpression(self);

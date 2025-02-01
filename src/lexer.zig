@@ -24,18 +24,20 @@ const expectEqualStrings = std.testing.expectEqualStrings;
 const Self = @This();
 const Lexer = @This();
 
+pub const Context = enum { regex, template };
+pub const ContextSet = std.EnumSet(Context);
+
 allocator: Allocator,
 reporter: *Reporter,
 buffer: [:0]const u8,
-index: u32 = 0,
-in_template: bool = false,
-bracket_level: u32 = 0,
+context: ContextSet,
 
 pub fn init(allocator: Allocator, buffer: [:0]const u8, reporter: *Reporter) Self {
     return .{
         .allocator = allocator,
         .reporter = reporter,
         .buffer = buffer,
+        .context = ContextSet.initEmpty(),
     };
 }
 
@@ -87,18 +89,19 @@ pub fn is_eof(self: Self, index: u32) bool {
     return self.buffer[index] == 0;
 }
 
-pub fn fail(self: *Self, comptime error_msg: diagnostics.DiagnosticMessage, args: anytype) CompilationError {
-    self.reporter.put(error_msg, args, Token.at(self.index));
-    return error.SyntaxError;
+pub fn fail(self: *Self, index: u32, comptime error_msg: diagnostics.DiagnosticMessage, args: anytype) void {
+    self.reporter.put(error_msg, args, Token.at(index));
 }
 
-pub fn tokenize(self: *Self) ![]const Token {
+pub fn tokenize(self: *Self) []const Token {
+    var index: u32 = 0;
     var tokens = std.ArrayList(Token).init(self.allocator);
     errdefer tokens.deinit();
 
     while (true) {
-        const tok = try self.next();
+        const tok = self.next(index);
         tokens.append(tok) catch unreachable;
+        index = tok.end;
         if (tok.type == .Eof) {
             break;
         }
@@ -107,27 +110,61 @@ pub fn tokenize(self: *Self) ![]const Token {
     return tokens.toOwnedSlice() catch unreachable;
 }
 
-pub fn next(self: *Self) CompilationError!Token {
+pub fn tokenizeWithContexts(self: *Self, contextsList: []ContextSet) []const Token {
+    var tok_index: u32 = 0;
+    var index: u32 = 0;
+    var tokens = std.ArrayList(Token).init(self.allocator);
+    errdefer tokens.deinit();
+
+    while (true) {
+        const tok = self.next(index);
+        tokens.append(tok) catch unreachable;
+
+        if (tok_index < contextsList.len) {
+            self.context = contextsList[tok_index];
+        }
+
+        index = tok.end;
+        tok_index += 1;
+
+        if (tok.type == .Eof) {
+            break;
+        }
+    }
+
+    return tokens.toOwnedSlice() catch unreachable;
+}
+
+pub fn setContext(self: *Self, context: Context) void {
+    self.context.insert(context);
+}
+
+pub fn unsetContext(self: *Self, context: Context) void {
+    self.context.remove(context);
+}
+
+pub fn next(self: *Self, start_index: u32) Token {
+    var index = start_index;
     var result: Token = .{
         .type = undefined,
-        .start = self.index,
+        .start = index,
         .end = undefined,
     };
 
     var state: State = State.start;
 
-    while (true) : (self.index += 1) {
+    while (true) : (index += 1) {
         switch (state) {
-            .start => switch (self.buffer[self.index]) {
+            .start => switch (self.buffer[index]) {
                 0 => {
-                    if (self.index >= self.buffer.len) {
-                        self.index -= 1;
+                    if (index >= self.buffer.len) {
+                        index -= 1;
                         result.type = .Eof;
                         break;
                     }
                 },
                 ' ', '\t', '\r', '\n' => {
-                    result.start = self.index + 1;
+                    result.start = index + 1;
                 },
                 '|' => state = .bar,
                 '&' => state = .ampersand,
@@ -157,15 +194,13 @@ pub fn next(self: *Self) CompilationError!Token {
                     break;
                 },
                 '{' => {
-                    self.bracket_level += 1;
                     result.type = .OpenCurlyBrace;
                     break;
                 },
                 '}' => {
-                    if (self.in_template and self.bracket_level == 0) {
+                    if (self.context.contains(.template)) {
                         state = .template_middle;
                     } else {
-                        self.bracket_level -= 1;
                         result.type = .CloseCurlyBrace;
                         break;
                     }
@@ -201,138 +236,138 @@ pub fn next(self: *Self) CompilationError!Token {
                 '`' => state = .template,
                 else => state = .identifier,
             },
-            .ampersand => switch (self.buffer[self.index]) {
+            .ampersand => switch (self.buffer[index]) {
                 '&' => state = .ampersand_ampersand,
                 '=' => {
                     result.type = .AmpersandEqual;
                     break;
                 },
                 else => {
-                    self.index -= 1;
+                    index -= 1;
                     result.type = .Ampersand;
                     break;
                 },
             },
-            .ampersand_ampersand => switch (self.buffer[self.index]) {
+            .ampersand_ampersand => switch (self.buffer[index]) {
                 '=' => {
                     result.type = .AmpersandAmpersandEqual;
                     break;
                 },
                 else => {
-                    self.index -= 1;
+                    index -= 1;
                     result.type = .AmpersandAmpersand;
                     break;
                 },
             },
-            .bar => switch (self.buffer[self.index]) {
+            .bar => switch (self.buffer[index]) {
                 '|' => state = .bar_bar,
                 '=' => {
                     result.type = .BarEqual;
                     break;
                 },
                 else => {
-                    self.index -= 1;
+                    index -= 1;
                     result.type = .Bar;
                     break;
                 },
             },
-            .bar_bar => switch (self.buffer[self.index]) {
+            .bar_bar => switch (self.buffer[index]) {
                 '=' => {
                     result.type = .BarBarEqual;
                     break;
                 },
                 else => {
-                    self.index -= 1;
+                    index -= 1;
                     result.type = .BarBar;
                     break;
                 },
             },
-            .caret => switch (self.buffer[self.index]) {
+            .caret => switch (self.buffer[index]) {
                 '=' => {
                     result.type = .CaretEqual;
                     break;
                 },
                 else => {
-                    self.index -= 1;
+                    index -= 1;
                     result.type = .Caret;
                     break;
                 },
             },
-            .equal => switch (self.buffer[self.index]) {
+            .equal => switch (self.buffer[index]) {
                 '=' => state = .equal_equal,
                 '>' => {
                     result.type = .Arrow;
                     break;
                 },
                 else => {
-                    self.index -= 1;
+                    index -= 1;
                     result.type = .Equal;
                     break;
                 },
             },
-            .equal_equal => switch (self.buffer[self.index]) {
+            .equal_equal => switch (self.buffer[index]) {
                 '=' => {
                     result.type = .EqualEqualEqual;
                     break;
                 },
                 else => {
-                    self.index -= 1;
+                    index -= 1;
                     result.type = .EqualEqual;
                     break;
                 },
             },
-            .exclamation_mark => switch (self.buffer[self.index]) {
+            .exclamation_mark => switch (self.buffer[index]) {
                 '=' => state = .exclamation_mark_equal,
                 else => {
-                    self.index -= 1;
+                    index -= 1;
                     result.type = .ExclamationMark;
                     break;
                 },
             },
-            .exclamation_mark_equal => switch (self.buffer[self.index]) {
+            .exclamation_mark_equal => switch (self.buffer[index]) {
                 '=' => {
                     result.type = .ExclamationMarkEqualEqual;
                     break;
                 },
                 else => {
-                    self.index -= 1;
+                    index -= 1;
                     result.type = .ExclamationMarkEqual;
                     break;
                 },
             },
-            .question_mark => switch (self.buffer[self.index]) {
+            .question_mark => switch (self.buffer[index]) {
                 '?' => state = .question_mark_question_mark,
                 '.' => {
                     result.type = .QuestionMarkDot;
                     break;
                 },
                 else => {
-                    self.index -= 1;
+                    index -= 1;
                     result.type = .QuestionMark;
                     break;
                 },
             },
-            .question_mark_question_mark => switch (self.buffer[self.index]) {
+            .question_mark_question_mark => switch (self.buffer[index]) {
                 '=' => {
                     result.type = .QuestionMarkQuestionMarkEqual;
                     break;
                 },
                 else => {
-                    self.index -= 1;
+                    index -= 1;
                     result.type = .QuestionMarkQuestionMark;
                     break;
                 },
             },
-            .dot => switch (self.buffer[self.index]) {
+            .dot => switch (self.buffer[index]) {
                 '.' => {
-                    self.index += 1;
-                    switch (self.buffer[self.index]) {
+                    index += 1;
+                    switch (self.buffer[index]) {
                         '.' => {
                             result.type = .DotDotDot;
                             break;
                         },
                         else => {
-                            self.index -= 1;
+                            index -= 1;
                             result.type = .Dot;
                             break;
                         },
@@ -340,12 +375,12 @@ pub fn next(self: *Self) CompilationError!Token {
                 },
                 '0'...'9', '_' => state = .number_dot,
                 else => {
-                    self.index -= 1;
+                    index -= 1;
                     result.type = .Dot;
                     break;
                 },
             },
-            .plus => switch (self.buffer[self.index]) {
+            .plus => switch (self.buffer[index]) {
                 '=' => {
                     result.type = .PlusEqual;
                     break;
@@ -355,12 +390,12 @@ pub fn next(self: *Self) CompilationError!Token {
                     break;
                 },
                 else => {
-                    self.index -= 1;
+                    index -= 1;
                     result.type = .Plus;
                     break;
                 },
             },
-            .minus => switch (self.buffer[self.index]) {
+            .minus => switch (self.buffer[index]) {
                 '=' => {
                     result.type = .MinusEqual;
                     break;
@@ -370,193 +405,205 @@ pub fn next(self: *Self) CompilationError!Token {
                     break;
                 },
                 else => {
-                    self.index -= 1;
+                    index -= 1;
                     result.type = .Minus;
                     break;
                 },
             },
-            .asterisk => switch (self.buffer[self.index]) {
+            .asterisk => switch (self.buffer[index]) {
                 '=' => {
                     result.type = .StarEqual;
                     break;
                 },
                 '*' => state = .asterisk_asterisk,
                 else => {
-                    self.index -= 1;
+                    index -= 1;
                     result.type = .Star;
                     break;
                 },
             },
-            .asterisk_asterisk => switch (self.buffer[self.index]) {
+            .asterisk_asterisk => switch (self.buffer[index]) {
                 '=' => {
                     result.type = .StarStarEqual;
                     break;
                 },
                 else => {
-                    self.index -= 1;
+                    index -= 1;
                     result.type = .StarStar;
                     break;
                 },
             },
-            .slash => switch (self.buffer[self.index]) {
+            .slash => switch (self.buffer[index]) {
                 '=' => {
                     result.type = .SlashEqual;
                     break;
                 },
                 '/' => state = .line_comment,
                 else => {
-                    self.index -= 1;
+                    index -= 1;
                     result.type = .Slash;
                     break;
                 },
             },
-            .percent => switch (self.buffer[self.index]) {
+            .percent => switch (self.buffer[index]) {
                 '=' => {
                     result.type = .PercentEqual;
                     break;
                 },
                 else => {
-                    self.index -= 1;
+                    index -= 1;
                     result.type = .Percent;
                     break;
                 },
             },
-            .less_than => switch (self.buffer[self.index]) {
+            .less_than => switch (self.buffer[index]) {
                 '=' => {
                     result.type = .LessThanEqual;
                     break;
                 },
                 '<' => state = .less_than_less_than,
                 else => {
-                    self.index -= 1;
+                    index -= 1;
                     result.type = .LessThan;
                     break;
                 },
             },
-            .less_than_less_than => switch (self.buffer[self.index]) {
+            .less_than_less_than => switch (self.buffer[index]) {
                 '=' => {
                     result.type = .LessThanLessThanEqual;
                     break;
                 },
                 else => {
-                    self.index -= 1;
+                    index -= 1;
                     result.type = .LessThanLessThan;
                     break;
                 },
             },
-            .greater_than => switch (self.buffer[self.index]) {
+            .greater_than => switch (self.buffer[index]) {
                 '=' => {
                     result.type = .GreaterThanEqual;
                     break;
                 },
                 else => {
-                    self.index -= 1;
+                    index -= 1;
                     result.type = .GreaterThan;
                     break;
                 },
             },
-            .line_comment => switch (self.buffer[self.index]) {
+            .line_comment => switch (self.buffer[index]) {
                 '\n' => {
                     result.type = .LineComment;
                     break;
                 },
                 else => {},
             },
-            .multiline_comment => switch (self.buffer[self.index]) {
+            .multiline_comment => switch (self.buffer[index]) {
                 '*' => {
-                    self.index += 1;
-                    if (self.buffer[self.index] == '/') {
+                    index += 1;
+                    if (self.buffer[index] == '/') {
                         result.type = .MultilineComment;
                         break;
                     } else {
-                        self.index -= 1;
+                        index -= 1;
                     }
                 },
                 else => {
-                    if (self.is_eof(self.index)) {
-                        return self.fail(diagnostics.ARG_expected, .{"*/"});
+                    if (self.is_eof(index)) {
+                        result.type = .MultilineComment;
+                        self.fail(index, diagnostics.ARG_expected, .{"*/"});
+                        break;
                     }
                 },
             },
-            .string_single_quote => switch (self.buffer[self.index]) {
+            .string_single_quote => switch (self.buffer[index]) {
                 '\'' => {
                     result.type = .StringConstant;
                     break;
                 },
-                '\n' => return self.fail(diagnostics.unterminated_string_literal, .{}),
                 else => {
-                    if (self.is_eof(self.index)) {
-                        return self.fail(diagnostics.unterminated_string_literal, .{});
+                    if (self.buffer[index] == '\n' or self.is_eof(index)) {
+                        result.type = .StringConstant;
+                        index -= 1;
+                        self.fail(index, diagnostics.unterminated_string_literal, .{});
+                        break;
                     }
                 },
             },
-            .string_double_quote => switch (self.buffer[self.index]) {
+            .string_double_quote => switch (self.buffer[index]) {
                 '"' => {
                     result.type = .StringConstant;
                     break;
                 },
-                '\n' => return self.fail(diagnostics.unterminated_string_literal, .{}),
                 else => {
-                    if (self.is_eof(self.index)) {
-                        return self.fail(diagnostics.unterminated_string_literal, .{});
+                    if (self.buffer[index] == '\n' or self.is_eof(index)) {
+                        result.type = .StringConstant;
+                        index -= 1;
+                        self.fail(index, diagnostics.unterminated_string_literal, .{});
+                        break;
                     }
                 },
             },
-            .template => switch (self.buffer[self.index]) {
+            .template => switch (self.buffer[index]) {
                 '$' => state = .template_maybe_substitution,
                 '`' => {
-                    self.in_template = false;
                     result.type = .TemplateNoSubstitution;
                     break;
                 },
                 else => {
-                    if (self.is_eof(self.index)) {
-                        return self.fail(diagnostics.unterminated_template_literal, .{});
+                    if (self.is_eof(index)) {
+                        result.type = .TemplateNoSubstitution;
+                        index -= 1;
+                        self.fail(index, diagnostics.unterminated_template_literal, .{});
+                        break;
                     }
                 },
             },
-            .template_maybe_substitution => switch (self.buffer[self.index]) {
+            .template_maybe_substitution => switch (self.buffer[index]) {
                 '{' => {
-                    self.in_template = true;
-                    self.bracket_level = 0;
                     result.type = .TemplateHead;
                     break;
                 },
                 else => {
-                    if (self.is_eof(self.index)) {
-                        return self.fail(diagnostics.unterminated_template_literal, .{});
+                    if (self.is_eof(index)) {
+                        result.type = .TemplateNoSubstitution;
+                        index -= 1;
+                        self.fail(index, diagnostics.unterminated_template_literal, .{});
+                        break;
                     }
                     state = .template;
                 },
             },
-            .template_middle => switch (self.buffer[self.index]) {
+            .template_middle => switch (self.buffer[index]) {
                 '$' => state = .template_middle_maybe_substitution,
                 '`' => {
-                    self.in_template = false;
                     result.type = .TemplateTail;
                     break;
                 },
                 else => {
-                    if (self.is_eof(self.index)) {
-                        return self.fail(diagnostics.unterminated_template_literal, .{});
+                    if (self.is_eof(index)) {
+                        result.type = .TemplateMiddle;
+                        index -= 1;
+                        self.fail(index, diagnostics.unterminated_template_literal, .{});
+                        break;
                     }
                 },
             },
-            .template_middle_maybe_substitution => switch (self.buffer[self.index]) {
+            .template_middle_maybe_substitution => switch (self.buffer[index]) {
                 '{' => {
-                    self.in_template = true;
-                    self.bracket_level = 0;
                     result.type = .TemplateMiddle;
                     break;
                 },
                 else => {
-                    if (self.is_eof(self.index)) {
-                        return self.fail(diagnostics.unterminated_template_literal, .{});
+                    if (self.is_eof(index)) {
+                        result.type = .TemplateMiddle;
+                        index -= 1;
+                        self.fail(index, diagnostics.unterminated_template_literal, .{});
+                        break;
                     }
                     state = .template_middle;
                 },
             },
-            .number => switch (self.buffer[self.index]) {
+            .number => switch (self.buffer[index]) {
                 '0'...'9', '_' => {},
                 '.' => state = .number_dot,
                 'e', 'E' => state = .number_exponent_sign,
@@ -565,12 +612,12 @@ pub fn next(self: *Self) CompilationError!Token {
                     break;
                 },
                 else => {
-                    self.index -= 1;
+                    index -= 1;
                     result.type = .NumberConstant;
                     break;
                 },
             },
-            .number_dot => switch (self.buffer[self.index]) {
+            .number_dot => switch (self.buffer[index]) {
                 '0'...'9', '_' => {},
                 'e', 'E' => state = .number_exponent_sign,
                 'n' => {
@@ -578,12 +625,12 @@ pub fn next(self: *Self) CompilationError!Token {
                     break;
                 },
                 else => {
-                    self.index -= 1;
+                    index -= 1;
                     result.type = .NumberConstant;
                     break;
                 },
             },
-            .number_exponent_sign => switch (self.buffer[self.index]) {
+            .number_exponent_sign => switch (self.buffer[index]) {
                 '+', '-' => state = .number_exponent,
                 '0'...'9', '_' => state = .number_exponent,
                 'n' => {
@@ -591,82 +638,98 @@ pub fn next(self: *Self) CompilationError!Token {
                     break;
                 },
                 else => {
-                    self.index -= 1;
+                    index -= 1;
                     result.type = .NumberConstant;
                     break;
                 },
             },
-            .number_exponent => switch (self.buffer[self.index]) {
+            .number_exponent => switch (self.buffer[index]) {
                 '0'...'9', '_' => {},
                 'n' => {
                     result.type = .BigIntConstant;
                     break;
                 },
                 else => {
-                    self.index -= 1;
+                    index -= 1;
                     result.type = .NumberConstant;
                     break;
                 },
             },
-            .hash => switch (self.buffer[self.index]) {
+            .hash => switch (self.buffer[index]) {
                 '0'...'9', 'a'...'z', 'A'...'Z', '_', '$' => {},
                 '!' => state = .shebang,
                 else => {
-                    self.index -= 1;
+                    index -= 1;
                     result.type = .PrivateIdentifier;
                     break;
                 },
             },
-            .shebang => switch (self.buffer[self.index]) {
+            .shebang => switch (self.buffer[index]) {
                 '\n' => {
                     result.type = .Shebang;
                     break;
                 },
                 else => {},
             },
-            .escape_sequence => switch (self.buffer[self.index]) {
+            .escape_sequence => switch (self.buffer[index]) {
                 'u' => state = .escape_sequence_unicode,
-                else => return self.fail(diagnostics.invalid_character, .{}),
+                else => {
+                    result.type = .UnknownSequence;
+                    self.fail(index, diagnostics.invalid_character, .{});
+                    break;
+                },
             },
-            .escape_sequence_unicode => switch (self.buffer[self.index]) {
+            .escape_sequence_unicode => switch (self.buffer[index]) {
                 '0'...'9', 'a'...'f', 'A'...'F' => state = .escape_sequence_hex,
                 '{' => state = .escape_sequence_code_point,
-                else => return self.fail(diagnostics.invalid_character, .{}),
+                else => {
+                    result.type = .UnknownSequence;
+                    self.fail(index, diagnostics.invalid_character, .{});
+                    break;
+                },
             },
-            .escape_sequence_hex => switch (self.buffer[self.index]) {
+            .escape_sequence_hex => switch (self.buffer[index]) {
                 '0'...'9', 'a'...'f', 'A'...'F' => {
-                    const len = self.index - result.start;
+                    const len = index - result.start;
                     if (len >= 4) {
                         state = .identifier;
                     }
                 },
-                else => return self.fail(diagnostics.invalid_character, .{}),
+                else => {
+                    result.type = .UnknownSequence;
+                    self.fail(index, diagnostics.invalid_character, .{});
+                    break;
+                },
             },
-            .escape_sequence_code_point => switch (self.buffer[self.index]) {
+            .escape_sequence_code_point => switch (self.buffer[index]) {
                 '0'...'9', 'a'...'f', 'A'...'F' => {},
                 '}' => {
                     state = .identifier;
                 },
-                else => return self.fail(diagnostics.invalid_character, .{}),
+                else => {
+                    result.type = .UnknownSequence;
+                    self.fail(index, diagnostics.invalid_character, .{});
+                    break;
+                },
             },
-            .identifier => switch (self.buffer[self.index]) {
+            .identifier => switch (self.buffer[index]) {
                 'a'...'z', 'A'...'Z', '_', '$', '0'...'9' => {},
                 '\\' => state = .escape_sequence,
                 else => {
-                    if (keywords_map.get(self.buffer[result.start..self.index])) |token_type| {
+                    if (keywords_map.get(self.buffer[result.start..index])) |token_type| {
                         result.type = token_type;
                     } else {
                         result.type = .Identifier;
                     }
-                    self.index -= 1;
+                    index -= 1;
                     break;
                 },
             },
         }
     }
 
-    self.index += 1;
-    result.end = self.index;
+    index += 1;
+    result.end = index;
 
     return result;
 }
@@ -690,7 +753,34 @@ fn expectTokens(text: [:0]const u8, expected: []const ExpectedToken) !void {
     defer reporter.deinit();
 
     var lexer = Lexer.init(std.testing.allocator, text, &reporter);
-    const tokens = try lexer.tokenize();
+    const tokens = lexer.tokenize();
+    defer std.testing.allocator.free(tokens);
+
+    for (expected, 0..) |expected_token, i| {
+        if (i >= tokens.len) {
+            std.debug.print("expected {}, but found end of token list\n", .{expected_token});
+            return error.TestExpectedEqual;
+        }
+
+        if (expected_token[0] != tokens[i].type) {
+            std.debug.print("expected {s}, found {s}\n", .{ @tagName(expected_token[0]), @tagName(tokens[i].type) });
+            return error.TestExpectedEqual;
+        }
+
+        if (!std.mem.eql(u8, expected_token[1], tokens[i].literal(text))) {
+            std.debug.print("expected {s}, found {s}\n", .{ expected_token[1], tokens[i].literal(text) });
+            return error.TestExpectedEqual;
+        }
+    }
+}
+
+fn expectTokensWithContexts(text: [:0]const u8, contextsList: []ContextSet, expected: []const ExpectedToken) !void {
+    var reporter = Reporter.init(std.testing.allocator);
+    defer reporter.deinit();
+
+    var lexer = Lexer.init(std.testing.allocator, text, &reporter);
+
+    const tokens = lexer.tokenizeWithContexts(contextsList);
     defer std.testing.allocator.free(tokens);
 
     for (expected, 0..) |expected_token, i| {
@@ -717,8 +807,21 @@ fn expectSyntaxError(text: [:0]const u8, comptime expected_error: diagnostics.Di
 
     var lexer = Lexer.init(std.testing.allocator, text, &reporter);
     const tokens = lexer.tokenize();
+    defer std.testing.allocator.free(tokens);
 
-    try std.testing.expectError(CompilationError.SyntaxError, tokens);
+    var buffer: [512]u8 = undefined;
+    const expected_string = try std.fmt.bufPrint(&buffer, expected_error.format(), args);
+    try expectEqualStrings(expected_string, reporter.errors.items(.message)[0]);
+}
+
+fn expectSyntaxErrorWithContexts(text: [:0]const u8, contextsList: []ContextSet, comptime expected_error: diagnostics.DiagnosticMessage, args: anytype) !void {
+    var reporter = Reporter.init(std.testing.allocator);
+    defer reporter.deinit();
+
+    var lexer = Lexer.init(std.testing.allocator, text, &reporter);
+
+    const tokens = lexer.tokenizeWithContexts(contextsList);
+    defer std.testing.allocator.free(tokens);
 
     var buffer: [512]u8 = undefined;
     const expected_string = try std.fmt.bufPrint(&buffer, expected_error.format(), args);
@@ -1081,7 +1184,12 @@ test "should tokenize decimal numbers" {
 test "should parse template literals without middle" {
     const buffer = "`a${b}c`";
 
-    try expectTokens(buffer, &[_]ExpectedToken{
+    var contexts = [_]ContextSet{
+        ContextSet.initMany(&[_]Context{.template}),
+        ContextSet.initMany(&[_]Context{.template}),
+        ContextSet.initEmpty(),
+    };
+    try expectTokensWithContexts(buffer, &contexts, &[_]ExpectedToken{
         .{ TokenType.TemplateHead, "`a${" },
         .{ TokenType.Identifier, "b" },
         .{ TokenType.TemplateTail, "}c`" },
@@ -1092,7 +1200,14 @@ test "should parse template literals without middle" {
 test "should parse template literals with middle" {
     const buffer = "`a${b}c${d}e`";
 
-    try expectTokens(buffer, &[_]ExpectedToken{
+    var contexts = [_]ContextSet{
+        ContextSet.initMany(&[_]Context{.template}),
+        ContextSet.initMany(&[_]Context{.template}),
+        ContextSet.initMany(&[_]Context{.template}),
+        ContextSet.initMany(&[_]Context{.template}),
+        ContextSet.initEmpty(),
+    };
+    try expectTokensWithContexts(buffer, &contexts, &[_]ExpectedToken{
         .{ TokenType.TemplateHead, "`a${" },
         .{ TokenType.Identifier, "b" },
         .{ TokenType.TemplateMiddle, "}c${" },
@@ -1105,7 +1220,16 @@ test "should parse template literals with middle" {
 test "should parse template literals with objects in substitution" {
     const buffer = "`a${{a: 1}}d`";
 
-    try expectTokens(buffer, &[_]ExpectedToken{
+    var contexts = [_]ContextSet{
+        ContextSet.initMany(&[_]Context{.template}),
+        ContextSet.initEmpty(),
+        ContextSet.initEmpty(),
+        ContextSet.initEmpty(),
+        ContextSet.initEmpty(),
+        ContextSet.initMany(&[_]Context{.template}),
+        ContextSet.initEmpty(),
+    };
+    try expectTokensWithContexts(buffer, &contexts, &[_]ExpectedToken{
         .{ TokenType.TemplateHead, "`a${" },
         .{ TokenType.OpenCurlyBrace, "{" },
         .{ TokenType.Identifier, "a" },
@@ -1120,5 +1244,10 @@ test "should parse template literals with objects in substitution" {
 test "should return syntax error if template is unclosed" {
     const buffer = "`a${b}c";
 
-    try expectSyntaxError(buffer, diagnostics.unterminated_template_literal, .{});
+    var contexts = [_]std.EnumSet(Context){
+        std.EnumSet(Context).initMany(&[_]Context{.template}),
+        std.EnumSet(Context).initMany(&[_]Context{.template}),
+        std.EnumSet(Context).initEmpty(),
+    };
+    try expectSyntaxErrorWithContexts(buffer, &contexts, diagnostics.unterminated_template_literal, .{});
 }

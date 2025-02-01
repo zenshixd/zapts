@@ -175,6 +175,7 @@ pub const Tag = enum {
     generic_type,
     type_intersection,
     type_union,
+
     type_decl,
     interface_decl,
 };

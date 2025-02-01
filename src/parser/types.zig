@@ -151,7 +151,7 @@ fn parseObjectPropertyType(self: *Parser) CompilationError!?AST.Node.Index {
 fn parseObjectMethodType(self: *Parser) CompilationError!?AST.Node.Index {
     const cp = self.cur_token;
     const identifier = try parseIdentifier(self) orelse {
-        self.cur_token = cp;
+        self.rewindTo(cp);
         return null;
     };
 
@@ -163,7 +163,7 @@ fn parseObjectMethodType(self: *Parser) CompilationError!?AST.Node.Index {
     }
 
     const start_token = self.consumeOrNull(TokenType.OpenParen) orelse {
-        self.cur_token = cp;
+        self.rewindTo(cp);
         return null;
     };
 
@@ -195,7 +195,7 @@ fn parseFunctionType(self: *Parser) CompilationError!?AST.Node.Index {
     }
 
     const start_token = self.consumeOrNull(TokenType.OpenParen) orelse {
-        self.cur_token = cur_token;
+        self.rewindTo(cur_token);
         return null;
     };
 
@@ -321,7 +321,7 @@ fn parseTypeIdentifier(self: *Parser, identifier: Token.Index) ?AST.Node.Index {
         .{ "boolean", .boolean },
     };
 
-    const value = self.tokens[identifier.int()].literal(self.buffer);
+    const value = self.tokens.items[identifier.int()].literal(self.buffer);
     inline for (type_map) |type_item| {
         if (std.mem.eql(u8, type_item[0], value)) {
             return self.addNode(identifier, AST.Node{ .simple_type = .{ .kind = type_item[1] } });

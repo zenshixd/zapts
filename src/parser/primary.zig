@@ -62,8 +62,9 @@ pub fn parseKeywordAsIdentifier(parser: *Parser) CompilationError!bool {
         return false;
     }
 
-    if (isAllowedIdentifier(parser.token().type)) {
-        _ = parser.advance();
+    const new_tok = parser.nextToken();
+    if (isAllowedIdentifier(new_tok.type)) {
+        _ = parser.addToken(new_tok);
         return true;
     }
 
@@ -226,8 +227,10 @@ pub fn parseTemplateLiteral(parser: *Parser) CompilationError!?AST.Node.Index {
 
     try list.append(parser.addNode(head, AST.Node{ .template_part = head }));
     while (true) {
+        parser.unsetContext(.template);
         try list.append(try expectExpression(parser));
 
+        parser.setContext(.template);
         if (parser.consumeOrNull(TokenType.TemplateTail)) |tok| {
             try list.append(parser.addNode(tok, AST.Node{ .template_part = tok }));
             break;
@@ -238,6 +241,7 @@ pub fn parseTemplateLiteral(parser: *Parser) CompilationError!?AST.Node.Index {
         try list.append(parser.addNode(tok, AST.Node{ .template_part = tok }));
     }
 
+    parser.unsetContext(.template);
     return parser.addNode(main_token, AST.Node{
         .template_literal = list.items,
     });
@@ -705,6 +709,27 @@ test "should parse template literal with multiple substitutions" {
             };
             try t.expectAST(node, expected_node);
             try t.expectTokenAt(markers[0], node.?);
+        }
+    });
+}
+
+test "should parse template literal with object as substitution" {
+    const text =
+        \\ `a${{a: 1}}e`
+        \\>^
+    ;
+
+    try TestParser.run(text, parseTemplateLiteral, struct {
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+            const expected_node = AST.Node{
+                .template_literal = @constCast(&[_]AST.Node.Index{ AST.Node.at(1), AST.Node.at(6), AST.Node.at(7) }),
+            };
+            try t.expectAST(node, expected_node);
+            try t.expectTokenAt(markers[0], node.?);
+
+            try t.expectAST(expected_node.template_literal[0], AST.Node{ .template_part = Token.at(0) });
+            try t.expectAST(expected_node.template_literal[1], AST.Node{ .object_literal = @constCast(&[_]AST.Node.Index{AST.Node.at(5)}) });
+            try t.expectAST(expected_node.template_literal[2], AST.Node{ .template_part = Token.at(6) });
         }
     });
 }

@@ -1,4 +1,5 @@
 const std = @import("std");
+const assert = std.debug.assert;
 
 pub const newline = "\n";
 pub const PUNCTUATION_CHARS = ".,:;()[]'\"{}";
@@ -141,6 +142,7 @@ pub const TokenType = enum(u8) {
     Tilde,
     Shebang,
     At,
+    UnknownSequence,
 
     // Keywords
     Var,
@@ -223,6 +225,7 @@ pub const Token = struct {
         }
 
         pub inline fn dec(self: Index, offset: u32) Index {
+            assert(self.int() > 0);
             return @enumFromInt(self.int() - offset);
         }
     };

@@ -109,7 +109,7 @@ fn binaryOperatorMatches(parser: *Parser, operator_index: comptime_int) bool {
             !parser.peekMatchMany(.{ TokenType.GreaterThan, TokenType.GreaterThan, TokenType.GreaterThanEqual });
 
         if (is_match) {
-            parser.cur_token = parser.cur_token.inc(@intCast(binary_operators[operator_index][0].len));
+            _ = parser.advanceBy(binary_operators[operator_index][0].len);
         }
 
         return is_match;

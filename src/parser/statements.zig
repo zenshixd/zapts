@@ -83,13 +83,14 @@ pub fn parseBlock(self: *Parser) CompilationError!?AST.Node.Index {
 
 pub fn parseDeclaration(self: *Parser) CompilationError!?AST.Node.Index {
     const main_token = self.cur_token;
-    const kind: AST.Node.DeclarationKind = switch (self.token().type) {
-        .Var => .@"var",
-        .Let => .let,
-        .Const => .@"const",
-        else => return try parseFunctionStatement(self) orelse try parseAsyncFunctionStatement(self),
-    };
-    _ = self.advance();
+    const kind: AST.Node.DeclarationKind = if (self.match(TokenType.Var))
+        .@"var"
+    else if (self.match(TokenType.Let))
+        .let
+    else if (self.match(TokenType.Const))
+        .@"const"
+    else
+        return try parseFunctionStatement(self) orelse try parseAsyncFunctionStatement(self);
 
     var nodes = std.ArrayList(AST.Node.Index).init(self.gpa);
     defer nodes.deinit();
