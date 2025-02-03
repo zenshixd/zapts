@@ -337,7 +337,7 @@ fn parseTypeDeclaration(self: *Parser) CompilationError!?AST.Node.Index {
     }
 
     const identifier = self.consumeOrNull(TokenType.Identifier) orelse
-        try parseKeywordAsIdentifier(self) orelse
+        parseKeywordAsIdentifier(self) orelse
         return self.fail(diagnostics.identifier_expected, .{});
 
     _ = try self.consume(TokenType.Equal, diagnostics.ARG_expected, .{"="});

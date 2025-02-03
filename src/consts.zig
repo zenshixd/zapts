@@ -205,6 +205,14 @@ pub const TokenType = enum(u8) {
     From,
     Any,
     Unknown,
+
+    pub fn isTokenType(comptime token_type: anytype) bool {
+        return @TypeOf(token_type) == TokenType;
+    }
+
+    pub fn isArrayOfTokenType(comptime token_type: anytype) bool {
+        return @typeInfo(@TypeOf(token_type)) == .array and @typeInfo(@TypeOf(token_type)).array.child == TokenType;
+    }
 };
 
 pub const Token = struct {

@@ -3,6 +3,7 @@ const std = @import("std");
 const Token = @import("../consts.zig").Token;
 const TokenType = @import("../consts.zig").TokenType;
 const isAllowedIdentifier = @import("../consts.zig").isAllowedIdentifier;
+const ALLOWED_KEYWORDS_AS_IDENTIFIERS = @import("../consts.zig").ALLOWED_KEYWORDS_AS_IDENTIFIERS;
 
 const AST = @import("../ast.zig");
 const Parser = @import("../parser.zig");
@@ -46,29 +47,29 @@ pub fn parsePrimaryExpression(parser: *Parser) CompilationError!?AST.Node.Index 
 }
 
 pub fn parseIdentifier(parser: *Parser) CompilationError!?AST.Node.Index {
-    if (parser.match(TokenType.Identifier) or try parseKeywordAsIdentifier(parser)) {
-        return parser.addNode(parser.cur_token.dec(1), AST.Node{ .simple_value = .{ .kind = .identifier } });
-    }
+    const identifier = parser.consumeOrNull(TokenType.Identifier) orelse
+        parseKeywordAsIdentifier(parser) orelse
+        return null;
 
-    return null;
+    return parser.addNode(identifier, AST.Node{ .simple_value = .{ .kind = .identifier } });
 }
 
 pub fn expectIdentifier(parser: *Parser) CompilationError!AST.Node.Index {
     return try parseIdentifier(parser) orelse parser.fail(diagnostics.identifier_expected, .{});
 }
 
-pub fn parseKeywordAsIdentifier(parser: *Parser) CompilationError!bool {
+pub fn parseKeywordAsIdentifier(parser: *Parser) ?Token.Index {
     if (parser.peekMatchMany(.{ TokenType.Async, TokenType.Function })) {
-        return false;
+        return null;
     }
 
-    const new_tok = parser.nextToken();
-    if (isAllowedIdentifier(new_tok.type)) {
-        _ = parser.addToken(new_tok);
-        return true;
+    inline for (ALLOWED_KEYWORDS_AS_IDENTIFIERS) |keyword| {
+        if (parser.consumeOrNull(keyword)) |tok| {
+            return tok;
+        }
     }
 
-    return false;
+    return null;
 }
 
 const literal_map = .{

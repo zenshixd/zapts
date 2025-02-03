@@ -32,7 +32,12 @@ pub fn run(comptime text: []const u8, comptime fn_ptr: anytype, Expects: type) !
     var parser = try Parser.init(std.testing.allocator, &sourceText, &reporter);
     defer parser.deinit();
 
-    const node = try fn_ptr(&parser);
+    const node = fn_ptr(&parser) catch |err| {
+        std.debug.print("SyntaxError, text: {s}\n", .{sourceText});
+        reporter.print(parser.tokens.items);
+        return err;
+    };
+
     const t = TestParser{ .parser = &parser, .reporter = &reporter };
     Expects.expect(t, node, markers) catch |err| {
         // LCOV_EXCL_START
@@ -229,9 +234,6 @@ pub fn expectSyntaxErrorAt(
     try t.expectSyntaxError(nodeOrError, expected_error, args);
 
     const loc = t.reporter.errors.items(.location)[0];
-    if (t.parser.tokens.items.len <= loc.int()) {
-        _ = t.parser.addToken(t.parser.nextToken());
-    }
     const error_token = t.parser.tokens.items[loc.int()];
 
     if (error_token.start != expected_location.pos) {

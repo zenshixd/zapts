@@ -137,7 +137,7 @@ pub fn parseObjectElementName(self: *Parser) CompilationError!?AST.Node.Index {
         _ = try self.consume(TokenType.CloseSquareBracket, diagnostics.ARG_expected, .{"]"});
         return self.addNode(main_token, AST.Node{ .computed_identifier = node });
     } else {
-        if (try parseKeywordAsIdentifier(self)) {
+        if (parseKeywordAsIdentifier(self) != null) {
             return self.addNode(main_token, AST.Node{ .simple_value = .{ .kind = .identifier } });
         }
         return null;

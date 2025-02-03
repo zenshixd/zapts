@@ -82,10 +82,11 @@ pub fn parseInterfaceList(self: *Parser) CompilationError!std.ArrayList(Token.In
     errdefer list.deinit();
 
     while (true) {
-        if (!self.match(TokenType.Identifier) and !try parseKeywordAsIdentifier(self)) {
+        const identifier = self.consumeOrNull(TokenType.Identifier) orelse
+            parseKeywordAsIdentifier(self) orelse
             return self.fail(diagnostics.identifier_expected, .{});
-        }
-        try list.append(self.cur_token.dec(1));
+
+        try list.append(identifier);
         if (!self.match(TokenType.Comma)) {
             break;
         }
