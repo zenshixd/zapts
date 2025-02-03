@@ -26,6 +26,11 @@ const Lexer = @This();
 
 pub const Context = enum { regex, template };
 pub const ContextSet = std.EnumSet(Context);
+pub const ContextChange = union(enum) {
+    none: void,
+    add: Context,
+    remove: Context,
+};
 
 allocator: Allocator,
 reporter: *Reporter,
@@ -74,6 +79,11 @@ const State = enum {
     template_maybe_substitution,
     template_middle,
     template_middle_maybe_substitution,
+    regex_literal_first_char,
+    regex_literal_escape_sequence,
+    regex_literal_char_class,
+    regex_literal_body,
+    regex_literal_flags,
     number,
     number_dot,
     number_exponent,
@@ -110,19 +120,22 @@ pub fn tokenize(self: *Self) []const Token {
     return tokens.toOwnedSlice() catch unreachable;
 }
 
-pub fn tokenizeWithContexts(self: *Self, contextsList: []ContextSet) []const Token {
+pub fn tokenizeWithContexts(self: *Self, contextChanges: []ContextChange) []const Token {
     var tok_index: u32 = 0;
     var index: u32 = 0;
     var tokens = std.ArrayList(Token).init(self.allocator);
     errdefer tokens.deinit();
 
     while (true) {
+        if (tok_index < contextChanges.len) {
+            switch (contextChanges[tok_index]) {
+                .none => {},
+                .add => self.setContext(contextChanges[tok_index].add),
+                .remove => self.unsetContext(contextChanges[tok_index].remove),
+            }
+        }
         const tok = self.next(index);
         tokens.append(tok) catch unreachable;
-
-        if (tok_index < contextsList.len) {
-            self.context = contextsList[tok_index];
-        }
 
         index = tok.end;
         tok_index += 1;
@@ -173,7 +186,13 @@ pub fn next(self: *Self, start_index: u32) Token {
                 '+' => state = .plus,
                 '-' => state = .minus,
                 '*' => state = .asterisk,
-                '/' => state = .slash,
+                '/' => {
+                    if (self.context.contains(.regex)) {
+                        state = .regex_literal_body;
+                    } else {
+                        state = .slash;
+                    }
+                },
                 '%' => state = .percent,
                 '!' => state = .exclamation_mark,
                 '<' => state = .less_than,
@@ -603,6 +622,66 @@ pub fn next(self: *Self, start_index: u32) Token {
                     state = .template_middle;
                 },
             },
+            .regex_literal_first_char => switch (self.buffer[index]) {
+                '/' => state = .line_comment,
+                '*' => state = .multiline_comment,
+                '[' => state = .regex_literal_char_class,
+                '\\' => state = .regex_literal_escape_sequence,
+                else => {
+                    if (self.buffer[index] == '\n' or self.is_eof(index)) {
+                        result.type = .RegexLiteral;
+                        index -= 1;
+                        self.fail(index, diagnostics.unterminated_regular_expression_literal, .{});
+                        break;
+                    }
+
+                    state = .regex_literal_body;
+                },
+            },
+            .regex_literal_body => switch (self.buffer[index]) {
+                '/' => state = .regex_literal_flags,
+                '[' => state = .regex_literal_char_class,
+                '\\' => state = .regex_literal_escape_sequence,
+                else => {
+                    if (self.buffer[index] == '\n' or self.is_eof(index)) {
+                        result.type = .RegexLiteral;
+                        index -= 1;
+                        self.fail(index, diagnostics.unterminated_regular_expression_literal, .{});
+                        break;
+                    }
+                },
+            },
+            .regex_literal_char_class => switch (self.buffer[index]) {
+                '\\' => state = .regex_literal_escape_sequence,
+                ']' => state = .regex_literal_body,
+                else => {
+                    if (self.buffer[index] == '\n' or self.is_eof(index)) {
+                        result.type = .RegexLiteral;
+                        index -= 1;
+                        self.fail(index, diagnostics.unterminated_regular_expression_literal, .{});
+                        break;
+                    }
+                },
+            },
+            .regex_literal_escape_sequence => switch (self.buffer[index]) {
+                else => {
+                    if (self.buffer[index] == '\n' or self.is_eof(index)) {
+                        result.type = .RegexLiteral;
+                        index -= 1;
+                        self.fail(index, diagnostics.unterminated_regular_expression_literal, .{});
+                        break;
+                    }
+                    state = .regex_literal_body;
+                },
+            },
+            .regex_literal_flags => switch (self.buffer[index]) {
+                'a'...'z', 'A'...'Z', '0'...'9', '$', '_' => {},
+                else => {
+                    result.type = .RegexLiteral;
+                    index -= 1;
+                    break;
+                },
+            },
             .number => switch (self.buffer[index]) {
                 '0'...'9', '_' => {},
                 '.' => state = .number_dot,
@@ -774,7 +853,7 @@ fn expectTokens(text: [:0]const u8, expected: []const ExpectedToken) !void {
     }
 }
 
-fn expectTokensWithContexts(text: [:0]const u8, contextsList: []ContextSet, expected: []const ExpectedToken) !void {
+fn expectTokensWithContexts(text: [:0]const u8, contextsList: []ContextChange, expected: []const ExpectedToken) !void {
     var reporter = Reporter.init(std.testing.allocator);
     defer reporter.deinit();
 
@@ -814,7 +893,7 @@ fn expectSyntaxError(text: [:0]const u8, comptime expected_error: diagnostics.Di
     try expectEqualStrings(expected_string, reporter.errors.items(.message)[0]);
 }
 
-fn expectSyntaxErrorWithContexts(text: [:0]const u8, contextsList: []ContextSet, comptime expected_error: diagnostics.DiagnosticMessage, args: anytype) !void {
+fn expectSyntaxErrorWithContexts(text: [:0]const u8, contextsList: []ContextChange, comptime expected_error: diagnostics.DiagnosticMessage, args: anytype) !void {
     var reporter = Reporter.init(std.testing.allocator);
     defer reporter.deinit();
 
@@ -1184,11 +1263,12 @@ test "should tokenize decimal numbers" {
 test "should parse template literals without middle" {
     const buffer = "`a${b}c`";
 
-    var contexts = [_]ContextSet{
-        ContextSet.initMany(&[_]Context{.template}),
-        ContextSet.initMany(&[_]Context{.template}),
-        ContextSet.initEmpty(),
+    var contexts = [_]ContextChange{
+        .{ .add = .template },
+        .{ .none = {} },
+        .{ .none = {} },
     };
+
     try expectTokensWithContexts(buffer, &contexts, &[_]ExpectedToken{
         .{ TokenType.TemplateHead, "`a${" },
         .{ TokenType.Identifier, "b" },
@@ -1200,12 +1280,13 @@ test "should parse template literals without middle" {
 test "should parse template literals with middle" {
     const buffer = "`a${b}c${d}e`";
 
-    var contexts = [_]ContextSet{
-        ContextSet.initMany(&[_]Context{.template}),
-        ContextSet.initMany(&[_]Context{.template}),
-        ContextSet.initMany(&[_]Context{.template}),
-        ContextSet.initMany(&[_]Context{.template}),
-        ContextSet.initEmpty(),
+    var contexts = [_]ContextChange{
+        .{ .none = {} },
+        .{ .add = .template },
+        .{ .none = {} },
+        .{ .none = {} },
+        .{ .none = {} },
+        .{ .remove = .template },
     };
     try expectTokensWithContexts(buffer, &contexts, &[_]ExpectedToken{
         .{ TokenType.TemplateHead, "`a${" },
@@ -1220,15 +1301,17 @@ test "should parse template literals with middle" {
 test "should parse template literals with objects in substitution" {
     const buffer = "`a${{a: 1}}d`";
 
-    var contexts = [_]ContextSet{
-        ContextSet.initMany(&[_]Context{.template}),
-        ContextSet.initEmpty(),
-        ContextSet.initEmpty(),
-        ContextSet.initEmpty(),
-        ContextSet.initEmpty(),
-        ContextSet.initMany(&[_]Context{.template}),
-        ContextSet.initEmpty(),
+    var contexts = [_]ContextChange{
+        .{ .none = {} },
+        .{ .add = .template },
+        .{ .remove = .template },
+        .{ .none = {} },
+        .{ .none = {} },
+        .{ .none = {} },
+        .{ .add = .template },
+        .{ .none = {} },
     };
+
     try expectTokensWithContexts(buffer, &contexts, &[_]ExpectedToken{
         .{ TokenType.TemplateHead, "`a${" },
         .{ TokenType.OpenCurlyBrace, "{" },
@@ -1244,10 +1327,69 @@ test "should parse template literals with objects in substitution" {
 test "should return syntax error if template is unclosed" {
     const buffer = "`a${b}c";
 
-    var contexts = [_]std.EnumSet(Context){
-        std.EnumSet(Context).initMany(&[_]Context{.template}),
-        std.EnumSet(Context).initMany(&[_]Context{.template}),
-        std.EnumSet(Context).initEmpty(),
+    var contexts = [_]ContextChange{
+        .{ .add = .template },
+        .{ .none = {} },
+        .{ .none = {} },
     };
     try expectSyntaxErrorWithContexts(buffer, &contexts, diagnostics.unterminated_template_literal, .{});
+}
+
+test "should parse regex literal" {
+    const buffer = "/[a-z]/";
+
+    var contexts = [_]ContextChange{
+        .{ .add = .regex },
+        .{ .none = {} },
+    };
+    try expectTokensWithContexts(buffer, &contexts, &[_]ExpectedToken{
+        .{ TokenType.RegexLiteral, "/[a-z]/" },
+        .{ TokenType.Eof, "" },
+    });
+}
+
+test "should parse regex literal with flags" {
+    const buffer = "/[a-z]/abcd";
+
+    var contexts = [_]ContextChange{
+        .{ .add = .regex },
+        .{ .none = {} },
+    };
+    try expectTokensWithContexts(buffer, &contexts, &[_]ExpectedToken{
+        .{ TokenType.RegexLiteral, "/[a-z]/abcd" },
+        .{ TokenType.Eof, "" },
+    });
+}
+
+test "should return syntax error if regex literal is unclosed" {
+    const buffer = "/[a-z]";
+
+    var contexts = [_]ContextChange{
+        .{ .add = .regex },
+        .{ .none = {} },
+    };
+    try expectSyntaxErrorWithContexts(buffer, &contexts, diagnostics.unterminated_regular_expression_literal, .{});
+}
+
+test "should return syntax error if char class bracket is missing" {
+    const buffer = "/[a-z/";
+
+    var contexts = [_]ContextChange{
+        .{ .add = .regex },
+        .{ .none = {} },
+    };
+    try expectSyntaxErrorWithContexts(buffer, &contexts, diagnostics.unterminated_regular_expression_literal, .{});
+}
+
+test "should allow to escape forward slash" {
+    const buffer = "/abc\\//";
+
+    var contexts = [_]ContextChange{
+        .{ .add = .regex },
+        .{ .none = {} },
+    };
+    try expectTokensWithContexts(buffer, &contexts, &[_]ExpectedToken{
+        .{ TokenType.RegexLiteral, "/abc\\//" },
+        .{ TokenType.Eof, "" },
+    });
 }

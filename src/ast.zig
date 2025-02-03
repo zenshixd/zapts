@@ -233,6 +233,7 @@ pub const SimpleValueKind = enum(u8) {
     bigint,
     string,
     boolean,
+    regex,
     true,
     false,
     null,

@@ -43,6 +43,7 @@ pub fn parsePrimaryExpression(parser: *Parser) CompilationError!?AST.Node.Index 
         try parseAsyncFunctionStatement(parser) orelse
         try parseClassStatement(parser) orelse
         try parseGroupingExpression(parser) orelse
+        try parseRegexLiteral(parser) orelse
         try parseTemplateLiteral(parser);
 }
 
@@ -248,6 +249,14 @@ pub fn parseTemplateLiteral(parser: *Parser) CompilationError!?AST.Node.Index {
     });
 }
 
+pub fn parseRegexLiteral(parser: *Parser) CompilationError!?AST.Node.Index {
+    parser.setContext(.regex);
+    defer parser.unsetContext(.regex);
+
+    const literal = parser.consumeOrNull(TokenType.RegexLiteral) orelse return null;
+    return parser.addNode(literal, AST.Node{ .simple_value = .{ .kind = .regex } });
+}
+
 test "should parse primary expression" {
     const test_cases = .{
         .{
@@ -321,6 +330,12 @@ test "should parse primary expression" {
             \\>^       
             ,
             AST.Node{ .class = .{ .abstract = false, .name = Token.Empty, .implements = &.{}, .super_class = AST.Node.Empty, .body = &.{} } },
+        },
+        .{
+            \\ /[a-z]/
+            \\>^
+            ,
+            AST.Node{ .simple_value = .{ .kind = .regex } },
         },
         .{
             \\ `aaaa`

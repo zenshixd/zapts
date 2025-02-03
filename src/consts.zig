@@ -87,6 +87,7 @@ pub const TokenType = enum(u8) {
     TemplateTail,
     NumberConstant,
     BigIntConstant,
+    RegexLiteral,
     Arrow,
     Ampersand,
     AmpersandAmpersand,
