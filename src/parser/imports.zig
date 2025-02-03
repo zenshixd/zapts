@@ -805,7 +805,7 @@ test "should parse export statement with default bindings" {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
             try t.expectAST(node, AST.Node{
                 .@"export" = AST.Node.Export{
-                    .default = AST.Node.at(2),
+                    .default = AST.Node.at(1),
                 },
             });
             try t.expectTokenAt(markers[0], node.?);

@@ -334,23 +334,21 @@ test "should parse class members" {
                 .abstract = false,
                 .implements = &.{},
                 .super_class = AST.Node.Empty,
-                .body = @constCast(&[_]AST.Node.Index{
-                    AST.Node.at(6),
-                }),
+                .body = @constCast(&[_]AST.Node.Index{AST.Node.at(5)}),
             } };
             try t.expectAST(node, class_decl);
 
             const class_member = AST.Node{ .class_member = AST.Node.ClassMember{
                 .flags = 0,
-                .node = AST.Node.at(5),
+                .node = AST.Node.at(4),
             } };
             try t.expectAST(class_decl.class.body[0], class_member);
             try t.expectTokenAt(markers[0], class_decl.class.body[0]);
 
             const class_field = AST.Node{ .class_field = AST.Node.ClassFieldBinding{
-                .name = AST.Node.at(2),
-                .decl_type = AST.Node.at(3),
-                .value = AST.Node.at(4),
+                .name = AST.Node.at(1),
+                .decl_type = AST.Node.at(2),
+                .value = AST.Node.at(3),
             } };
             try t.expectAST(class_member.class_member.node, class_field);
             try t.expectTokenAt(markers[0], class_member.class_member.node);
@@ -373,7 +371,7 @@ test "should skip semicolons when parsing class members" {
                 .abstract = false,
                 .implements = &.{},
                 .super_class = AST.Node.Empty,
-                .body = @constCast(&[_]AST.Node.Index{AST.Node.at(6)}),
+                .body = @constCast(&[_]AST.Node.Index{AST.Node.at(5)}),
             } });
         }
     });
@@ -391,7 +389,7 @@ test "should parse static block" {
     try TestParser.run(text, parseClassStaticMember, struct {
         pub fn expect(t: TestParser, node: AST.Node.Index, comptime markers: MarkerList(text)) !void {
             try t.expectAST(node, AST.Node{
-                .class_static_block = @constCast(&[_]AST.Node.Index{ AST.Node.at(6), AST.Node.at(12) }),
+                .class_static_block = @constCast(&[_]AST.Node.Index{ AST.Node.at(5), AST.Node.at(10) }),
             });
             try t.expectTokenAt(markers[0], node);
         }
@@ -409,7 +407,7 @@ test "should parse static field" {
             try t.expectAST(node, AST.Node{
                 .class_member = .{
                     .flags = AST.ClassMemberFlags.static,
-                    .node = AST.Node.at(6),
+                    .node = AST.Node.at(5),
                 },
             });
             try t.expectTokenAt(markers[0], node);
@@ -431,7 +429,7 @@ test "should parse class member with modifiers" {
         try TestParser.run(test_case[0], parseClassMember, struct {
             pub fn expect(t: TestParser, node: AST.Node.Index, _: MarkerList(test_case[0])) !void {
                 try t.expectAST(node, AST.Node{
-                    .class_member = .{ .flags = test_case[1], .node = AST.Node.at(3) },
+                    .class_member = .{ .flags = test_case[1], .node = AST.Node.at(2) },
                 });
                 try t.expectTokenAt(comptime Marker.fromText(marker), node);
             }

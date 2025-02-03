@@ -149,7 +149,7 @@ fn parseObjectPropertyType(self: *Parser) CompilationError!?AST.Node.Index {
 }
 
 fn parseObjectMethodType(self: *Parser) CompilationError!?AST.Node.Index {
-    const cp = self.cur_token;
+    const cp = self.checkpoint();
     const identifier = try parseIdentifier(self) orelse {
         self.rewindTo(cp);
         return null;
@@ -177,7 +177,7 @@ fn parseObjectMethodType(self: *Parser) CompilationError!?AST.Node.Index {
         .return_type = return_type,
     } });
 
-    return self.addNode(cp, AST.Node{
+    return self.addNode(cp.tok_idx, AST.Node{
         .object_type_field = .{
             .name = identifier,
             .type = fn_type,
@@ -186,7 +186,7 @@ fn parseObjectMethodType(self: *Parser) CompilationError!?AST.Node.Index {
 }
 
 fn parseFunctionType(self: *Parser) CompilationError!?AST.Node.Index {
-    const cur_token = self.cur_token;
+    const cur_token = self.checkpoint();
     const generics = if (self.match(TokenType.LessThan)) try parseGenericParams(self) else null;
     defer {
         if (generics) |g| {
@@ -670,13 +670,11 @@ test "should parse object type" {
             pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
                 try t.expectNodesToEqual(&[_]AST.Raw{
                     .{ .tag = .simple_value, .main_token = Token.at(1), .data = .{ .lhs = 1, .rhs = 0 } },
-                    .{ .tag = .simple_value, .main_token = Token.at(1), .data = .{ .lhs = 1, .rhs = 0 } },
                     .{ .tag = .simple_type, .main_token = Token.at(3), .data = .{ .lhs = 3, .rhs = 0 } },
-                    .{ .tag = .object_type_field, .main_token = t.getTokenAt(markers[1]), .data = .{ .lhs = 2, .rhs = 3 } },
-                    .{ .tag = .simple_value, .main_token = Token.at(5), .data = .{ .lhs = 1, .rhs = 0 } },
+                    .{ .tag = .object_type_field, .main_token = t.getTokenAt(markers[1]), .data = .{ .lhs = 1, .rhs = 2 } },
                     .{ .tag = .simple_value, .main_token = Token.at(5), .data = .{ .lhs = 1, .rhs = 0 } },
                     .{ .tag = .simple_type, .main_token = Token.at(7), .data = .{ .lhs = 5, .rhs = 0 } },
-                    .{ .tag = .object_type_field, .main_token = t.getTokenAt(markers[2]), .data = .{ .lhs = 6, .rhs = 7 } },
+                    .{ .tag = .object_type_field, .main_token = t.getTokenAt(markers[2]), .data = .{ .lhs = 4, .rhs = 5 } },
                     .{ .tag = .object_type, .main_token = t.getTokenAt(markers[0]), .data = .{ .lhs = 0, .rhs = 2 } },
                 });
                 try t.expectTokenAt(markers[0], node.?);

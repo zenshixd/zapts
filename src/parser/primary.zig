@@ -272,7 +272,7 @@ test "should parse primary expression" {
             \\ {a: 1}
             \\>^     
             ,
-            AST.Node{ .object_literal = @constCast(&[_]AST.Node.Index{AST.Node.at(4)}) },
+            AST.Node{ .object_literal = @constCast(&[_]AST.Node.Index{AST.Node.at(3)}) },
         },
         .{
             \\ [1, 2]
@@ -314,7 +314,7 @@ test "should parse primary expression" {
             \\ (a, b)
             \\>^
             ,
-            AST.Node{ .grouping = AST.Node.at(5) },
+            AST.Node{ .grouping = AST.Node.at(3) },
         },
         .{
             \\ class {}
@@ -530,8 +530,8 @@ test "should parse array literal" {
         .{ "[1, 2, 3,]", &[_]AST.Node.Index{ AST.Node.at(1), AST.Node.at(2), AST.Node.at(3) } },
         .{ "[1, 2, 3 + 4,]", &[_]AST.Node.Index{ AST.Node.at(1), AST.Node.at(2), AST.Node.at(5) } },
         .{ "[1,,,]", &[_]AST.Node.Index{ AST.Node.at(1), AST.Node.Empty, AST.Node.Empty } },
-        .{ "[...a]", &[_]AST.Node.Index{AST.Node.at(3)} },
-        .{ "[1, ...a]", &[_]AST.Node.Index{ AST.Node.at(1), AST.Node.at(4) } },
+        .{ "[...a]", &[_]AST.Node.Index{AST.Node.at(2)} },
+        .{ "[1, ...a]", &[_]AST.Node.Index{ AST.Node.at(1), AST.Node.at(3) } },
     };
 
     inline for (expects_map) |expected_items| {
@@ -565,7 +565,7 @@ test "should parse object literal" {
         \\    [1 + 2]: e,
         \\}
     ;
-    const expected_fields = [_]AST.Node.Index{ AST.Node.at(4), AST.Node.at(8), AST.Node.at(11), AST.Node.at(14), AST.Node.at(25) };
+    const expected_fields = [_]AST.Node.Index{ AST.Node.at(3), AST.Node.at(6), AST.Node.at(8), AST.Node.at(10), AST.Node.at(16) };
 
     try TestParser.run(text, parseObjectLiteral, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
@@ -656,7 +656,7 @@ test "should parse grouping expression" {
 
     try TestParser.run(text, parseGroupingExpression, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .grouping = AST.Node.at(5) });
+            try t.expectAST(node, AST.Node{ .grouping = AST.Node.at(3) });
         }
     });
 }
@@ -685,7 +685,7 @@ test "should parse template literal" {
     try TestParser.run(text, parseTemplateLiteral, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
             const expected_node = AST.Node{
-                .template_literal = @constCast(&[_]AST.Node.Index{ AST.Node.at(1), AST.Node.at(3), AST.Node.at(4) }),
+                .template_literal = @constCast(&[_]AST.Node.Index{ AST.Node.at(1), AST.Node.at(2), AST.Node.at(3) }),
             };
             try t.expectAST(node, expected_node);
             try t.expectTokenAt(markers[0], node.?);
@@ -706,7 +706,7 @@ test "should parse template literal with multiple substitutions" {
     try TestParser.run(text, parseTemplateLiteral, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
             const expected_node = AST.Node{
-                .template_literal = @constCast(&[_]AST.Node.Index{ AST.Node.at(1), AST.Node.at(3), AST.Node.at(4), AST.Node.at(6), AST.Node.at(7) }),
+                .template_literal = @constCast(&[_]AST.Node.Index{ AST.Node.at(1), AST.Node.at(2), AST.Node.at(3), AST.Node.at(4), AST.Node.at(5) }),
             };
             try t.expectAST(node, expected_node);
             try t.expectTokenAt(markers[0], node.?);
@@ -723,13 +723,13 @@ test "should parse template literal with object as substitution" {
     try TestParser.run(text, parseTemplateLiteral, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
             const expected_node = AST.Node{
-                .template_literal = @constCast(&[_]AST.Node.Index{ AST.Node.at(1), AST.Node.at(6), AST.Node.at(7) }),
+                .template_literal = @constCast(&[_]AST.Node.Index{ AST.Node.at(1), AST.Node.at(5), AST.Node.at(6) }),
             };
             try t.expectAST(node, expected_node);
             try t.expectTokenAt(markers[0], node.?);
 
             try t.expectAST(expected_node.template_literal[0], AST.Node{ .template_part = Token.at(0) });
-            try t.expectAST(expected_node.template_literal[1], AST.Node{ .object_literal = @constCast(&[_]AST.Node.Index{AST.Node.at(5)}) });
+            try t.expectAST(expected_node.template_literal[1], AST.Node{ .object_literal = @constCast(&[_]AST.Node.Index{AST.Node.at(4)}) });
             try t.expectAST(expected_node.template_literal[2], AST.Node{ .template_part = Token.at(6) });
         }
     });

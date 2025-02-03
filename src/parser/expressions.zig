@@ -219,8 +219,8 @@ test "should parse comma expression" {
     try TestParser.run(text, parseExpression, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
             try t.expectAST(node, AST.Node{ .comma = .{
-                .left = AST.Node.at(5),
-                .right = AST.Node.at(7),
+                .left = AST.Node.at(3),
+                .right = AST.Node.at(4),
             } });
             try t.expectTokenAt(markers[0], node.?);
         }
@@ -236,9 +236,9 @@ test "should parse conditional expression" {
     try TestParser.run(text, parseExpression, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
             try t.expectAST(node, AST.Node{ .ternary_expr = .{
-                .expr = AST.Node.at(2),
-                .body = AST.Node.at(4),
-                .@"else" = AST.Node.at(6),
+                .expr = AST.Node.at(1),
+                .body = AST.Node.at(2),
+                .@"else" = AST.Node.at(3),
             } });
             try t.expectTokenAt(markers[0], node.?);
         }
@@ -267,8 +267,8 @@ test "should parse short circuit expression" {
     try TestParser.run(text, parseExpression, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
             try t.expectAST(node, AST.Node{ .coalesce = .{
-                .left = AST.Node.at(2),
-                .right = AST.Node.at(3),
+                .left = AST.Node.at(1),
+                .right = AST.Node.at(2),
             } });
             try t.expectTokenAt(markers[0], node.?);
         }
@@ -472,19 +472,19 @@ test "should parse callable expression" {
         } } },
         .{ "a(b)", AST.Node{ .call_expr = .{
             .node = AST.Node.at(1),
-            .params = @constCast(&[_]AST.Node.Index{AST.Node.at(3)}),
+            .params = @constCast(&[_]AST.Node.Index{AST.Node.at(2)}),
         } } },
         .{ "a(b, c)", AST.Node{ .call_expr = .{
             .node = AST.Node.at(1),
-            .params = @constCast(&[_]AST.Node.Index{ AST.Node.at(3), AST.Node.at(5) }),
+            .params = @constCast(&[_]AST.Node.Index{ AST.Node.at(2), AST.Node.at(3) }),
         } } },
         .{ "a(b + c)", AST.Node{ .call_expr = .{
             .node = AST.Node.at(1),
-            .params = @constCast(&[_]AST.Node.Index{AST.Node.at(5)}),
+            .params = @constCast(&[_]AST.Node.Index{AST.Node.at(4)}),
         } } },
         .{ "a(b,)", AST.Node{ .call_expr = .{
             .node = AST.Node.at(1),
-            .params = @constCast(&[_]AST.Node.Index{AST.Node.at(3)}),
+            .params = @constCast(&[_]AST.Node.Index{AST.Node.at(2)}),
         } } },
     };
     const marker = "^";

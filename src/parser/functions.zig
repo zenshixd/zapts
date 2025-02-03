@@ -47,7 +47,7 @@ pub fn parseMethod(self: *Parser) CompilationError!?AST.Node.Index {
 }
 
 pub fn parseMethodExtra(self: *Parser, main_token: Token.Index, flags: u4) CompilationError!?AST.Node.Index {
-    const cur_token = self.cur_token;
+    const cur_token = self.checkpoint();
     const elem_name = try parseObjectElementName(self) orelse return null;
 
     if (!self.match(TokenType.OpenParen)) {
@@ -71,12 +71,12 @@ pub fn parseMethodExtra(self: *Parser, main_token: Token.Index, flags: u4) Compi
 }
 
 pub fn parseMethodGetter(self: *Parser) CompilationError!?AST.Node.Index {
+    const cp = self.checkpoint();
     if (!self.match(TokenType.Get)) {
         return null;
     }
-    const main_token = self.cur_token.dec(1);
     const elem_name = try parseObjectElementName(self) orelse {
-        self.rewind();
+        self.rewindTo(cp);
         return try parseMethod(self);
     };
 
@@ -87,7 +87,7 @@ pub fn parseMethodGetter(self: *Parser) CompilationError!?AST.Node.Index {
     const return_type = try parseOptionalDataType(self);
     const body = try parseBlock(self) orelse return self.fail(diagnostics.ARG_expected, .{"{"});
 
-    return self.addNode(main_token, AST.Node{ .object_method = .{
+    return self.addNode(cp.tok_idx, AST.Node{ .object_method = .{
         .flags = AST.FunctionFlags.Getter,
         .name = elem_name,
         .params = args.items,
@@ -97,12 +97,12 @@ pub fn parseMethodGetter(self: *Parser) CompilationError!?AST.Node.Index {
 }
 
 pub fn parseMethodSetter(self: *Parser) CompilationError!?AST.Node.Index {
+    const cp = self.checkpoint();
     if (!self.match(TokenType.Set)) {
         return null;
     }
-    const main_token = self.cur_token.dec(1);
     const elem_name = try parseObjectElementName(self) orelse {
-        self.rewind();
+        self.rewindTo(cp);
         return try parseMethod(self);
     };
 
@@ -113,7 +113,7 @@ pub fn parseMethodSetter(self: *Parser) CompilationError!?AST.Node.Index {
     const return_type = try parseOptionalDataType(self);
     const body = try parseBlock(self) orelse return self.fail(diagnostics.ARG_expected, .{"{"});
 
-    return self.addNode(main_token, AST.Node{ .object_method = .{
+    return self.addNode(cp.tok_idx, AST.Node{ .object_method = .{
         .flags = AST.FunctionFlags.Setter,
         .name = elem_name,
         .params = args.items,
@@ -222,9 +222,10 @@ pub fn parseArrowFunction(self: *Parser) CompilationError!?AST.Node.Index {
 }
 
 fn parseArrowFunctionWith1Arg(self: *Parser, main_token: Token.Index, arrow_type: anytype) CompilationError!?AST.Node.Index {
+    const cp = self.checkpoint();
     const arg = try parseIdentifier(self) orelse return null;
     if (!self.match(TokenType.Arrow)) {
-        self.rewind();
+        self.rewindTo(cp);
         return null;
     }
 
@@ -243,7 +244,7 @@ fn parseArrowFunctionWith1Arg(self: *Parser, main_token: Token.Index, arrow_type
 }
 
 fn parseArrowFunctionWithParenthesis(self: *Parser, main_token: Token.Index, arrow_type: anytype) CompilationError!?AST.Node.Index {
-    const cp = self.cur_token;
+    const cp = self.checkpoint();
     if (!self.match(TokenType.OpenParen)) {
         return null;
     }
@@ -659,9 +660,9 @@ test "should parse number, string, bigint and expresions as method names" {
             "[a + b]() {}",
             AST.Node{ .object_method = .{
                 .flags = 0,
-                .name = AST.Node.at(5),
+                .name = AST.Node.at(4),
                 .params = &.{},
-                .body = AST.Node.at(6),
+                .body = AST.Node.at(5),
                 .return_type = AST.Node.Empty,
             } },
         },
@@ -881,7 +882,7 @@ test "should parse arrow function" {
                 .arrow_function = .{
                     .type = .arrow,
                     .params = @constCast(&[_]AST.Node.Index{AST.Node.at(1)}),
-                    .body = AST.Node.at(3),
+                    .body = AST.Node.at(2),
                     .return_type = AST.Node.Empty,
                 },
             });
@@ -902,7 +903,7 @@ test "should parse async arrow function" {
                 .arrow_function = .{
                     .type = .async_arrow,
                     .params = @constCast(&[_]AST.Node.Index{AST.Node.at(1)}),
-                    .body = AST.Node.at(3),
+                    .body = AST.Node.at(2),
                     .return_type = AST.Node.Empty,
                 },
             });

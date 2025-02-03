@@ -196,7 +196,7 @@ test "should parse statements" {
             \\ export default a;
             \\>^
             ,
-            AST.Node{ .@"export" = AST.Node.Export{ .default = AST.Node.at(2) } },
+            AST.Node{ .@"export" = AST.Node.Export{ .default = AST.Node.at(1) } },
         },
         .{
             ";",
@@ -206,13 +206,13 @@ test "should parse statements" {
             \\ if (a) {}
             \\>^
             ,
-            AST.Node{ .@"if" = AST.Node.If{ .expr = AST.Node.at(2), .body = AST.Node.at(3), .@"else" = AST.Node.Empty } },
+            AST.Node{ .@"if" = AST.Node.If{ .expr = AST.Node.at(1), .body = AST.Node.at(2), .@"else" = AST.Node.Empty } },
         },
         .{
             \\ while (a) {}
             \\>^
             ,
-            AST.Node{ .@"while" = AST.Node.While{ .cond = AST.Node.at(2), .body = AST.Node.at(3) } },
+            AST.Node{ .@"while" = AST.Node.While{ .cond = AST.Node.at(1), .body = AST.Node.at(2) } },
         },
         .{
             \\ return;
@@ -246,7 +246,7 @@ test "should parse block" {
 
     try TestParser.run(text, parseBlock, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .block = @constCast(&[_]AST.Node.Index{ AST.Node.at(2), AST.Node.at(4), AST.Node.at(6) }) });
+            try t.expectAST(node, AST.Node{ .block = @constCast(&[_]AST.Node.Index{ AST.Node.at(1), AST.Node.at(2), AST.Node.at(3) }) });
         }
     });
 }
@@ -347,7 +347,7 @@ test "should parse return statement" {
 
     try TestParser.run(text, parseReturnStatement, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .@"return" = AST.Node.at(2) });
+            try t.expectAST(node, AST.Node{ .@"return" = AST.Node.at(1) });
             try t.expectTokenAt(markers[0], node.?);
         }
     });
@@ -362,8 +362,8 @@ test "should parse if statement" {
     try TestParser.run(text, parseIfStatement, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
             try t.expectAST(node, AST.Node{ .@"if" = AST.Node.If{
-                .expr = AST.Node.at(2),
-                .body = AST.Node.at(3),
+                .expr = AST.Node.at(1),
+                .body = AST.Node.at(2),
                 .@"else" = AST.Node.Empty,
             } });
             try t.expectTokenAt(markers[0], node.?);
@@ -380,9 +380,9 @@ test "should parse if statement with else" {
     try TestParser.run(text, parseIfStatement, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
             try t.expectAST(node, AST.Node{ .@"if" = AST.Node.If{
-                .expr = AST.Node.at(2),
-                .body = AST.Node.at(3),
-                .@"else" = AST.Node.at(4),
+                .expr = AST.Node.at(1),
+                .body = AST.Node.at(2),
+                .@"else" = AST.Node.at(3),
             } });
             try t.expectTokenAt(markers[0], node.?);
         }

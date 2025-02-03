@@ -23,10 +23,14 @@ const parseStatement = @import("parser/statements.zig").parseStatement;
 
 const Token = @import("consts.zig").Token;
 const TokenType = @import("consts.zig").TokenType;
-const isAmbigousToken = @import("consts.zig").isAmbigousToken;
-const isAnyTokenAmbigous = @import("consts.zig").isAnyTokenAmbigous;
 
 const Self = @This();
+
+const Checkpoint = struct {
+    tok_idx: Token.Index,
+    node_idx: u32,
+    extra_idx: u32,
+};
 
 gpa: std.mem.Allocator,
 reporter: *Reporter,
@@ -171,16 +175,18 @@ pub fn consumeOrNull(self: *Self, token_type: TokenType) ?Token.Index {
     return null;
 }
 
-pub fn rewind(self: *Self) void {
-    if (self.cur_token.int() >= 1) {
-        self.cur_token = self.cur_token.dec(1);
-        self.tokens.items.len -= 1;
-    }
+pub fn checkpoint(self: *Self) Checkpoint {
+    return Checkpoint{
+        .tok_idx = self.cur_token,
+        .node_idx = @intCast(self.nodes.items.len),
+        .extra_idx = @intCast(self.extra.items.len),
+    };
 }
 
-pub fn rewindTo(self: *Self, token: Token.Index) void {
-    self.cur_token = token;
-    self.tokens.items.len = token.int();
+pub fn rewindTo(self: *Self, cp: Checkpoint) void {
+    self.cur_token = cp.tok_idx;
+    self.nodes.items.len = cp.node_idx;
+    self.extra.items.len = cp.extra_idx;
 }
 
 pub fn setContext(self: *Self, context: Context) void {

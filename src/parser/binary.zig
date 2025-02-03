@@ -226,8 +226,8 @@ test "should parse assignment expression" {
         try TestParser.run(test_case, parseAssignment, struct {
             pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(test_case)) !void {
                 try t.expectAST(node, @unionInit(AST.Node, assignment_map[i][1], .{
-                    .left = AST.Node.at(2),
-                    .right = AST.Node.at(4),
+                    .left = AST.Node.at(1),
+                    .right = AST.Node.at(2),
                 }));
                 try t.expectTokenAt(comptime Marker.fromText(marker), node.?);
             }

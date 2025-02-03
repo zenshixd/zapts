@@ -102,10 +102,9 @@ pub fn parseForClassicStatement(self: *Parser, main_token: Token.Index) Compilat
 }
 
 pub fn parseForInStatement(self: *Parser, main_token: Token.Index) CompilationError!?AST.Node.Index {
-    const cp = self.cur_token;
+    const cp = self.checkpoint();
     const init_node = try parseDeclaration(self) orelse try parseExpression(self) orelse return null;
     if (!self.match(TokenType.In)) {
-        // TODO: there is no cleanup of created AST nodes - need to figure out how to do it
         self.rewindTo(cp);
         return null;
     }
@@ -122,7 +121,7 @@ pub fn parseForInStatement(self: *Parser, main_token: Token.Index) CompilationEr
 }
 
 pub fn parseForOfStatement(self: *Parser, main_token: Token.Index) CompilationError!?AST.Node.Index {
-    const cp = self.cur_token;
+    const cp = self.checkpoint();
 
     const init_node = try parseDeclaration(self) orelse try parseExpression(self) orelse return null;
     if (!self.match(TokenType.Of)) {
@@ -367,10 +366,10 @@ test "should parse classic for loops" {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
             try t.expectAST(node, AST.Node{ .@"for" = .{
                 .classic = .{
-                    .init = AST.Node.at(9),
-                    .cond = AST.Node.at(13),
-                    .post = AST.Node.at(16),
-                    .body = AST.Node.at(17),
+                    .init = AST.Node.at(3),
+                    .cond = AST.Node.at(6),
+                    .post = AST.Node.at(8),
+                    .body = AST.Node.at(9),
                 },
             } });
         }
@@ -436,9 +435,9 @@ test "should parse of for loops" {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
             try t.expectAST(node, AST.Node{ .@"for" = .{
                 .of = .{
-                    .left = AST.Node.at(4),
-                    .right = AST.Node.at(8),
-                    .body = AST.Node.at(9),
+                    .left = AST.Node.at(2),
+                    .right = AST.Node.at(6),
+                    .body = AST.Node.at(7),
                 },
             } });
         }
