@@ -1362,23 +1362,29 @@ test "should parse regex literal with flags" {
 }
 
 test "should return syntax error if regex literal is unclosed" {
-    const buffer = "/[a-z]";
+    const buffers = .{ "/[a-z]", "/[a-z]\n" };
 
     var contexts = [_]ContextChange{
         .{ .add = .regex },
         .{ .none = {} },
     };
-    try expectSyntaxErrorWithContexts(buffer, &contexts, diagnostics.unterminated_regular_expression_literal, .{});
+
+    inline for (buffers) |buffer| {
+        try expectSyntaxErrorWithContexts(buffer, &contexts, diagnostics.unterminated_regular_expression_literal, .{});
+    }
 }
 
 test "should return syntax error if char class bracket is missing" {
-    const buffer = "/[a-z/";
+    const buffers = .{ "/[a-z/", "/[a-z/\n" };
 
     var contexts = [_]ContextChange{
         .{ .add = .regex },
         .{ .none = {} },
     };
-    try expectSyntaxErrorWithContexts(buffer, &contexts, diagnostics.unterminated_regular_expression_literal, .{});
+
+    inline for (buffers) |buffer| {
+        try expectSyntaxErrorWithContexts(buffer, &contexts, diagnostics.unterminated_regular_expression_literal, .{});
+    }
 }
 
 test "should allow to escape forward slash" {
@@ -1390,6 +1396,19 @@ test "should allow to escape forward slash" {
     };
     try expectTokensWithContexts(buffer, &contexts, &[_]ExpectedToken{
         .{ TokenType.RegexLiteral, "/abc\\//" },
+        .{ TokenType.Eof, "" },
+    });
+}
+
+test "should allow to escape brackets" {
+    const buffer = "/abc\\[/";
+
+    var contexts = [_]ContextChange{
+        .{ .add = .regex },
+        .{ .none = {} },
+    };
+    try expectTokensWithContexts(buffer, &contexts, &[_]ExpectedToken{
+        .{ TokenType.RegexLiteral, "/abc\\[/" },
         .{ TokenType.Eof, "" },
     });
 }

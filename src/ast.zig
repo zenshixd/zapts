@@ -476,7 +476,7 @@ pub const Node = union(enum) {
 
     pub const ImportBinding = union(enum) {
         named: []Node.Index,
-        default: Node.Index,
+        default: Token.Index,
         namespace: Token.Index,
     };
 
@@ -1356,7 +1356,7 @@ pub fn getNode(self: Parser, index: Node.Index) Node {
         .import_binding_default => {
             return .{
                 .import_binding = .{
-                    .default = Node.at(node.data.lhs),
+                    .default = Token.at(node.data.lhs),
                 },
             };
         },
@@ -1937,8 +1937,8 @@ test "Pool imports" {
     const name_node = Token.at(1);
     const alias_node = Token.at(2);
     const path_node_index = Token.at(4);
-    const identifier_token = Node.at(2);
-    var named_bindings = [_]Node.Index{identifier_token};
+    const identifier_token = Token.at(2);
+    var named_bindings = [_]Node.Index{Node.at(identifier_token.int())};
     var import_bindings = [_]Node.Index{ Node.at(1), Node.at(2), Node.at(3) };
 
     const tests = .{
@@ -1951,7 +1951,7 @@ test "Pool imports" {
             Raw{ .tag = .import_binding_default, .main_token = Token.at(0), .data = .{ .lhs = identifier_token.int(), .rhs = 0 } },
         },
         .{
-            Node{ .import_binding = .{ .namespace = Token.at(identifier_token.int()) } },
+            Node{ .import_binding = .{ .namespace = identifier_token } },
             Raw{ .tag = .import_binding_namespace, .main_token = Token.at(0), .data = .{ .lhs = identifier_token.int(), .rhs = 0 } },
         },
         .{

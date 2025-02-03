@@ -13,6 +13,7 @@ const parseAssignment = @import("binary.zig").parseAssignment;
 const parseFunctionStatement = @import("functions.zig").parseFunctionStatement;
 const parseAsyncFunctionStatement = @import("functions.zig").parseAsyncFunctionStatement;
 const parseIdentifier = @import("primary.zig").parseIdentifier;
+const parseKeywordAsIdentifier = @import("primary.zig").parseKeywordAsIdentifier;
 
 const TestParser = @import("../test_parser.zig");
 const MarkerList = @import("../test_parser.zig").MarkerList;
@@ -75,12 +76,11 @@ fn parseImportClause(self: *Parser) CompilationError!std.ArrayList(AST.Node.Inde
 }
 
 fn parseImportDefaultBinding(self: *Parser) !?AST.Node.Index {
-    const main_token = self.cur_token;
-    if (try parseIdentifier(self)) |identifier| {
-        return self.addNode(main_token, .{ .import_binding = .{ .default = identifier } });
-    }
+    const identifier = self.consumeOrNull(TokenType.Identifier) orelse
+        parseKeywordAsIdentifier(self) orelse
+        return null;
 
-    return null;
+    return self.addNode(identifier, .{ .import_binding = .{ .default = identifier } });
 }
 
 fn parseImportNamespaceBinding(self: *Parser) !?AST.Node.Index {
@@ -261,7 +261,7 @@ test "should parse default import statement" {
     try TestParser.run(text, parseImportStatement, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
             const full_import = AST.Node.ImportFull{
-                .bindings = @constCast(&[_]AST.Node.Index{AST.Node.at(2)}),
+                .bindings = @constCast(&[_]AST.Node.Index{AST.Node.at(1)}),
                 .path = Token.at(3),
             };
             try t.expectAST(node, AST.Node{
@@ -271,7 +271,7 @@ test "should parse default import statement" {
 
             try t.expectAST(full_import.bindings[0], AST.Node{
                 .import_binding = AST.Node.ImportBinding{
-                    .default = AST.Node.at(1),
+                    .default = Token.at(1),
                 },
             });
             try t.expectTokenAt(markers[1], full_import.bindings[0]);
@@ -455,7 +455,7 @@ test "should parse default import and namespace binding" {
     try TestParser.run(text, parseImportStatement, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
             const full_import = AST.Node.ImportFull{
-                .bindings = @constCast(&[_]AST.Node.Index{ AST.Node.at(2), AST.Node.at(3) }),
+                .bindings = @constCast(&[_]AST.Node.Index{ AST.Node.at(1), AST.Node.at(2) }),
                 .path = Token.at(7),
             };
             try t.expectAST(node, AST.Node{
@@ -467,7 +467,7 @@ test "should parse default import and namespace binding" {
 
             try t.expectAST(full_import.bindings[0], AST.Node{
                 .import_binding = AST.Node.ImportBinding{
-                    .default = AST.Node.at(1),
+                    .default = Token.at(1),
                 },
             });
             try t.expectTokenAt(markers[1], full_import.bindings[0]);
@@ -491,7 +491,7 @@ test "should parse default import and named binding" {
     try TestParser.run(text, parseImportStatement, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
             const full_import = AST.Node.ImportFull{
-                .bindings = @constCast(&[_]AST.Node.Index{ AST.Node.at(2), AST.Node.at(4) }),
+                .bindings = @constCast(&[_]AST.Node.Index{ AST.Node.at(1), AST.Node.at(3) }),
                 .path = Token.at(7),
             };
             try t.expectAST(node, AST.Node{
@@ -503,14 +503,14 @@ test "should parse default import and named binding" {
 
             try t.expectAST(full_import.bindings[0], AST.Node{
                 .import_binding = AST.Node.ImportBinding{
-                    .default = AST.Node.at(1),
+                    .default = Token.at(1),
                 },
             });
             try t.expectTokenAt(markers[1], full_import.bindings[0]);
 
             try t.expectAST(full_import.bindings[1], AST.Node{
                 .import_binding = AST.Node.ImportBinding{
-                    .named = @constCast(&[_]AST.Node.Index{AST.Node.at(3)}),
+                    .named = @constCast(&[_]AST.Node.Index{AST.Node.at(2)}),
                 },
             });
             try t.expectTokenAt(markers[2], full_import.bindings[1]);
