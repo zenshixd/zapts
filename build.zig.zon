@@ -15,10 +15,6 @@
     // Once all dependencies are fetched, `zig build` no longer requires
     // internet connectivity.
     .dependencies = .{
-        .jdz_allocator = .{
-            .url = "https://github.com/joadnacer/jdz_allocator/archive/a34e18705529adf8c1dd6e9afb9f38defa9761e8.tar.gz",
-            .hash = "122041a5792fa779a0aff08c1fb75e8ab847b8ec102666c309dd0fe07550d3249249",
-        },
         // See `zig fetch --save <url>` for a command-line interface for adding dependencies.
         //.example = .{
         //    // When updating this field to a new URL, be sure to delete the corresponding

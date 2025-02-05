@@ -17,24 +17,21 @@ pub const Message = struct {
 };
 
 errors: std.MultiArrayList(Message),
-allocator: std.mem.Allocator,
+arena: std.heap.ArenaAllocator,
 
 pub fn init(allocator: std.mem.Allocator) Self {
     return .{
         .errors = std.MultiArrayList(Message){},
-        .allocator = allocator,
+        .arena = std.heap.ArenaAllocator.init(allocator),
     };
 }
 
 pub fn deinit(self: *Self) void {
-    for (self.errors.items(.message)) |message| {
-        self.allocator.free(message);
-    }
-    self.errors.deinit(self.allocator);
+    self.arena.deinit();
 }
 
 pub fn put(self: *Self, comptime message: diagnostics.DiagnosticMessage, args: anytype, location: Token.Index) void {
-    self.errors.append(self.allocator, Message.init(self.allocator, message, args, location)) catch @panic("Out of memory");
+    self.errors.append(self.arena.allocator(), Message.init(self.arena.allocator(), message, args, location)) catch @panic("Out of memory");
 }
 
 pub fn print(self: *Self, tokens: []const Token) void {

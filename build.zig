@@ -4,18 +4,8 @@ const FileSource = std.build.FileSource;
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
-    const jdz_dep = b.dependency("jdz_allocator", .{
-        .target = target,
-        .optimize = optimize,
-    });
     const zapts_module = b.addModule("zapts", .{
         .root_source_file = b.path("src/compile.zig"),
-        .imports = &.{
-            .{
-                .name = "jdz_allocator",
-                .module = jdz_dep.module("jdz_allocator"),
-            },
-        },
     });
 
     const exe = b.addExecutable(.{
@@ -25,7 +15,6 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    exe.root_module.addImport("jdz_allocator", jdz_dep.module("jdz_allocator"));
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);
@@ -45,7 +34,6 @@ pub fn build(b: *std.Build) void {
         .test_runner = b.path("tests/unit_tests_runner.zig"),
         .filter = b.option([]const u8, "filter", "Filter tests to run"),
     });
-    exe_unit_tests.root_module.addImport("jdz_allocator", jdz_dep.module("jdz_allocator"));
 
     const run_unit_tests = b.addSystemCommand(&.{
         "kcov",
@@ -72,7 +60,6 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .test_runner = b.path("tests/e2e_tests_runner.zig"),
     });
-    compile_tests.root_module.addImport("jdz_allocator", jdz_dep.module("jdz_allocator"));
     compile_tests.root_module.addImport("zapts", zapts_module);
 
     const run_compile_tests = b.addRunArtifact(compile_tests);

@@ -1,10 +1,12 @@
 const std = @import("std");
 const Parser = @import("../parser.zig");
+const ParserError = @import("../parser.zig").ParserError;
 const AST = @import("../ast.zig");
 const Token = @import("../consts.zig").Token;
 const TokenType = @import("../consts.zig").TokenType;
-const CompilationError = @import("../consts.zig").CompilationError;
+const StringId = @import("../string_interner.zig").StringId;
 const diagnostics = @import("../diagnostics.zig");
+const expectEqual = std.testing.expectEqual;
 
 const needsSemicolon = Parser.needsSemicolon;
 
@@ -25,7 +27,7 @@ const TestParser = @import("../test_parser.zig");
 const MarkerList = @import("../test_parser.zig").MarkerList;
 const Marker = @import("../test_parser.zig").Marker;
 
-pub fn parseStatement(self: *Parser) CompilationError!?AST.Node.Index {
+pub fn parseStatement(self: *Parser) ParserError!?AST.Node.Index {
     const node = try parseBlock(self) orelse
         try parseDeclaration(self) orelse
         try parseClassStatement(self) orelse
@@ -47,11 +49,11 @@ pub fn parseStatement(self: *Parser) CompilationError!?AST.Node.Index {
     return node;
 }
 
-pub fn expectStatement(self: *Parser) CompilationError!AST.Node.Index {
+pub fn expectStatement(self: *Parser) ParserError!AST.Node.Index {
     return try parseStatement(self) orelse self.fail(diagnostics.statement_expected, .{});
 }
 
-pub fn parseBlock(self: *Parser) CompilationError!?AST.Node.Index {
+pub fn parseBlock(self: *Parser) ParserError!?AST.Node.Index {
     const main_token = self.cur_token;
     if (!self.match(TokenType.OpenCurlyBrace)) {
         return null;
@@ -81,7 +83,7 @@ pub fn parseBlock(self: *Parser) CompilationError!?AST.Node.Index {
     return self.addNode(main_token, AST.Node{ .block = statements.items });
 }
 
-pub fn parseDeclaration(self: *Parser) CompilationError!?AST.Node.Index {
+pub fn parseDeclaration(self: *Parser) ParserError!?AST.Node.Index {
     const main_token = self.cur_token;
     const kind: AST.Node.DeclarationKind = if (self.match(TokenType.Var))
         .@"var"
@@ -107,7 +109,7 @@ pub fn parseDeclaration(self: *Parser) CompilationError!?AST.Node.Index {
 
         try nodes.append(self.addNode(binding_main_token, AST.Node{
             .decl_binding = .{
-                .name = identifier,
+                .name = self.internStr(identifier),
                 .decl_type = identifier_data_type,
                 .value = value,
             },
@@ -125,7 +127,7 @@ pub fn parseDeclaration(self: *Parser) CompilationError!?AST.Node.Index {
     });
 }
 
-fn parseReturnStatement(self: *Parser) CompilationError!?AST.Node.Index {
+fn parseReturnStatement(self: *Parser) ParserError!?AST.Node.Index {
     const main_token = self.cur_token;
     if (!self.match(TokenType.Return)) {
         return null;
@@ -138,7 +140,7 @@ fn parseReturnStatement(self: *Parser) CompilationError!?AST.Node.Index {
     return self.addNode(main_token, AST.Node{ .@"return" = try expectExpression(self) });
 }
 
-fn parseEmptyStatement(self: *Parser) CompilationError!?AST.Node.Index {
+fn parseEmptyStatement(self: *Parser) ParserError!?AST.Node.Index {
     if (!self.match(TokenType.Semicolon)) {
         return null;
     }
@@ -146,7 +148,7 @@ fn parseEmptyStatement(self: *Parser) CompilationError!?AST.Node.Index {
     return AST.Node.Empty;
 }
 
-fn parseIfStatement(self: *Parser) CompilationError!?AST.Node.Index {
+fn parseIfStatement(self: *Parser) ParserError!?AST.Node.Index {
     const main_token = self.cur_token;
     if (!self.match(TokenType.If)) {
         return null;
@@ -180,7 +182,7 @@ test "should parse statements" {
             ,
             AST.Node{ .class = .{
                 .abstract = false,
-                .name = Token.at(1),
+                .name = StringId.at(1),
                 .super_class = AST.Node.Empty,
                 .implements = &.{},
                 .body = &.{},
@@ -190,17 +192,13 @@ test "should parse statements" {
             \\ import 'a';
             \\>^
             ,
-            AST.Node{ .import = .{ .simple = Token.at(1) } },
+            AST.Node{ .import = .{ .simple = StringId.at(1) } },
         },
         .{
             \\ export default a;
             \\>^
             ,
             AST.Node{ .@"export" = AST.Node.Export{ .default = AST.Node.at(1) } },
-        },
-        .{
-            ";",
-            AST.Node{ .root = &.{} },
         },
         .{
             \\ if (a) {}
@@ -224,7 +222,7 @@ test "should parse statements" {
             \\ a;
             \\>^
             ,
-            AST.Node{ .simple_value = .{ .kind = .identifier } },
+            AST.Node{ .simple_value = .{ .kind = .identifier, .id = StringId.at(1) } },
         },
     };
 
@@ -239,6 +237,16 @@ test "should parse statements" {
             }
         });
     }
+}
+
+test "should parse empty statement" {
+    const text = ";";
+
+    try TestParser.run(text, parseEmptyStatement, struct {
+        pub fn expect(_: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+            try expectEqual(AST.Node.Empty, node);
+        }
+    });
 }
 
 test "should parse block" {
@@ -258,7 +266,7 @@ test "should return syntax error if closing bracket for block is missing" {
     ;
 
     try TestParser.runAny(text, parseBlock, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+        pub fn expect(t: TestParser, nodeOrError: ParserError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
             try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{"}"}, markers[0]);
         }
     });
@@ -290,27 +298,27 @@ test "should parse declarations" {
         .{
             "const a = 1;",
             &[_]AST.Raw{
-                AST.Raw{ .tag = .simple_value, .main_token = Token.at(3), .data = .{ .lhs = 3, .rhs = 0 } },
-                AST.Raw{ .tag = .decl_binding, .main_token = Token.at(1), .data = .{ .lhs = 1, .rhs = 0 } },
+                AST.Raw{ .tag = .simple_value, .main_token = Token.at(3), .data = .{ .lhs = 3, .rhs = 1 } },
+                AST.Raw{ .tag = .decl_binding, .main_token = Token.at(1), .data = .{ .lhs = 2, .rhs = 0 } },
                 AST.Raw{ .tag = .const_decl, .main_token = Token.at(0), .data = .{ .lhs = 2, .rhs = 3 } },
             },
         },
         .{
             "const a = 1, b = 2;",
             &[_]AST.Raw{
-                AST.Raw{ .tag = .simple_value, .main_token = Token.at(3), .data = .{ .lhs = 3, .rhs = 0 } },
-                AST.Raw{ .tag = .decl_binding, .main_token = Token.at(1), .data = .{ .lhs = 1, .rhs = 0 } },
-                AST.Raw{ .tag = .simple_value, .main_token = Token.at(7), .data = .{ .lhs = 3, .rhs = 0 } },
-                AST.Raw{ .tag = .decl_binding, .main_token = Token.at(5), .data = .{ .lhs = 5, .rhs = 2 } },
+                AST.Raw{ .tag = .simple_value, .main_token = Token.at(3), .data = .{ .lhs = 3, .rhs = 1 } },
+                AST.Raw{ .tag = .decl_binding, .main_token = Token.at(1), .data = .{ .lhs = 2, .rhs = 0 } },
+                AST.Raw{ .tag = .simple_value, .main_token = Token.at(7), .data = .{ .lhs = 3, .rhs = 3 } },
+                AST.Raw{ .tag = .decl_binding, .main_token = Token.at(5), .data = .{ .lhs = 4, .rhs = 2 } },
                 AST.Raw{ .tag = .const_decl, .main_token = Token.at(0), .data = .{ .lhs = 4, .rhs = 6 } },
             },
         },
         .{
             "const a: number = 1;",
             &[_]AST.Raw{
-                AST.Raw{ .tag = .simple_type, .main_token = Token.at(3), .data = .{ .lhs = 3, .rhs = 0 } },
-                AST.Raw{ .tag = .simple_value, .main_token = Token.at(5), .data = .{ .lhs = 3, .rhs = 0 } },
-                AST.Raw{ .tag = .decl_binding, .main_token = Token.at(1), .data = .{ .lhs = 1, .rhs = 0 } },
+                AST.Raw{ .tag = .simple_type, .main_token = Token.at(3), .data = .{ .lhs = 3, .rhs = 1 } },
+                AST.Raw{ .tag = .simple_value, .main_token = Token.at(5), .data = .{ .lhs = 3, .rhs = 2 } },
+                AST.Raw{ .tag = .decl_binding, .main_token = Token.at(1), .data = .{ .lhs = 3, .rhs = 0 } },
                 AST.Raw{ .tag = .const_decl, .main_token = Token.at(0), .data = .{ .lhs = 2, .rhs = 3 } },
             },
         },
@@ -396,7 +404,7 @@ test "should return syntax error if open paren is missing" {
     ;
 
     try TestParser.runAny(text, parseIfStatement, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+        pub fn expect(t: TestParser, nodeOrError: ParserError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
             try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{"("}, markers[0]);
         }
     });
@@ -409,7 +417,7 @@ test "should return syntax error if close paren is missing" {
     ;
 
     try TestParser.runAny(text, parseIfStatement, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+        pub fn expect(t: TestParser, nodeOrError: ParserError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
             try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{")"}, markers[0]);
         }
     });
@@ -422,7 +430,7 @@ test "should return syntax error if body is missing" {
     ;
 
     try TestParser.runAny(text, parseIfStatement, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+        pub fn expect(t: TestParser, nodeOrError: ParserError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
             try t.expectSyntaxErrorAt(nodeOrError, diagnostics.statement_expected, .{}, markers[0]);
         }
     });

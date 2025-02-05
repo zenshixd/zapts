@@ -1,9 +1,9 @@
 const std = @import("std");
 const Parser = @import("../parser.zig");
+const ParserError = @import("../parser.zig").ParserError;
 const AST = @import("../ast.zig");
 const TokenType = @import("../consts.zig").TokenType;
 
-const CompilationError = @import("../consts.zig").CompilationError;
 const diagnostics = @import("../diagnostics.zig");
 
 const parseType = @import("types.zig").parseType;
@@ -38,7 +38,7 @@ const assignment_map = .{
     .{ TokenType.LessThanLessThanEqual, "bitwise_shift_left_assign" },
     .{ TokenType.QuestionMarkQuestionMarkEqual, "coalesce_assign" },
 };
-pub fn parseAssignment(parser: *Parser) CompilationError!?AST.Node.Index {
+pub fn parseAssignment(parser: *Parser) ParserError!?AST.Node.Index {
     const node = try parseAsyncArrowFunction(parser) orelse
         try parseArrowFunction(parser) orelse
         try parseConditionalExpression(parser) orelse
@@ -58,7 +58,7 @@ pub fn parseAssignment(parser: *Parser) CompilationError!?AST.Node.Index {
     return node;
 }
 
-pub fn expectAssignment(parser: *Parser) CompilationError!AST.Node.Index {
+pub fn expectAssignment(parser: *Parser) ParserError!AST.Node.Index {
     return try parseAssignment(parser) orelse parser.fail(diagnostics.expression_expected, .{});
 }
 
@@ -118,11 +118,11 @@ fn binaryOperatorMatches(parser: *Parser, operator_index: comptime_int) bool {
     return parser.match(binary_operators[operator_index][0]);
 }
 
-pub fn parseBinaryExpression(parser: *Parser) CompilationError!?AST.Node.Index {
+pub fn parseBinaryExpression(parser: *Parser) ParserError!?AST.Node.Index {
     return try parseBinaryExpressionExtra(parser, 0);
 }
 
-pub fn parseBinaryExpressionExtra(parser: *Parser, operator_index: comptime_int) CompilationError!?AST.Node.Index {
+pub fn parseBinaryExpressionExtra(parser: *Parser, operator_index: comptime_int) ParserError!?AST.Node.Index {
     var node = if (operator_index + 1 < binary_operators.len)
         try parseBinaryExpressionExtra(parser, operator_index + 1) orelse return null
     else
@@ -145,7 +145,7 @@ pub fn parseBinaryExpressionExtra(parser: *Parser, operator_index: comptime_int)
     return node;
 }
 
-pub fn expectBinaryExpressionExtra(parser: *Parser, operator_index: comptime_int) CompilationError!AST.Node.Index {
+pub fn expectBinaryExpressionExtra(parser: *Parser, operator_index: comptime_int) ParserError!AST.Node.Index {
     return try parseBinaryExpressionExtra(parser, operator_index) orelse parser.fail(diagnostics.expression_expected, .{});
 }
 

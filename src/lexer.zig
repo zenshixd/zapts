@@ -1,6 +1,5 @@
 const std = @import("std");
 const consts = @import("consts.zig");
-const CompilationError = @import("consts.zig").CompilationError;
 
 const Reporter = @import("reporter.zig");
 const diagnostics = @import("diagnostics.zig");
@@ -23,6 +22,7 @@ const expectEqualStrings = std.testing.expectEqualStrings;
 
 const Self = @This();
 const Lexer = @This();
+const LexerError = error{ SyntaxError, OutOfMemory };
 
 pub const Context = enum { regex, template };
 pub const ContextSet = std.EnumSet(Context);
@@ -32,19 +32,9 @@ pub const ContextChange = union(enum) {
     remove: Context,
 };
 
-allocator: Allocator,
-reporter: *Reporter,
 buffer: [:0]const u8,
-context: ContextSet,
-
-pub fn init(allocator: Allocator, buffer: [:0]const u8, reporter: *Reporter) Self {
-    return .{
-        .allocator = allocator,
-        .reporter = reporter,
-        .buffer = buffer,
-        .context = ContextSet.initEmpty(),
-    };
-}
+reporter: *Reporter,
+context: ContextSet = ContextSet.initEmpty(),
 
 const State = enum {
     start,
@@ -103,9 +93,9 @@ pub fn fail(self: *Self, index: u32, comptime error_msg: diagnostics.DiagnosticM
     self.reporter.put(error_msg, args, Token.at(index));
 }
 
-pub fn tokenize(self: *Self) []const Token {
+pub fn tokenize(self: *Self, gpa: std.mem.Allocator) []const Token {
     var index: u32 = 0;
-    var tokens = std.ArrayList(Token).init(self.allocator);
+    var tokens = std.ArrayList(Token).init(gpa);
     errdefer tokens.deinit();
 
     while (true) {
@@ -120,10 +110,10 @@ pub fn tokenize(self: *Self) []const Token {
     return tokens.toOwnedSlice() catch unreachable;
 }
 
-pub fn tokenizeWithContexts(self: *Self, contextChanges: []ContextChange) []const Token {
+pub fn tokenizeWithContexts(self: *Self, gpa: std.mem.Allocator, contextChanges: []ContextChange) []const Token {
     var tok_index: u32 = 0;
     var index: u32 = 0;
-    var tokens = std.ArrayList(Token).init(self.allocator);
+    var tokens = std.ArrayList(Token).init(gpa);
     errdefer tokens.deinit();
 
     while (true) {
@@ -827,12 +817,21 @@ fn is_operator(s: u8) bool {
 
 const ExpectedToken = struct { TokenType, []const u8 };
 
-fn expectTokens(text: [:0]const u8, expected: []const ExpectedToken) !void {
-    var reporter = Reporter.init(std.testing.allocator);
-    defer reporter.deinit();
+var test_reporter: Reporter = undefined;
+fn testInstance(text: [:0]const u8) Self {
+    test_reporter = Reporter.init(std.testing.allocator);
 
-    var lexer = Lexer.init(std.testing.allocator, text, &reporter);
-    const tokens = lexer.tokenize();
+    return .{
+        .reporter = &test_reporter,
+        .buffer = text,
+    };
+}
+
+fn expectTokens(text: [:0]const u8, expected: []const ExpectedToken) !void {
+    var lexer = testInstance(text);
+    defer lexer.reporter.deinit();
+
+    const tokens = lexer.tokenize(std.testing.allocator);
     defer std.testing.allocator.free(tokens);
 
     for (expected, 0..) |expected_token, i| {
@@ -854,12 +853,10 @@ fn expectTokens(text: [:0]const u8, expected: []const ExpectedToken) !void {
 }
 
 fn expectTokensWithContexts(text: [:0]const u8, contextsList: []ContextChange, expected: []const ExpectedToken) !void {
-    var reporter = Reporter.init(std.testing.allocator);
-    defer reporter.deinit();
+    var lexer = testInstance(text);
+    defer lexer.reporter.deinit();
 
-    var lexer = Lexer.init(std.testing.allocator, text, &reporter);
-
-    const tokens = lexer.tokenizeWithContexts(contextsList);
+    const tokens = lexer.tokenizeWithContexts(std.testing.allocator, contextsList);
     defer std.testing.allocator.free(tokens);
 
     for (expected, 0..) |expected_token, i| {
@@ -881,30 +878,27 @@ fn expectTokensWithContexts(text: [:0]const u8, contextsList: []ContextChange, e
 }
 
 fn expectSyntaxError(text: [:0]const u8, comptime expected_error: diagnostics.DiagnosticMessage, args: anytype) !void {
-    var reporter = Reporter.init(std.testing.allocator);
-    defer reporter.deinit();
+    var lexer = testInstance(text);
+    defer lexer.reporter.deinit();
 
-    var lexer = Lexer.init(std.testing.allocator, text, &reporter);
-    const tokens = lexer.tokenize();
+    const tokens = lexer.tokenize(std.testing.allocator);
     defer std.testing.allocator.free(tokens);
 
     var buffer: [512]u8 = undefined;
     const expected_string = try std.fmt.bufPrint(&buffer, expected_error.format(), args);
-    try expectEqualStrings(expected_string, reporter.errors.items(.message)[0]);
+    try expectEqualStrings(expected_string, lexer.reporter.errors.items(.message)[0]);
 }
 
 fn expectSyntaxErrorWithContexts(text: [:0]const u8, contextsList: []ContextChange, comptime expected_error: diagnostics.DiagnosticMessage, args: anytype) !void {
-    var reporter = Reporter.init(std.testing.allocator);
-    defer reporter.deinit();
+    var lexer = testInstance(text);
+    defer lexer.reporter.deinit();
 
-    var lexer = Lexer.init(std.testing.allocator, text, &reporter);
-
-    const tokens = lexer.tokenizeWithContexts(contextsList);
+    const tokens = lexer.tokenizeWithContexts(std.testing.allocator, contextsList);
     defer std.testing.allocator.free(tokens);
 
     var buffer: [512]u8 = undefined;
     const expected_string = try std.fmt.bufPrint(&buffer, expected_error.format(), args);
-    try expectEqualStrings(expected_string, reporter.errors.items(.message)[0]);
+    try expectEqualStrings(expected_string, lexer.reporter.errors.items(.message)[0]);
 }
 
 test "is_whitespace" {

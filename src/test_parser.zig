@@ -5,7 +5,7 @@ const Token = @import("consts.zig").Token;
 const TokenType = @import("consts.zig").TokenType;
 const diagnostics = @import("diagnostics.zig");
 const Parser = @import("parser.zig");
-const CompilationError = @import("consts.zig").CompilationError;
+const ParserError = @import("parser.zig").ParserError;
 const Reporter = @import("reporter.zig");
 
 const ReturnTypeOf = @import("meta.zig").ReturnTypeOf;
@@ -21,24 +21,20 @@ const expectError = std.testing.expectError;
 
 const TestParser = @This();
 
-reporter: *Reporter,
 parser: *Parser,
 
 pub fn run(comptime text: []const u8, comptime fn_ptr: anytype, Expects: type) !void {
-    var reporter = Reporter.init(std.testing.allocator);
-    defer reporter.deinit();
-
     const sourceText, const markers = comptime getMarkers(text);
-    var parser = try Parser.init(std.testing.allocator, &sourceText, &reporter);
-    defer parser.deinit();
+    var parser = Parser.testInstance(&sourceText);
+    defer parser.testDeinit();
 
     const node = fn_ptr(&parser) catch |err| {
         std.debug.print("SyntaxError, text: {s}\n", .{sourceText});
-        reporter.print(parser.tokens.items);
+        parser.reporter.print(parser.tokens.items);
         return err;
     };
 
-    const t = TestParser{ .parser = &parser, .reporter = &reporter };
+    const t = TestParser{ .parser = &parser };
     Expects.expect(t, node, markers) catch |err| {
         // LCOV_EXCL_START
         std.debug.print("Parsing failed, text: {s}\n", .{sourceText});
@@ -48,15 +44,12 @@ pub fn run(comptime text: []const u8, comptime fn_ptr: anytype, Expects: type) !
 }
 
 pub fn runAny(comptime text: []const u8, comptime fn_ptr: anytype, Expects: type) !void {
-    var reporter = Reporter.init(std.testing.allocator);
-    defer reporter.deinit();
-
     const sourceText, const markers = comptime getMarkers(text);
-    var parser = try Parser.init(std.testing.allocator, &sourceText, &reporter);
-    defer parser.deinit();
+    var parser = Parser.testInstance(&sourceText);
+    defer parser.testDeinit();
 
     const nodeOrError = fn_ptr(&parser);
-    const t = TestParser{ .parser = &parser, .reporter = &reporter };
+    const t = TestParser{ .parser = &parser };
     Expects.expect(t, nodeOrError, markers) catch |err| {
         // LCOV_EXCL_START
         std.debug.print("Parsing failed, text: {s}\n", .{sourceText});
@@ -217,11 +210,11 @@ pub fn expectSyntaxError(
     comptime expected_error: diagnostics.DiagnosticMessage,
     args: anytype,
 ) !void {
-    try expectError(CompilationError.SyntaxError, nodeOrError);
+    try expectError(ParserError.SyntaxError, nodeOrError);
     const expected_string = try std.fmt.allocPrint(std.testing.allocator, expected_error.format(), args);
     defer std.testing.allocator.free(expected_string);
 
-    try expectEqualStrings(t.reporter.errors.items(.message)[0], expected_string);
+    try expectEqualStrings(t.parser.reporter.errors.items(.message)[0], expected_string);
 }
 
 pub fn expectSyntaxErrorAt(
@@ -233,7 +226,7 @@ pub fn expectSyntaxErrorAt(
 ) !void {
     try t.expectSyntaxError(nodeOrError, expected_error, args);
 
-    const loc = t.reporter.errors.items(.location)[0];
+    const loc = t.parser.reporter.errors.items(.location)[0];
     const error_token = t.parser.tokens.items[loc.int()];
 
     if (error_token.start != expected_location.pos) {

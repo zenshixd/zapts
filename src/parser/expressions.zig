@@ -1,9 +1,10 @@
 const std = @import("std");
 const Parser = @import("../parser.zig");
+const ParserError = @import("../parser.zig").ParserError;
 const AST = @import("../ast.zig");
 const Token = @import("../consts.zig").Token;
 const TokenType = @import("../consts.zig").TokenType;
-const CompilationError = @import("../consts.zig").CompilationError;
+const StringId = @import("../string_interner.zig").StringId;
 const diagnostics = @import("../diagnostics.zig");
 
 const parseAssignment = @import("binary.zig").parseAssignment;
@@ -17,7 +18,7 @@ const TestParser = @import("../test_parser.zig");
 const MarkerList = @import("../test_parser.zig").MarkerList;
 const Marker = @import("../test_parser.zig").Marker;
 
-pub fn parseExpression(self: *Parser) CompilationError!?AST.Node.Index {
+pub fn parseExpression(self: *Parser) ParserError!?AST.Node.Index {
     var node = try parseAssignment(self) orelse return null;
     while (self.match(TokenType.Comma)) {
         const new_node = self.addNode(self.cur_token.dec(1), AST.Node{
@@ -33,11 +34,11 @@ pub fn parseExpression(self: *Parser) CompilationError!?AST.Node.Index {
     return node;
 }
 
-pub fn expectExpression(self: *Parser) CompilationError!AST.Node.Index {
+pub fn expectExpression(self: *Parser) ParserError!AST.Node.Index {
     return try parseExpression(self) orelse self.fail(diagnostics.expression_expected, .{});
 }
 
-pub fn parseConditionalExpression(self: *Parser) CompilationError!?AST.Node.Index {
+pub fn parseConditionalExpression(self: *Parser) ParserError!?AST.Node.Index {
     var node = try parseShortCircuitExpression(self) orelse return null;
 
     const main_token = self.cur_token;
@@ -57,7 +58,7 @@ pub fn parseConditionalExpression(self: *Parser) CompilationError!?AST.Node.Inde
     return node;
 }
 
-pub fn parseShortCircuitExpression(self: *Parser) CompilationError!?AST.Node.Index {
+pub fn parseShortCircuitExpression(self: *Parser) ParserError!?AST.Node.Index {
     return try parseBinaryExpression(self);
 }
 const unary_operators = .{
@@ -69,7 +70,7 @@ const unary_operators = .{
     .{ .token = TokenType.Void, .tag = "void" },
     .{ .token = TokenType.Delete, .tag = "delete" },
 };
-pub fn parseUnary(self: *Parser) CompilationError!?AST.Node.Index {
+pub fn parseUnary(self: *Parser) ParserError!?AST.Node.Index {
     inline for (unary_operators) |unary_operator| {
         const main_token = self.cur_token;
         if (self.match(unary_operator.token)) {
@@ -81,11 +82,11 @@ pub fn parseUnary(self: *Parser) CompilationError!?AST.Node.Index {
     return try parseUpdateExpression(self) orelse return null;
 }
 
-pub fn expectUnary(self: *Parser) CompilationError!AST.Node.Index {
+pub fn expectUnary(self: *Parser) ParserError!AST.Node.Index {
     return try parseUnary(self) orelse self.fail(diagnostics.expression_expected, .{});
 }
 
-pub fn parseUpdateExpression(self: *Parser) CompilationError!?AST.Node.Index {
+pub fn parseUpdateExpression(self: *Parser) ParserError!?AST.Node.Index {
     if (self.match(TokenType.PlusPlus)) {
         return self.addNode(self.cur_token.dec(1), AST.Node{
             .plusplus_pre = try expectUnary(self),
@@ -111,11 +112,11 @@ pub fn parseUpdateExpression(self: *Parser) CompilationError!?AST.Node.Index {
     return node;
 }
 
-pub fn parseLeftHandSideExpression(self: *Parser) CompilationError!?AST.Node.Index {
+pub fn parseLeftHandSideExpression(self: *Parser) ParserError!?AST.Node.Index {
     return try parseCallableExpression(self);
 }
 
-pub fn parseNewExpression(self: *Parser) CompilationError!?AST.Node.Index {
+pub fn parseNewExpression(self: *Parser) ParserError!?AST.Node.Index {
     const main_token = self.cur_token;
     if (!self.match(TokenType.New)) {
         return null;
@@ -126,7 +127,7 @@ pub fn parseNewExpression(self: *Parser) CompilationError!?AST.Node.Index {
     });
 }
 
-pub fn parseMemberExpression(self: *Parser) CompilationError!?AST.Node.Index {
+pub fn parseMemberExpression(self: *Parser) ParserError!?AST.Node.Index {
     var node = try parseNewExpression(self) orelse
         try parsePrimaryExpression(self) orelse
         return null;
@@ -141,7 +142,7 @@ pub fn parseMemberExpression(self: *Parser) CompilationError!?AST.Node.Index {
     return node;
 }
 
-pub fn parseCallableExpression(self: *Parser) CompilationError!?AST.Node.Index {
+pub fn parseCallableExpression(self: *Parser) ParserError!?AST.Node.Index {
     var main_token = self.cur_token;
     var node = try parseMemberExpression(self) orelse return null;
 
@@ -172,11 +173,11 @@ pub fn parseCallableExpression(self: *Parser) CompilationError!?AST.Node.Index {
     return node;
 }
 
-pub fn expectCallableExpression(self: *Parser) CompilationError!AST.Node.Index {
+pub fn expectCallableExpression(self: *Parser) ParserError!AST.Node.Index {
     return try parseCallableExpression(self) orelse self.fail(diagnostics.expression_expected, .{});
 }
 
-pub fn parseIndexAccess(self: *Parser, expr: AST.Node.Index) CompilationError!?AST.Node.Index {
+pub fn parseIndexAccess(self: *Parser, expr: AST.Node.Index) ParserError!?AST.Node.Index {
     const main_token = self.cur_token;
     if (!self.match(TokenType.OpenSquareBracket)) {
         return null;
@@ -194,7 +195,7 @@ pub fn parseIndexAccess(self: *Parser, expr: AST.Node.Index) CompilationError!?A
     return node;
 }
 
-pub fn parsePropertyAccess(self: *Parser, expr: AST.Node.Index) CompilationError!?AST.Node.Index {
+pub fn parsePropertyAccess(self: *Parser, expr: AST.Node.Index) ParserError!?AST.Node.Index {
     const main_token = self.cur_token;
     if (!self.match(TokenType.Dot)) {
         return null;
@@ -252,7 +253,7 @@ test "should return syntax error if short circuit expression is missing" {
     ;
 
     try TestParser.runAny(text, parseExpression, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+        pub fn expect(t: TestParser, nodeOrError: ParserError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
             try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{":"}, markers[0]);
         }
     });
@@ -351,7 +352,7 @@ test "should return syntax error if left hand side expression is missing" {
     ;
 
     try TestParser.runAny(text, parseLeftHandSideExpression, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+        pub fn expect(t: TestParser, nodeOrError: ParserError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
             try t.expectSyntaxErrorAt(nodeOrError, diagnostics.expression_expected, .{}, markers[0]);
         }
     });
@@ -389,7 +390,7 @@ test "should parse member expression" {
             \\ a
             \\>^
             ,
-            AST.Node{ .simple_value = .{ .kind = .identifier } },
+            AST.Node{ .simple_value = .{ .kind = .identifier, .id = StringId.at(1) } },
         },
         .{
             \\a.b
@@ -422,7 +423,7 @@ test "should return syntax error if property access key is not identifier" {
     ;
 
     try TestParser.runAny(text, parseMemberExpression, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+        pub fn expect(t: TestParser, nodeOrError: ParserError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
             try t.expectSyntaxErrorAt(nodeOrError, diagnostics.identifier_expected, .{}, markers[0]);
         }
     });
@@ -435,10 +436,10 @@ test "should parse chained member expression" {
             \\>      ^
             ,
             &[_]AST.Raw{
-                .{ .tag = .simple_value, .main_token = Token.at(1), .data = .{ .lhs = 1, .rhs = 0 } },
+                .{ .tag = .simple_value, .main_token = Token.at(1), .data = .{ .lhs = 1, .rhs = 1 } },
                 .{ .tag = .call_expr, .main_token = Token.at(1), .data = .{ .lhs = 1, .rhs = 0 } },
                 .{ .tag = .new_expr, .main_token = Token.at(0), .data = .{ .lhs = 2, .rhs = 0 } },
-                .{ .tag = .simple_value, .main_token = Token.at(5), .data = .{ .lhs = 1, .rhs = 0 } },
+                .{ .tag = .simple_value, .main_token = Token.at(5), .data = .{ .lhs = 1, .rhs = 2 } },
                 .{ .tag = .property_access, .main_token = Token.at(4), .data = .{ .lhs = 3, .rhs = 4 } },
             },
         },
@@ -447,8 +448,8 @@ test "should parse chained member expression" {
             \\>^
             ,
             &[_]AST.Raw{
-                .{ .tag = .simple_value, .main_token = Token.at(0), .data = .{ .lhs = 1, .rhs = 0 } },
-                .{ .tag = .simple_value, .main_token = Token.at(2), .data = .{ .lhs = 1, .rhs = 0 } },
+                .{ .tag = .simple_value, .main_token = Token.at(0), .data = .{ .lhs = 1, .rhs = 1 } },
+                .{ .tag = .simple_value, .main_token = Token.at(2), .data = .{ .lhs = 1, .rhs = 2 } },
                 .{ .tag = .property_access, .main_token = Token.at(1), .data = .{ .lhs = 1, .rhs = 2 } },
             },
         },
@@ -538,7 +539,7 @@ test "should return syntax error if comma is missing between params" {
     ;
 
     try TestParser.runAny(text, parseCallableExpression, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+        pub fn expect(t: TestParser, nodeOrError: ParserError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
             try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{","}, markers[0]);
         }
     });

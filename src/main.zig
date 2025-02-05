@@ -1,16 +1,8 @@
 const std = @import("std");
 const compile = @import("compile.zig").compile;
-const raw_allocator = @import("./raw_allocator.zig");
-const JdzAllocator = @import("jdz_allocator").JdzAllocator;
 
 pub fn main() !void {
-    var jdz = JdzAllocator(.{
-        .backing_allocator = raw_allocator.allocator(),
-    }).init();
-    defer jdz.deinit();
-
-    const allocator = jdz.allocator();
-
+    const allocator = std.heap.page_allocator;
     const args = try std.process.argsAlloc(allocator);
     defer std.process.argsFree(allocator, args);
 
@@ -41,4 +33,7 @@ test {
     _ = @import("compile.zig");
     _ = @import("lexer.zig");
     _ = @import("parser.zig");
+    _ = @import("sema.zig");
+    _ = @import("string_interner.zig");
+    _ = @import("test_parser.zig");
 }

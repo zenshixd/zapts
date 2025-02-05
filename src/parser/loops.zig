@@ -1,9 +1,9 @@
 const std = @import("std");
 const Token = @import("../consts.zig").Token;
 const Parser = @import("../parser.zig");
+const ParserError = @import("../parser.zig").ParserError;
 const AST = @import("../ast.zig");
 const TokenType = @import("../consts.zig").TokenType;
-const CompilationError = @import("../consts.zig").CompilationError;
 const diagnostics = @import("../diagnostics.zig");
 
 const parseStatement = @import("statements.zig").parseStatement;
@@ -22,13 +22,13 @@ const expectEqualDeep = std.testing.expectEqualDeep;
 const expectEqualStrings = std.testing.expectEqualStrings;
 const expectError = std.testing.expectError;
 
-pub fn parseBreakableStatement(parser: *Parser) CompilationError!?AST.Node.Index {
+pub fn parseBreakableStatement(parser: *Parser) ParserError!?AST.Node.Index {
     return try parseDoWhileStatement(parser) orelse
         try parseWhileStatement(parser) orelse
         try parseForStatement(parser);
 }
 
-pub fn parseDoWhileStatement(self: *Parser) CompilationError!?AST.Node.Index {
+pub fn parseDoWhileStatement(self: *Parser) ParserError!?AST.Node.Index {
     const main_token = self.cur_token;
     if (!self.match(TokenType.Do)) {
         return null;
@@ -49,7 +49,7 @@ pub fn parseDoWhileStatement(self: *Parser) CompilationError!?AST.Node.Index {
     });
 }
 
-pub fn parseWhileStatement(self: *Parser) CompilationError!?AST.Node.Index {
+pub fn parseWhileStatement(self: *Parser) ParserError!?AST.Node.Index {
     const main_token = self.cur_token;
     if (!self.match(TokenType.While)) {
         return null;
@@ -67,7 +67,7 @@ pub fn parseWhileStatement(self: *Parser) CompilationError!?AST.Node.Index {
     });
 }
 
-pub fn parseForStatement(self: *Parser) CompilationError!?AST.Node.Index {
+pub fn parseForStatement(self: *Parser) ParserError!?AST.Node.Index {
     const main_token = self.cur_token;
     if (!self.match(TokenType.For)) {
         return null;
@@ -82,7 +82,7 @@ pub fn parseForStatement(self: *Parser) CompilationError!?AST.Node.Index {
     return for_inner;
 }
 
-pub fn parseForClassicStatement(self: *Parser, main_token: Token.Index) CompilationError!AST.Node.Index {
+pub fn parseForClassicStatement(self: *Parser, main_token: Token.Index) ParserError!AST.Node.Index {
     const init_node = if (self.peekMatch(TokenType.Semicolon)) AST.Node.Empty else try parseDeclaration(self) orelse try expectExpression(self);
 
     _ = try self.consume(TokenType.Semicolon, diagnostics.ARG_expected, .{";"});
@@ -101,7 +101,7 @@ pub fn parseForClassicStatement(self: *Parser, main_token: Token.Index) Compilat
     } });
 }
 
-pub fn parseForInStatement(self: *Parser, main_token: Token.Index) CompilationError!?AST.Node.Index {
+pub fn parseForInStatement(self: *Parser, main_token: Token.Index) ParserError!?AST.Node.Index {
     const cp = self.checkpoint();
     const init_node = try parseDeclaration(self) orelse try parseExpression(self) orelse return null;
     if (!self.match(TokenType.In)) {
@@ -120,7 +120,7 @@ pub fn parseForInStatement(self: *Parser, main_token: Token.Index) CompilationEr
     } });
 }
 
-pub fn parseForOfStatement(self: *Parser, main_token: Token.Index) CompilationError!?AST.Node.Index {
+pub fn parseForOfStatement(self: *Parser, main_token: Token.Index) ParserError!?AST.Node.Index {
     const cp = self.checkpoint();
 
     const init_node = try parseDeclaration(self) orelse try parseExpression(self) orelse return null;
@@ -213,7 +213,7 @@ test "should return syntax error if loop condition is missing" {
     ;
 
     try TestParser.runAny(text, parseWhileStatement, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+        pub fn expect(t: TestParser, nodeOrError: ParserError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
             try t.expectSyntaxErrorAt(nodeOrError, diagnostics.expression_expected, .{}, markers[0]);
         }
     });
@@ -226,7 +226,7 @@ test "should return syntax error if opening paren is missing" {
     ;
 
     try TestParser.runAny(text, parseWhileStatement, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+        pub fn expect(t: TestParser, nodeOrError: ParserError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
             try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{"("}, markers[0]);
         }
     });
@@ -239,7 +239,7 @@ test "should return syntax error if closing paren is missing" {
     ;
 
     try TestParser.runAny(text, parseWhileStatement, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+        pub fn expect(t: TestParser, nodeOrError: ParserError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
             try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{")"}, markers[0]);
         }
     });
@@ -252,7 +252,7 @@ test "should return syntax error if body is missing" {
     ;
 
     try TestParser.runAny(text, parseWhileStatement, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+        pub fn expect(t: TestParser, nodeOrError: ParserError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
             try t.expectSyntaxErrorAt(nodeOrError, diagnostics.statement_expected, .{}, markers[0]);
         }
     });
@@ -288,7 +288,7 @@ test "should return syntax error if body missing in do while loop" {
     ;
 
     try TestParser.runAny(text, parseDoWhileStatement, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+        pub fn expect(t: TestParser, nodeOrError: ParserError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
             try t.expectSyntaxErrorAt(nodeOrError, diagnostics.statement_expected, .{}, markers[0]);
         }
     });
@@ -301,7 +301,7 @@ test "should return syntax error if condition missing in do while loop" {
     ;
 
     try TestParser.runAny(text, parseDoWhileStatement, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+        pub fn expect(t: TestParser, nodeOrError: ParserError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
             try t.expectSyntaxErrorAt(nodeOrError, diagnostics.expression_expected, .{}, markers[0]);
         }
     });
@@ -314,7 +314,7 @@ test "should return syntax error if while is missing" {
     ;
 
     try TestParser.runAny(text, parseDoWhileStatement, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+        pub fn expect(t: TestParser, nodeOrError: ParserError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
             try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{"while"}, markers[0]);
         }
     });
@@ -327,7 +327,7 @@ test "should return syntax error if open paren is missing in do while loop" {
     ;
 
     try TestParser.runAny(text, parseDoWhileStatement, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+        pub fn expect(t: TestParser, nodeOrError: ParserError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
             try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{"("}, markers[0]);
         }
     });
@@ -340,7 +340,7 @@ test "should return syntax error if close paren is missing in do while loop" {
     ;
 
     try TestParser.runAny(text, parseDoWhileStatement, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+        pub fn expect(t: TestParser, nodeOrError: ParserError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
             try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{")"}, markers[0]);
         }
     });
@@ -383,7 +383,7 @@ test "should return syntax error if semicolon is missing in classic for loop" {
     ;
 
     try TestParser.runAny(text, parseForStatement, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+        pub fn expect(t: TestParser, nodeOrError: ParserError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
             try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{";"}, markers[0]);
         }
     });
@@ -451,7 +451,7 @@ test "should throw SyntaxError if for loop if its not of or in loop" {
     ;
 
     try TestParser.runAny(text, parseForStatement, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+        pub fn expect(t: TestParser, nodeOrError: ParserError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
             try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{";"}, markers[0]);
         }
     });

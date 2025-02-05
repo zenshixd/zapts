@@ -1,7 +1,11 @@
 const std = @import("std");
 
-const CompilationError = @import("consts.zig").CompilationError;
+const Token = @import("consts.zig").Token;
+const TokenType = @import("consts.zig").TokenType;
+
 const Reporter = @import("reporter.zig");
+const StringInterner = @import("string_interner.zig");
+const StringId = @import("string_interner.zig").StringId;
 
 const ErrorUnionOf = @import("meta.zig").ErrorUnionOf;
 const ReturnTypeOf = @import("meta.zig").ReturnTypeOf;
@@ -17,14 +21,15 @@ const expectError = std.testing.expectError;
 const Lexer = @import("lexer.zig");
 const Context = @import("lexer.zig").Context;
 const AST = @import("ast.zig");
+const Symbol = @import("symbols.zig").Symbol;
 const diagnostics = @import("diagnostics.zig");
+const TestParser = @import("test_parser.zig");
+const MarkerList = @import("test_parser.zig").MarkerList;
 
 const parseStatement = @import("parser/statements.zig").parseStatement;
 
-const Token = @import("consts.zig").Token;
-const TokenType = @import("consts.zig").TokenType;
-
-const Self = @This();
+const Parser = @This();
+pub const ParserError = error{ SyntaxError, OutOfMemory };
 
 const Checkpoint = struct {
     tok_idx: Token.Index,
@@ -33,41 +38,81 @@ const Checkpoint = struct {
 };
 
 gpa: std.mem.Allocator,
+buffer: [:0]const u8,
 reporter: *Reporter,
 lexer: Lexer,
-buffer: [:0]const u8,
 tokens: std.ArrayList(Token),
 cur_token: Token.Index,
 nodes: std.ArrayList(AST.Raw),
 extra: std.ArrayList(u32),
+str_interner: StringInterner,
+symbols: std.MultiArrayList(Symbol),
+declarations: std.StringHashMap(Symbol.Index),
 
-pub fn init(gpa: std.mem.Allocator, buffer: [:0]const u8, reporter: *Reporter) !Self {
+pub fn init(gpa: std.mem.Allocator, buffer: [:0]const u8, reporter: *Reporter) Parser {
     var nodes = std.ArrayList(AST.Raw).init(gpa);
-    nodes.append(AST.Raw{ .tag = .root, .main_token = Token.at(0), .data = .{ .lhs = 0, .rhs = 0 } }) catch unreachable;
+    _ = nodes.addOne() catch @panic("out of memory");
 
-    return Self{
+    return .{
         .gpa = gpa,
         .reporter = reporter,
-        .lexer = Lexer.init(gpa, buffer, reporter),
         .buffer = buffer,
-        .tokens = std.ArrayList(Token).init(gpa),
+        .lexer = .{ .reporter = reporter, .buffer = buffer },
         .cur_token = Token.at(0),
+        .tokens = std.ArrayList(Token).init(gpa),
         .nodes = nodes,
         .extra = std.ArrayList(u32).init(gpa),
+        .str_interner = .{},
+        .symbols = std.MultiArrayList(Symbol){},
+        .declarations = std.StringHashMap(Symbol.Index).init(gpa),
     };
 }
 
-pub fn deinit(self: *Self) void {
+pub fn deinit(self: *Parser) void {
+    self.tokens.deinit();
     self.nodes.deinit();
     self.extra.deinit();
-    self.tokens.deinit();
+    self.str_interner.deinit(self.gpa);
+    self.symbols.deinit(self.gpa);
+    self.declarations.deinit();
 }
 
 pub const getNode = AST.getNode;
 pub const getRawNode = AST.getRawNode;
 pub const addNode = AST.addNode;
+pub const listToSubrange = AST.listToSubrange;
 
-pub fn parse(self: *Self) CompilationError!AST.Node.Index {
+pub fn internStr(self: *Parser, tok_idx: Token.Index) StringId {
+    if (tok_idx == Token.Empty) {
+        return StringId.none;
+    }
+
+    return self.str_interner.intern(self.gpa, self.tokens.items[tok_idx.int()].literal(self.buffer));
+}
+
+pub fn getSymbol(self: Parser, index: Symbol.Index) Symbol {
+    return self.symbols.get(index.int());
+}
+
+pub fn addSymbolNoDecl(self: *Parser, source: AST.Node.Index) Symbol.Index {
+    return self.addSymbol(source, Symbol.None);
+}
+
+pub fn addSymbol(self: *Parser, source: AST.Node.Index, declaration: Symbol.Index) Symbol.Index {
+    const index = Symbol.at(self.symbols.len);
+    self.symbols.append(self.gpa, Symbol{
+        .type = .other_type,
+        .source = source,
+        .declaration = declaration,
+    }) catch unreachable;
+    return index;
+}
+
+pub fn addDeclaration(self: *Parser, name: []const u8, symbol: Symbol.Index) void {
+    self.declarations.put(name, symbol) catch unreachable;
+}
+
+pub fn parse(self: *Parser) ParserError!AST.Node.Index {
     var nodes = std.ArrayList(AST.Node.Index).init(self.gpa);
     defer nodes.deinit();
 
@@ -76,17 +121,22 @@ pub fn parse(self: *Self) CompilationError!AST.Node.Index {
             continue;
         }
 
-        try nodes.append(try parseStatement(self));
+        if (try parseStatement(self)) |node| {
+            try nodes.append(node);
+        }
     }
 
     const subrange = self.listToSubrange(nodes.items);
 
-    assert(self.nodes.items[0].tag == .root);
-    self.nodes.items[0].data = .{ .lhs = subrange.start, .rhs = subrange.end };
-    return 0;
+    self.nodes.items[0] = .{
+        .tag = .root,
+        .main_token = Token.at(0),
+        .data = .{ .lhs = subrange.start.int(), .rhs = subrange.end.int() },
+    };
+    return AST.Node.at(0);
 }
 
-pub fn endIndexAt(self: *Self, at: u32) u32 {
+pub fn endIndexAt(self: *Parser, at: u32) u32 {
     if (at == 0) {
         return 0;
     }
@@ -94,27 +144,30 @@ pub fn endIndexAt(self: *Self, at: u32) u32 {
     return self.tokens.items[at - 1].end;
 }
 
-pub fn advance(self: *Self) Token.Index {
+pub fn advance(self: *Parser) Token.Index {
     //std.debug.print("advancing from {}\n", .{self.lexer.getToken(self.cur_token)});
     self.cur_token = self.cur_token.inc(1);
     return self.cur_token;
 }
 
-pub fn advanceBy(self: *Self, offset: u32) Token.Index {
+pub fn advanceBy(self: *Parser, offset: u32) Token.Index {
     self.cur_token = self.cur_token.inc(offset);
     return self.cur_token;
 }
 
-pub fn match(self: *Self, comptime token_type: anytype) bool {
-    return if (comptime TokenType.isTokenType(token_type))
-        self.matchOne(token_type)
-    else if (comptime TokenType.isArrayOfTokenType(token_type))
-        self.matchMany(token_type)
-    else
-        @compileError("Expected TokenType or []const TokenType");
+pub fn match(self: *Parser, comptime token_type: anytype) bool {
+    if (comptime TokenType.isTokenType(token_type)) {
+        return self.matchOne(token_type);
+    }
+
+    if (comptime TokenType.isArrayOfTokenType(token_type)) {
+        return self.matchMany(token_type);
+    }
+
+    @compileError("Expected TokenType or []const TokenType");
 }
 
-pub fn matchOne(self: *Self, comptime token_type: TokenType) bool {
+pub fn matchOne(self: *Parser, comptime token_type: TokenType) bool {
     if (self.peekMatch(token_type)) {
         _ = self.advance();
         return true;
@@ -123,7 +176,7 @@ pub fn matchOne(self: *Self, comptime token_type: TokenType) bool {
     return false;
 }
 
-pub fn matchMany(self: *Self, comptime token_types: anytype) bool {
+pub fn matchMany(self: *Parser, comptime token_types: anytype) bool {
     if (self.peekMatchMany(token_types)) {
         self.cur_token = self.cur_token.inc(token_types.len);
         return true;
@@ -132,11 +185,11 @@ pub fn matchMany(self: *Self, comptime token_types: anytype) bool {
     return false;
 }
 
-pub fn peekMatch(self: *Self, token_type: TokenType) bool {
+pub fn peekMatch(self: *Parser, token_type: TokenType) bool {
     return self.peekMatchAt(token_type, self.cur_token.int());
 }
 
-pub fn peekMatchMany(self: *Self, comptime token_types: anytype) bool {
+pub fn peekMatchMany(self: *Parser, comptime token_types: anytype) bool {
     inline for (token_types, 0..) |tok_type, i| {
         if (!self.peekMatchAt(tok_type, self.cur_token.inc(i).int())) {
             return false;
@@ -146,7 +199,7 @@ pub fn peekMatchMany(self: *Self, comptime token_types: anytype) bool {
     return true;
 }
 
-pub fn peekMatchAt(self: *Self, token_type: TokenType, index: u32) bool {
+pub fn peekMatchAt(self: *Parser, token_type: TokenType, index: u32) bool {
     if (index == self.tokens.items.len) {
         const tok = self.lexer.next(self.endIndexAt(index));
         self.tokens.append(tok) catch unreachable;
@@ -157,7 +210,7 @@ pub fn peekMatchAt(self: *Self, token_type: TokenType, index: u32) bool {
     return self.tokens.items[index].type == token_type;
 }
 
-pub fn consume(self: *Self, token_type: TokenType, comptime error_msg: diagnostics.DiagnosticMessage, args: anytype) CompilationError!Token.Index {
+pub fn consume(self: *Parser, token_type: TokenType, comptime error_msg: diagnostics.DiagnosticMessage, args: anytype) ParserError!Token.Index {
     if (self.consumeOrNull(token_type)) |tok| {
         return tok;
     }
@@ -165,7 +218,7 @@ pub fn consume(self: *Self, token_type: TokenType, comptime error_msg: diagnosti
     return self.fail(error_msg, args);
 }
 
-pub fn consumeOrNull(self: *Self, token_type: TokenType) ?Token.Index {
+pub fn consumeOrNull(self: *Parser, token_type: TokenType) ?Token.Index {
     if (self.peekMatch(token_type)) {
         const tok = self.cur_token;
         _ = self.advance();
@@ -175,7 +228,7 @@ pub fn consumeOrNull(self: *Self, token_type: TokenType) ?Token.Index {
     return null;
 }
 
-pub fn checkpoint(self: *Self) Checkpoint {
+pub fn checkpoint(self: *Parser) Checkpoint {
     return Checkpoint{
         .tok_idx = self.cur_token,
         .node_idx = @intCast(self.nodes.items.len),
@@ -183,27 +236,27 @@ pub fn checkpoint(self: *Self) Checkpoint {
     };
 }
 
-pub fn rewindTo(self: *Self, cp: Checkpoint) void {
+pub fn rewindTo(self: *Parser, cp: Checkpoint) void {
     self.cur_token = cp.tok_idx;
     self.nodes.items.len = cp.node_idx;
     self.extra.items.len = cp.extra_idx;
 }
 
-pub fn setContext(self: *Self, context: Context) void {
+pub fn setContext(self: *Parser, context: Context) void {
     self.lexer.setContext(context);
     self.tokens.items.len = self.cur_token.int();
 }
 
-pub fn unsetContext(self: *Self, context: Context) void {
+pub fn unsetContext(self: *Parser, context: Context) void {
     self.lexer.unsetContext(context);
 }
 
-pub fn fail(self: *Self, comptime error_msg: diagnostics.DiagnosticMessage, args: anytype) CompilationError {
+pub fn fail(self: *Parser, comptime error_msg: diagnostics.DiagnosticMessage, args: anytype) ParserError {
     self.reporter.put(error_msg, args, self.cur_token);
-    return CompilationError.SyntaxError;
+    return ParserError.SyntaxError;
 }
 
-pub fn needsSemicolon(self: Self, node: AST.Node.Index) bool {
+pub fn needsSemicolon(self: Parser, node: AST.Node.Index) bool {
     if (node == AST.Node.Empty) {
         return false;
     }
@@ -229,6 +282,33 @@ pub fn needsSemicolon(self: Self, node: AST.Node.Index) bool {
         => false,
         else => true,
     };
+}
+
+var test_reporter: Reporter = undefined;
+pub fn testInstance(text: [:0]const u8) Parser {
+    test_reporter = Reporter.init(std.testing.allocator);
+    return Parser.init(std.testing.allocator, text, &test_reporter);
+}
+
+pub fn testDeinit(self: *Parser) void {
+    self.reporter.deinit();
+    self.deinit();
+}
+
+test "should parse statements" {
+    const text =
+        \\a;
+        \\b;
+        \\c;
+    ;
+
+    try TestParser.run(text, parse, struct {
+        pub fn expect(t: TestParser, node: AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectAST(node, AST.Node{
+                .root = @constCast(&[_]AST.Node.Index{ AST.Node.at(1), AST.Node.at(2), AST.Node.at(3) }),
+            });
+        }
+    });
 }
 
 test {

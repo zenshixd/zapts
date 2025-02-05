@@ -1,5 +1,6 @@
 const std = @import("std");
 const Token = @import("consts.zig").Token;
+const StringId = @import("string_interner.zig").StringId;
 const Parser = @import("parser.zig");
 const Reporter = @import("reporter.zig");
 const assert = std.debug.assert;
@@ -181,8 +182,8 @@ pub const Tag = enum {
 };
 
 pub const Raw = struct {
-    tag: Tag,
-    main_token: Token.Index,
+    tag: Tag = .root,
+    main_token: Token.Index = Token.at(0),
     data: Data = .{},
 
     comptime {
@@ -437,7 +438,7 @@ pub const Node = union(enum) {
     computed_identifier: Node.Index,
     simple_value: SimpleValue,
     template_literal: []Node.Index,
-    template_part: Token.Index,
+    template_part: StringId,
 
     simple_type: SimpleValue,
     generic_type: GenericType,
@@ -465,31 +466,31 @@ pub const Node = union(enum) {
     };
 
     pub const Import = union(enum) {
-        simple: Token.Index,
+        simple: StringId,
         full: ImportFull,
     };
 
     pub const ImportFull = struct {
         bindings: []Node.Index,
-        path: Token.Index,
+        path: StringId,
     };
 
     pub const ImportBinding = union(enum) {
         named: []Node.Index,
-        default: Token.Index,
-        namespace: Token.Index,
+        default: StringId,
+        namespace: StringId,
     };
 
     pub const BindingDecl = struct {
-        name: Token.Index,
-        alias: Token.Index,
+        name: StringId,
+        alias: StringId,
     };
 
     pub const Export = union(enum) {
         from_all: ExportAll,
         from: struct {
             bindings: []Node.Index,
-            path: Token.Index,
+            path: StringId,
         },
         named: []Node.Index,
         default: Node.Index,
@@ -497,15 +498,15 @@ pub const Node = union(enum) {
     };
 
     pub const ExportAll = struct {
-        alias: Token.Index,
-        path: Token.Index,
+        alias: StringId,
+        path: StringId,
     };
 
     pub const ClassDeclaration = struct {
         abstract: bool,
-        name: Token.Index,
+        name: StringId,
         super_class: Node.Index,
-        implements: []Token.Index,
+        implements: []StringId,
         body: []Node.Index,
     };
 
@@ -534,7 +535,7 @@ pub const Node = union(enum) {
     };
 
     pub const DeclarationBinding = struct {
-        name: Token.Index,
+        name: StringId,
         decl_type: Node.Index,
         value: Node.Index,
     };
@@ -594,13 +595,13 @@ pub const Node = union(enum) {
     };
 
     pub const FunctionParam = struct {
-        identifier: Token.Index,
+        identifier: StringId,
         type: Node.Index,
     };
 
     pub const FunctionDeclaration = struct {
         flags: u4,
-        name: Token.Index,
+        name: StringId,
         params: []Node.Index,
         body: Node.Index,
         return_type: Node.Index,
@@ -637,6 +638,7 @@ pub const Node = union(enum) {
 
     pub const SimpleValue = struct {
         kind: SimpleValueKind,
+        id: StringId,
     };
 
     pub const ObjectTypeField = struct {
@@ -645,13 +647,13 @@ pub const Node = union(enum) {
     };
 
     pub const GenericType = struct {
-        name: Token.Index,
+        name: StringId,
         params: []Node.Index,
     };
 
     pub const InterfaceDecl = struct {
-        name: Token.Index,
-        extends: []Token.Index,
+        name: StringId,
+        extends: []StringId,
         body: []Node.Index,
     };
 
@@ -1279,7 +1281,7 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
             return addRawNode(self, .{
                 .tag = if (key == .simple_value) .simple_value else .simple_type,
                 .main_token = main_token,
-                .data = .{ .lhs = @intFromEnum(simple_value.kind) },
+                .data = .{ .lhs = @intFromEnum(simple_value.kind), .rhs = @intFromEnum(simple_value.id) },
             });
         },
         .object_type_field => |obj_field_type| {
@@ -1333,7 +1335,7 @@ pub fn getNode(self: Parser, index: Node.Index) Node {
             if (node.data.lhs == Node.Empty.int()) {
                 return .{
                     .import = .{
-                        .simple = Token.at(node.data.rhs),
+                        .simple = StringId.at(node.data.rhs),
                     },
                 };
             }
@@ -1342,7 +1344,7 @@ pub fn getNode(self: Parser, index: Node.Index) Node {
             return .{
                 .import = .{ .full = .{
                     .bindings = getExtraItems(self, Node.Index, subrange.start.int(), subrange.end.int()),
-                    .path = Token.at(node.data.rhs),
+                    .path = StringId.at(node.data.rhs),
                 } },
             };
         },
@@ -1356,22 +1358,22 @@ pub fn getNode(self: Parser, index: Node.Index) Node {
         .import_binding_default => {
             return .{
                 .import_binding = .{
-                    .default = Token.at(node.data.lhs),
+                    .default = StringId.at(node.data.lhs),
                 },
             };
         },
         .import_binding_namespace => {
             return .{
                 .import_binding = .{
-                    .namespace = Token.at(node.data.lhs),
+                    .namespace = StringId.at(node.data.lhs),
                 },
             };
         },
         .binding_decl => {
             return .{
                 .binding_decl = .{
-                    .name = Token.at(node.data.lhs),
-                    .alias = Token.at(node.data.rhs),
+                    .name = StringId.at(node.data.lhs),
+                    .alias = StringId.at(node.data.rhs),
                 },
             };
         },
@@ -1388,7 +1390,7 @@ pub fn getNode(self: Parser, index: Node.Index) Node {
                 .@"export" = .{
                     .from = .{
                         .bindings = getExtraItems(self, Node.Index, span.start.int(), span.end.int()),
-                        .path = Token.at(node.data.rhs),
+                        .path = StringId.at(node.data.rhs),
                     },
                 },
             };
@@ -1397,8 +1399,8 @@ pub fn getNode(self: Parser, index: Node.Index) Node {
             return .{
                 .@"export" = .{
                     .from_all = .{
-                        .alias = Token.at(node.data.lhs),
-                        .path = Token.at(node.data.rhs),
+                        .alias = StringId.at(node.data.lhs),
+                        .path = StringId.at(node.data.rhs),
                     },
                 },
             };
@@ -1422,9 +1424,9 @@ pub fn getNode(self: Parser, index: Node.Index) Node {
             return .{
                 .class = .{
                     .abstract = node.tag == .abstract_class_decl,
-                    .name = Token.at(node.data.lhs),
+                    .name = StringId.at(node.data.lhs),
                     .super_class = class.super_class,
-                    .implements = getExtraItems(self, Token.Index, class.implements_start.int(), class.implements_end.int()),
+                    .implements = getExtraItems(self, StringId, class.implements_start.int(), class.implements_end.int()),
                     .body = getExtraItems(self, Node.Index, class.body_start.int(), class.body_end.int()),
                 },
             };
@@ -1464,7 +1466,7 @@ pub fn getNode(self: Parser, index: Node.Index) Node {
             const extra = getExtra(self, Extra.Declaration, Extra.at(node.data.rhs));
             return .{
                 .decl_binding = .{
-                    .name = Token.at(node.data.lhs),
+                    .name = StringId.at(node.data.lhs),
                     .decl_type = extra.decl_type,
                     .value = extra.value,
                 },
@@ -1567,7 +1569,7 @@ pub fn getNode(self: Parser, index: Node.Index) Node {
         .function_param => {
             return .{
                 .function_param = .{
-                    .identifier = Token.at(node.data.lhs),
+                    .identifier = StringId.at(node.data.lhs),
                     .type = Node.at(node.data.rhs),
                 },
             };
@@ -1578,7 +1580,7 @@ pub fn getNode(self: Parser, index: Node.Index) Node {
             const extra = getExtra(self, Extra.Function, Extra.at(node.data.rhs));
             const decl: Node.FunctionDeclaration = .{
                 .flags = @truncate(extra.flags),
-                .name = Token.at(node.data.lhs),
+                .name = StringId.at(node.data.lhs),
                 .params = getExtraItems(self, Node.Index, extra.params_start.int(), extra.params_end.int()),
                 .body = extra.body,
                 .return_type = extra.return_type,
@@ -1807,6 +1809,7 @@ pub fn getNode(self: Parser, index: Node.Index) Node {
         .simple_type, .simple_value => {
             const data = Node.SimpleValue{
                 .kind = @enumFromInt(node.data.lhs),
+                .id = StringId.at(node.data.rhs),
             };
             return switch (node.tag) {
                 .simple_type => .{ .simple_type = data },
@@ -1834,7 +1837,7 @@ pub fn getNode(self: Parser, index: Node.Index) Node {
             };
         },
         .template_part => {
-            return .{ .template_part = Token.at(node.data.lhs) };
+            return .{ .template_part = StringId.at(node.data.lhs) };
         },
 
         .object_type_field => {
@@ -1847,7 +1850,7 @@ pub fn getNode(self: Parser, index: Node.Index) Node {
         .generic_type => {
             const span = getExtra(self, Extra.Subrange, Extra.at(node.data.rhs));
             return .{ .generic_type = .{
-                .name = Token.at(node.data.lhs),
+                .name = StringId.at(node.data.lhs),
                 .params = getExtraItems(self, Node.Index, span.start.int(), span.end.int()),
             } };
         },
@@ -1856,8 +1859,8 @@ pub fn getNode(self: Parser, index: Node.Index) Node {
             const interface = getExtra(self, Extra.Interface, Extra.at(node.data.rhs));
             return .{
                 .interface_decl = .{
-                    .name = Token.at(node.data.lhs),
-                    .extends = getExtraItems(self, Token.Index, interface.extends_start.int(), interface.extends_end.int()),
+                    .name = StringId.at(node.data.lhs),
+                    .extends = getExtraItems(self, StringId, interface.extends_start.int(), interface.extends_end.int()),
                     .body = getExtraItems(self, Node.Index, interface.body_start.int(), interface.body_end.int()),
                 },
             };
@@ -1891,7 +1894,7 @@ pub fn addExtra(self: *Parser, extra: anytype) Extra.Index {
     self.extra.ensureUnusedCapacity(fields.len) catch @panic("Out of memory");
     const result = self.extra.items.len;
     inline for (fields) |field| {
-        if (field.type == Node.Index or field.type == Token.Index or field.type == Extra.Index) {
+        if (field.type == Node.Index or field.type == Extra.Index or field.type == StringId) {
             self.extra.appendAssumeCapacity(@intFromEnum(@field(extra, field.name)));
         } else if (field.type == u32) {
             self.extra.appendAssumeCapacity(@field(extra, field.name));
@@ -1903,7 +1906,7 @@ pub fn addExtra(self: *Parser, extra: anytype) Extra.Index {
 }
 
 pub fn listToSubrange(self: *Parser, list: anytype) Extra.Subrange {
-    assert(@TypeOf(list) == []Node.Index or @TypeOf(list) == []Token.Index);
+    assert(@TypeOf(list) == []Node.Index or @TypeOf(list) == []StringId);
     self.extra.appendSlice(@as([]u32, @ptrCast(list))) catch @panic("Out of memory");
     return .{
         .start = Extra.at(@intCast(self.extra.items.len - list.len)),
@@ -1915,7 +1918,7 @@ fn expectRawNode(expected_raw: Raw, node: Node) !void {
     var reporter = Reporter.init(std.testing.allocator);
     defer reporter.deinit();
 
-    var parser = try Parser.init(std.testing.allocator, "1", &reporter);
+    var parser = Parser.init(std.testing.allocator, "1", &reporter);
     defer parser.deinit();
 
     const node_idx = addNode(&parser, Token.at(0), node);
@@ -1924,7 +1927,7 @@ fn expectRawNode(expected_raw: Raw, node: Node) !void {
     try expectEqualDeep(node, getNode(parser, node_idx));
 }
 
-test "Pool root" {
+test "root" {
     var stmts = [_]Node.Index{ Node.at(1), Node.at(2), Node.at(3) };
     try expectRawNode(Raw{
         .tag = .root,
@@ -1933,11 +1936,11 @@ test "Pool root" {
     }, Node{ .root = &stmts });
 }
 
-test "Pool imports" {
-    const name_node = Token.at(1);
-    const alias_node = Token.at(2);
-    const path_node_index = Token.at(4);
-    const identifier_token = Token.at(2);
+test "imports" {
+    const name_node = StringId.at(1);
+    const alias_node = StringId.at(2);
+    const path_node_index = StringId.at(4);
+    const identifier_token = StringId.at(2);
     var named_bindings = [_]Node.Index{Node.at(identifier_token.int())};
     var import_bindings = [_]Node.Index{ Node.at(1), Node.at(2), Node.at(3) };
 
@@ -1973,10 +1976,10 @@ test "Pool imports" {
     }
 }
 
-test "Pool exports" {
+test "exports" {
     const node_index = Node.at(3);
-    const path_index = Token.at(4);
-    const alias_index = Token.at(5);
+    const path_index = StringId.at(4);
+    const alias_index = StringId.at(5);
     var bindings = [_]Node.Index{ Node.at(1), Node.at(2) };
 
     const tests = .{
@@ -2007,10 +2010,10 @@ test "Pool exports" {
     }
 }
 
-test "Pool class declaration" {
-    const name_node = Token.at(1);
+test "class declaration" {
+    const name_node = StringId.at(1);
     const super_class_node = Node.at(2);
-    var implements = [_]Token.Index{Token.at(3)};
+    var implements = [_]StringId{StringId.at(3)};
     var body = [_]Node.Index{Node.at(4)};
 
     const tests = .{
@@ -2033,7 +2036,7 @@ test "Pool class declaration" {
     }
 }
 
-test "Pool class members" {
+test "class members" {
     const flags = ClassMemberFlags.abstract | ClassMemberFlags.public | ClassMemberFlags.readonly;
     const name_node = Node.at(1);
     const decl_type_node = Node.at(2);
@@ -2061,8 +2064,8 @@ test "Pool class members" {
     }
 }
 
-test "Pool declarations" {
-    const name_node = Token.at(1);
+test "declarations" {
+    const name_node = StringId.at(1);
     const decl_type_node = Node.at(2);
     const value_node = Node.at(3);
     var binding_list = [_]Node.Index{Node.at(4)};
@@ -2091,7 +2094,7 @@ test "Pool declarations" {
     }
 }
 
-test "Pool ifs" {
+test "ifs" {
     const expr_node = Node.at(1);
     const body_node = Node.at(2);
     const else_node = Node.at(3);
@@ -2106,7 +2109,7 @@ test "Pool ifs" {
     }, Node{ .@"if" = .{ .expr = expr_node, .body = body_node, .@"else" = else_node } });
 }
 
-test "Pool switches" {
+test "switches" {
     const case_expr_node = Node.at(1);
     var case_body_node = [_]Node.Index{Node.at(2)};
     var switch_cases = [_]Node.Index{ Node.at(3), Node.at(4) };
@@ -2131,7 +2134,7 @@ test "Pool switches" {
     }
 }
 
-test "Pool for loops" {
+test "for loops" {
     const init_node = Node.at(1);
     const cond_node = Node.at(2);
     const post_node = Node.at(3);
@@ -2184,7 +2187,7 @@ test "Pool for loops" {
     }
 }
 
-test "Pool blocks" {
+test "blocks" {
     var stmts = [_]Node.Index{ Node.at(1), Node.at(2) };
 
     const test_cases = .{
@@ -2202,12 +2205,12 @@ test "Pool blocks" {
     }
 }
 
-test "Pool function expressions" {
-    const param_name_node = Token.at(1);
+test "function expressions" {
+    const param_name_node = StringId.at(1);
     const param_type_node = Node.at(2);
     var params = [_]Node.Index{Node.at(3)};
 
-    const name_node = Token.at(3);
+    const name_node = StringId.at(3);
     const body_node = Node.at(4);
     const return_type = Node.at(5);
     const async_func_data = Node.FunctionDeclaration{ .flags = FunctionFlags.Async, .name = name_node, .params = &params, .body = body_node, .return_type = return_type };
@@ -2232,7 +2235,7 @@ test "Pool function expressions" {
     }
 }
 
-test "Pool method declarations" {
+test "method declarations" {
     var params = [_]Node.Index{Node.at(3)};
 
     const name_node = Node.at(3);
@@ -2256,7 +2259,7 @@ test "Pool method declarations" {
     }
 }
 
-test "Pool arrow functions" {
+test "arrow functions" {
     var params = [_]Node.Index{ Node.at(1), Node.at(2) };
     const body_node = Node.at(3);
     const return_type = Node.at(5);
@@ -2276,7 +2279,7 @@ test "Pool arrow functions" {
     }
 }
 
-test "Pool call expressions" {
+test "call expressions" {
     const main_node = Node.at(1);
     var params = [_]Node.Index{ Node.at(1), Node.at(2) };
 
@@ -2287,7 +2290,7 @@ test "Pool call expressions" {
     }, Node{ .call_expr = .{ .node = main_node, .params = &params } });
 }
 
-test "Pool binary" {
+test "binary" {
     const left_node = Node.at(1);
     const right_node = Node.at(2);
 
@@ -2359,7 +2362,7 @@ test "Pool binary" {
     }
 }
 
-test "Pool single node" {
+test "single node" {
     const node = Node.at(1);
 
     const tests = .{
@@ -2394,7 +2397,7 @@ test "Pool single node" {
     }
 }
 
-test "Pool empty" {
+test "empty" {
     const tests = .{
         .{ Node{ .@"break" = {} }, .@"break" },
         .{ Node{ .@"continue" = {} }, .@"continue" },
@@ -2409,9 +2412,10 @@ test "Pool empty" {
     }
 }
 
-test "Pool simple_value" {
+test "simple_value" {
     const data = Node.SimpleValue{
         .kind = .this,
+        .id = StringId.at(1),
     };
     const tests = .{
         .{ Node{ .simple_type = data }, .simple_type },
@@ -2422,12 +2426,12 @@ test "Pool simple_value" {
         try expectRawNode(Raw{
             .tag = test_case[1],
             .main_token = Token.at(0),
-            .data = .{ .lhs = @intFromEnum(data.kind), .rhs = 0 },
+            .data = .{ .lhs = @intFromEnum(data.kind), .rhs = data.id.int() },
         }, test_case[0]);
     }
 }
 
-test "Pool object type" {
+test "object type" {
     const field_name = Node.at(1);
     const field_type = Node.at(2);
     var field_list = [_]Node.Index{ Node.at(3), Node.at(4) };
@@ -2456,8 +2460,8 @@ test "Pool object type" {
     }
 }
 
-test "Pool template_part" {
-    const part = Token.at(1);
+test "template_part" {
+    const part = StringId.at(1);
     const tests = .{
         .{
             Node{ .template_part = part },
@@ -2470,8 +2474,8 @@ test "Pool template_part" {
     }
 }
 
-test "Pool generic_type" {
-    const name_node = Token.at(1);
+test "generic_type" {
+    const name_node = StringId.at(1);
     var params = [_]Node.Index{Node.at(2)};
     const data = Node.GenericType{
         .name = name_node,
@@ -2493,7 +2497,7 @@ test "Pool generic_type" {
     }
 }
 
-test "Pool function_type" {
+test "function_type" {
     var params = [_]Node.Index{Node.at(2)};
     var generic_params = [_]Node.Index{Node.at(3)};
     const return_type = Node.at(4);
@@ -2510,9 +2514,9 @@ test "Pool function_type" {
     }
 }
 
-test "Pool interface_decl" {
-    const name_node = Token.at(1);
-    var extends = [_]Token.Index{Token.at(2)};
+test "interface_decl" {
+    const name_node = StringId.at(1);
+    var extends = [_]StringId{StringId.at(2)};
     var body = [_]Node.Index{Node.at(3)};
     const data = Node.InterfaceDecl{
         .name = name_node,

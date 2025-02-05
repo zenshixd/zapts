@@ -2,11 +2,12 @@ const std = @import("std");
 
 const Token = @import("../consts.zig").Token;
 const TokenType = @import("../consts.zig").TokenType;
-const isAllowedIdentifier = @import("../consts.zig").isAllowedIdentifier;
 const ALLOWED_KEYWORDS_AS_IDENTIFIERS = @import("../consts.zig").ALLOWED_KEYWORDS_AS_IDENTIFIERS;
 
 const AST = @import("../ast.zig");
 const Parser = @import("../parser.zig");
+const ParserError = @import("../parser.zig").ParserError;
+const StringId = @import("../string_interner.zig").StringId;
 const diagnostics = @import("../diagnostics.zig");
 
 const parseAssignment = @import("binary.zig").parseAssignment;
@@ -23,8 +24,6 @@ const parseObjectElementName = @import("functions.zig").parseObjectElementName;
 const parseExpression = @import("expressions.zig").parseExpression;
 const expectExpression = @import("expressions.zig").expectExpression;
 
-const CompilationError = @import("../consts.zig").CompilationError;
-
 const Marker = @import("../test_parser.zig").Marker;
 const MarkerList = @import("../test_parser.zig").MarkerList;
 const TestParser = @import("../test_parser.zig");
@@ -34,7 +33,7 @@ const expectEqualDeep = std.testing.expectEqualDeep;
 const expectEqualStrings = std.testing.expectEqualStrings;
 const expectError = std.testing.expectError;
 
-pub fn parsePrimaryExpression(parser: *Parser) CompilationError!?AST.Node.Index {
+pub fn parsePrimaryExpression(parser: *Parser) ParserError!?AST.Node.Index {
     return try parseIdentifier(parser) orelse
         try parseLiteral(parser) orelse
         try parseArrayLiteral(parser) orelse
@@ -47,15 +46,15 @@ pub fn parsePrimaryExpression(parser: *Parser) CompilationError!?AST.Node.Index 
         try parseTemplateLiteral(parser);
 }
 
-pub fn parseIdentifier(parser: *Parser) CompilationError!?AST.Node.Index {
+pub fn parseIdentifier(parser: *Parser) ParserError!?AST.Node.Index {
     const identifier = parser.consumeOrNull(TokenType.Identifier) orelse
         parseKeywordAsIdentifier(parser) orelse
         return null;
 
-    return parser.addNode(identifier, AST.Node{ .simple_value = .{ .kind = .identifier } });
+    return parser.addNode(identifier, AST.Node{ .simple_value = .{ .kind = .identifier, .id = parser.internStr(identifier) } });
 }
 
-pub fn expectIdentifier(parser: *Parser) CompilationError!AST.Node.Index {
+pub fn expectIdentifier(parser: *Parser) ParserError!AST.Node.Index {
     return try parseIdentifier(parser) orelse parser.fail(diagnostics.identifier_expected, .{});
 }
 
@@ -84,17 +83,18 @@ const literal_map = .{
     .{ TokenType.StringConstant, .string },
 };
 
-pub fn parseLiteral(parser: *Parser) CompilationError!?AST.Node.Index {
+pub fn parseLiteral(parser: *Parser) ParserError!?AST.Node.Index {
     inline for (literal_map) |literal| {
+        const main_token = parser.cur_token;
         if (parser.match(literal[0])) {
-            return parser.addNode(parser.cur_token.dec(1), AST.Node{ .simple_value = .{ .kind = literal[1] } });
+            return parser.addNode(main_token, AST.Node{ .simple_value = .{ .kind = literal[1], .id = parser.internStr(main_token) } });
         }
     }
 
     return null;
 }
 
-pub fn parseArrayLiteral(parser: *Parser) CompilationError!?AST.Node.Index {
+pub fn parseArrayLiteral(parser: *Parser) ParserError!?AST.Node.Index {
     if (!parser.match(TokenType.OpenSquareBracket)) {
         return null;
     }
@@ -127,7 +127,7 @@ pub fn parseArrayLiteral(parser: *Parser) CompilationError!?AST.Node.Index {
     });
 }
 
-pub fn parseObjectLiteral(parser: *Parser) CompilationError!?AST.Node.Index {
+pub fn parseObjectLiteral(parser: *Parser) ParserError!?AST.Node.Index {
     if (!parser.match(TokenType.OpenCurlyBrace)) {
         return null;
     }
@@ -155,7 +155,7 @@ pub fn parseObjectLiteral(parser: *Parser) CompilationError!?AST.Node.Index {
     });
 }
 
-pub fn parseObjectField(parser: *Parser) CompilationError!?AST.Node.Index {
+pub fn parseObjectField(parser: *Parser) ParserError!?AST.Node.Index {
     const method_node = try parseMethodGetter(parser) orelse
         try parseMethodSetter(parser) orelse
         try parseMethodGenerator(parser) orelse
@@ -189,7 +189,7 @@ pub fn parseObjectField(parser: *Parser) CompilationError!?AST.Node.Index {
     return null;
 }
 
-pub fn parseSpreadExpression(parser: *Parser) CompilationError!?AST.Node.Index {
+pub fn parseSpreadExpression(parser: *Parser) ParserError!?AST.Node.Index {
     if (!parser.match(TokenType.DotDotDot)) {
         return null;
     }
@@ -199,7 +199,7 @@ pub fn parseSpreadExpression(parser: *Parser) CompilationError!?AST.Node.Index {
     });
 }
 
-pub fn parseGroupingExpression(parser: *Parser) CompilationError!?AST.Node.Index {
+pub fn parseGroupingExpression(parser: *Parser) ParserError!?AST.Node.Index {
     if (parser.match(TokenType.OpenParen)) {
         const node = parser.addNode(parser.cur_token.dec(1), AST.Node{
             .grouping = try expectExpression(parser),
@@ -212,13 +212,13 @@ pub fn parseGroupingExpression(parser: *Parser) CompilationError!?AST.Node.Index
     return null;
 }
 
-pub fn parseTemplateLiteral(parser: *Parser) CompilationError!?AST.Node.Index {
+pub fn parseTemplateLiteral(parser: *Parser) ParserError!?AST.Node.Index {
     const main_token = parser.cur_token;
     var list = std.ArrayList(AST.Node.Index).init(parser.gpa);
     defer list.deinit();
 
     if (parser.consumeOrNull(TokenType.TemplateNoSubstitution)) |tok| {
-        try list.append(parser.addNode(tok, AST.Node{ .template_part = tok }));
+        try list.append(parser.addNode(tok, AST.Node{ .template_part = parser.internStr(tok) }));
 
         return parser.addNode(main_token, AST.Node{
             .template_literal = list.items,
@@ -227,20 +227,20 @@ pub fn parseTemplateLiteral(parser: *Parser) CompilationError!?AST.Node.Index {
 
     const head = parser.consumeOrNull(TokenType.TemplateHead) orelse return null;
 
-    try list.append(parser.addNode(head, AST.Node{ .template_part = head }));
+    try list.append(parser.addNode(head, AST.Node{ .template_part = parser.internStr(head) }));
     while (true) {
         parser.unsetContext(.template);
         try list.append(try expectExpression(parser));
 
         parser.setContext(.template);
         if (parser.consumeOrNull(TokenType.TemplateTail)) |tok| {
-            try list.append(parser.addNode(tok, AST.Node{ .template_part = tok }));
+            try list.append(parser.addNode(tok, AST.Node{ .template_part = parser.internStr(tok) }));
             break;
         }
 
         const tok = try parser.consume(TokenType.TemplateMiddle, diagnostics.ARG_expected, .{"}"});
 
-        try list.append(parser.addNode(tok, AST.Node{ .template_part = tok }));
+        try list.append(parser.addNode(tok, AST.Node{ .template_part = parser.internStr(tok) }));
     }
 
     parser.unsetContext(.template);
@@ -249,12 +249,12 @@ pub fn parseTemplateLiteral(parser: *Parser) CompilationError!?AST.Node.Index {
     });
 }
 
-pub fn parseRegexLiteral(parser: *Parser) CompilationError!?AST.Node.Index {
+pub fn parseRegexLiteral(parser: *Parser) ParserError!?AST.Node.Index {
     parser.setContext(.regex);
     defer parser.unsetContext(.regex);
 
     const literal = parser.consumeOrNull(TokenType.RegexLiteral) orelse return null;
-    return parser.addNode(literal, AST.Node{ .simple_value = .{ .kind = .regex } });
+    return parser.addNode(literal, AST.Node{ .simple_value = .{ .kind = .regex, .id = parser.internStr(literal) } });
 }
 
 test "should parse primary expression" {
@@ -263,19 +263,19 @@ test "should parse primary expression" {
             \\ this
             \\>^   
             ,
-            AST.Node{ .simple_value = .{ .kind = .this } },
+            AST.Node{ .simple_value = .{ .kind = .this, .id = StringId.at(1) } },
         },
         .{
             \\ identifier
             \\>^         
             ,
-            AST.Node{ .simple_value = .{ .kind = .identifier } },
+            AST.Node{ .simple_value = .{ .kind = .identifier, .id = StringId.at(1) } },
         },
         .{
             \\ 123
             \\>^  
             ,
-            AST.Node{ .simple_value = .{ .kind = .number } },
+            AST.Node{ .simple_value = .{ .kind = .number, .id = StringId.at(1) } },
         },
         .{
             \\ {a: 1}
@@ -293,19 +293,19 @@ test "should parse primary expression" {
             \\ function() {}
             \\>^
             ,
-            AST.Node{ .function_decl = .{ .flags = AST.FunctionFlags.None, .name = Token.Empty, .params = &.{}, .body = AST.Node.at(1), .return_type = AST.Node.Empty } },
+            AST.Node{ .function_decl = .{ .flags = AST.FunctionFlags.None, .name = StringId.none, .params = &.{}, .body = AST.Node.at(1), .return_type = AST.Node.Empty } },
         },
         .{
             \\ function*() {}
             \\>^
             ,
-            AST.Node{ .function_decl = .{ .flags = AST.FunctionFlags.Generator, .name = Token.Empty, .params = &.{}, .body = AST.Node.at(1), .return_type = AST.Node.Empty } },
+            AST.Node{ .function_decl = .{ .flags = AST.FunctionFlags.Generator, .name = StringId.none, .params = &.{}, .body = AST.Node.at(1), .return_type = AST.Node.Empty } },
         },
         .{
             \\ async function() {}
             \\>^
             ,
-            AST.Node{ .function_decl = .{ .flags = AST.FunctionFlags.Async, .name = Token.Empty, .params = &.{}, .body = AST.Node.at(1), .return_type = AST.Node.Empty } },
+            AST.Node{ .function_decl = .{ .flags = AST.FunctionFlags.Async, .name = StringId.none, .params = &.{}, .body = AST.Node.at(1), .return_type = AST.Node.Empty } },
         },
         .{
             \\ async function*() {}
@@ -313,7 +313,7 @@ test "should parse primary expression" {
             ,
             AST.Node{ .function_decl = .{
                 .flags = AST.FunctionFlags.Async | AST.FunctionFlags.Generator,
-                .name = Token.Empty,
+                .name = StringId.none,
                 .params = &.{},
                 .body = AST.Node.at(1),
                 .return_type = AST.Node.Empty,
@@ -329,13 +329,13 @@ test "should parse primary expression" {
             \\ class {}
             \\>^       
             ,
-            AST.Node{ .class = .{ .abstract = false, .name = Token.Empty, .implements = &.{}, .super_class = AST.Node.Empty, .body = &.{} } },
+            AST.Node{ .class = .{ .abstract = false, .name = StringId.none, .implements = &.{}, .super_class = AST.Node.Empty, .body = &.{} } },
         },
         .{
             \\ /[a-z]/
             \\>^
             ,
-            AST.Node{ .simple_value = .{ .kind = .regex } },
+            AST.Node{ .simple_value = .{ .kind = .regex, .id = StringId.at(1) } },
         },
         .{
             \\ `aaaa`
@@ -387,7 +387,7 @@ test "should parse identifier" {
     inline for (test_cases) |test_case| {
         try TestParser.run(test_case[0], parseIdentifier, struct {
             pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(test_case[0])) !void {
-                try t.expectAST(node, AST.Node{ .simple_value = .{ .kind = .identifier } });
+                try t.expectAST(node, AST.Node{ .simple_value = .{ .kind = .identifier, .id = StringId.at(1) } });
                 try t.expectToken(TokenType.Identifier, std.mem.sliceTo(test_case[0][1..], '\n'), node.?);
                 try t.expectTokenAt(markers[0], node.?);
             }
@@ -403,7 +403,7 @@ test "should parse allowed keyword as identifier" {
 
     try TestParser.run(text, parseIdentifier, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .simple_value = .{ .kind = .identifier } });
+            try t.expectAST(node, AST.Node{ .simple_value = .{ .kind = .identifier, .id = StringId.at(1) } });
             try t.expectToken(TokenType.Abstract, "abstract", node.?);
             try t.expectTokenAt(markers[0], node.?);
         }
@@ -505,7 +505,7 @@ test "should parse literal" {
     inline for (test_cases) |test_case| {
         try TestParser.run(test_case[0], parseLiteral, struct {
             pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(test_case[0])) !void {
-                try t.expectAST(node, AST.Node{ .simple_value = .{ .kind = test_case[1] } });
+                try t.expectAST(node, AST.Node{ .simple_value = .{ .kind = test_case[1], .id = StringId.at(1) } });
                 try t.expectToken(test_case[2], test_case[3], node.?);
                 try t.expectTokenAt(markers[0], node.?);
             }
@@ -634,7 +634,7 @@ test "should fail parsing object literal if comma is missing between fields" {
     ;
 
     try TestParser.runAny(text, parseObjectLiteral, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, _: MarkerList(text)) !void {
+        pub fn expect(t: TestParser, nodeOrError: ParserError!?AST.Node.Index, _: MarkerList(text)) !void {
             try t.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{","});
         }
     });
@@ -645,7 +645,7 @@ test "should fail parsing object literal if field name is invalid" {
 
     inline for (test_cases) |test_case| {
         try TestParser.runAny(test_case, parseObjectLiteral, struct {
-            pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, _: MarkerList(test_case)) !void {
+            pub fn expect(t: TestParser, nodeOrError: ParserError!?AST.Node.Index, _: MarkerList(test_case)) !void {
                 try t.expectSyntaxError(nodeOrError, diagnostics.property_assignment_expected, .{});
             }
         });
@@ -660,7 +660,7 @@ test "should fail parsing object literal if there is multiple closing commas" {
     ;
 
     try TestParser.runAny(text, parseObjectLiteral, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, _: MarkerList(text)) !void {
+        pub fn expect(t: TestParser, nodeOrError: ParserError!?AST.Node.Index, _: MarkerList(text)) !void {
             try t.expectSyntaxError(nodeOrError, diagnostics.property_assignment_expected, .{});
         }
     });
@@ -705,9 +705,9 @@ test "should parse template literal" {
             try t.expectAST(node, expected_node);
             try t.expectTokenAt(markers[0], node.?);
 
-            try t.expectAST(expected_node.template_literal[0], AST.Node{ .template_part = Token.at(0) });
-            try t.expectAST(expected_node.template_literal[1], AST.Node{ .simple_value = .{ .kind = .identifier } });
-            try t.expectAST(expected_node.template_literal[2], AST.Node{ .template_part = Token.at(2) });
+            try t.expectAST(expected_node.template_literal[0], AST.Node{ .template_part = StringId.at(1) });
+            try t.expectAST(expected_node.template_literal[1], AST.Node{ .simple_value = .{ .kind = .identifier, .id = StringId.at(2) } });
+            try t.expectAST(expected_node.template_literal[2], AST.Node{ .template_part = StringId.at(3) });
         }
     });
 }
@@ -743,9 +743,9 @@ test "should parse template literal with object as substitution" {
             try t.expectAST(node, expected_node);
             try t.expectTokenAt(markers[0], node.?);
 
-            try t.expectAST(expected_node.template_literal[0], AST.Node{ .template_part = Token.at(0) });
+            try t.expectAST(expected_node.template_literal[0], AST.Node{ .template_part = StringId.at(1) });
             try t.expectAST(expected_node.template_literal[1], AST.Node{ .object_literal = @constCast(&[_]AST.Node.Index{AST.Node.at(4)}) });
-            try t.expectAST(expected_node.template_literal[2], AST.Node{ .template_part = Token.at(6) });
+            try t.expectAST(expected_node.template_literal[2], AST.Node{ .template_part = StringId.at(4) });
         }
     });
 }
@@ -757,7 +757,7 @@ test "should return syntax error if substitution is unclosed" {
     ;
 
     try TestParser.runAny(text, parseTemplateLiteral, struct {
-        pub fn expect(t: TestParser, nodeOrError: CompilationError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+        pub fn expect(t: TestParser, nodeOrError: ParserError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
             try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{"}"}, markers[0]);
         }
     });

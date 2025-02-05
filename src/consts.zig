@@ -6,8 +6,6 @@ pub const PUNCTUATION_CHARS = ".,:;()[]'\"{}";
 pub const OPERATOR_CHARS = "<>?+-=*|&!%/\\";
 pub const WHITESPACE = " \t\r\n";
 
-pub const CompilationError = error{ SyntaxError, OutOfMemory };
-
 pub const keywords_map = std.StaticStringMap(TokenType).initComptime(.{
     .{ "var", TokenType.Var },
     .{ "let", TokenType.Let },
@@ -221,8 +219,9 @@ pub const Token = struct {
     start: u32,
     end: u32,
 
-    pub const Empty = at(0);
+    pub const Empty = Index.none;
     pub const Index = enum(u32) {
+        none = std.math.maxInt(u32),
         _,
 
         pub inline fn int(self: Index) u32 {
@@ -247,7 +246,7 @@ pub const Token = struct {
         try std.fmt.format(writer, "Token{{ .type = {s}, .start = {d}, .end = {d} }}", .{ @tagName(self.type), self.start, self.end });
     }
 
-    pub fn literal(self: Token, buffer: []const u8) []const u8 {
+    pub fn literal(self: Token, buffer: [:0]const u8) []const u8 {
         return buffer[self.start..self.end];
     }
 
