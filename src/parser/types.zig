@@ -260,9 +260,9 @@ fn parseTupleType(self: *Parser) ParserError!?AST.Node.Index {
 }
 
 const primitive_types = .{
-    .{ TokenType.NumberConstant, .number },
-    .{ TokenType.BigIntConstant, .bigint },
-    .{ TokenType.StringConstant, .string },
+    .{ TokenType.NumberConstant, .number_literal },
+    .{ TokenType.BigIntConstant, .bigint_literal },
+    .{ TokenType.StringConstant, .string_literal },
     .{ TokenType.True, .true },
     .{ TokenType.False, .false },
     .{ TokenType.Null, .null },
@@ -773,9 +773,9 @@ test "should parse method type without types" {
         pub fn expect(t: TestParser, _: ?AST.Node.Index, _: MarkerList(text)) !void {
             try t.expectNodesToEqual(&[_]AST.Raw{
                 .{ .tag = .simple_value, .main_token = Token.at(0), .data = .{ .lhs = 1, .rhs = 1 } },
-                .{ .tag = .function_param, .main_token = Token.at(2), .data = .{ .lhs = 2, .rhs = 0 } },
-                .{ .tag = .function_param, .main_token = Token.at(4), .data = .{ .lhs = 3, .rhs = 0 } },
-                .{ .tag = .function_type, .main_token = Token.at(1), .data = .{ .lhs = 2, .rhs = 0 } },
+                .{ .tag = .function_param, .main_token = Token.at(2), .data = .{ .lhs = 2, .rhs = AST.Node.Index.empty.int() } },
+                .{ .tag = .function_param, .main_token = Token.at(4), .data = .{ .lhs = 3, .rhs = AST.Node.Index.empty.int() } },
+                .{ .tag = .function_type, .main_token = Token.at(1), .data = .{ .lhs = 2, .rhs = AST.Node.Index.empty.int() } },
                 .{ .tag = .object_type_field, .main_token = Token.at(0), .data = .{ .lhs = 1, .rhs = 4 } },
             });
         }

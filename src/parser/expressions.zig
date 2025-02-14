@@ -438,7 +438,7 @@ test "should parse chained member expression" {
             &[_]AST.Raw{
                 .{ .tag = .simple_value, .main_token = Token.at(1), .data = .{ .lhs = 1, .rhs = 1 } },
                 .{ .tag = .call_expr, .main_token = Token.at(1), .data = .{ .lhs = 1, .rhs = 0 } },
-                .{ .tag = .new_expr, .main_token = Token.at(0), .data = .{ .lhs = 2, .rhs = 0 } },
+                .{ .tag = .new_expr, .main_token = Token.at(0), .data = .{ .lhs = 2, .rhs = AST.Node.Index.empty.int() } },
                 .{ .tag = .simple_value, .main_token = Token.at(5), .data = .{ .lhs = 1, .rhs = 2 } },
                 .{ .tag = .property_access, .main_token = Token.at(4), .data = .{ .lhs = 3, .rhs = 4 } },
             },

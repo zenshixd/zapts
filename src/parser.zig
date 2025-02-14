@@ -6,6 +6,7 @@ const TokenType = @import("consts.zig").TokenType;
 const Reporter = @import("reporter.zig");
 const StringInterner = @import("string_interner.zig");
 const StringId = @import("string_interner.zig").StringId;
+const Type = @import("type.zig");
 
 const ErrorUnionOf = @import("meta.zig").ErrorUnionOf;
 const ReturnTypeOf = @import("meta.zig").ReturnTypeOf;
@@ -21,7 +22,6 @@ const expectError = std.testing.expectError;
 const Lexer = @import("lexer.zig");
 const Context = @import("lexer.zig").Context;
 const AST = @import("ast.zig");
-const Symbol = @import("symbols.zig").Symbol;
 const diagnostics = @import("diagnostics.zig");
 const TestParser = @import("test_parser.zig");
 const MarkerList = @import("test_parser.zig").MarkerList;
@@ -42,12 +42,11 @@ buffer: [:0]const u8,
 reporter: *Reporter,
 lexer: Lexer,
 tokens: std.ArrayList(Token),
-cur_token: Token.Index,
+cur_token: Token.Index = Token.at(0),
 nodes: std.ArrayList(AST.Raw),
 extra: std.ArrayList(u32),
-str_interner: StringInterner,
-symbols: std.MultiArrayList(Symbol),
-declarations: std.StringHashMap(Symbol.Index),
+str_interner: StringInterner = .{},
+types: std.ArrayList(Type),
 
 pub fn init(gpa: std.mem.Allocator, buffer: [:0]const u8, reporter: *Reporter) Parser {
     var nodes = std.ArrayList(AST.Raw).init(gpa);
@@ -58,13 +57,10 @@ pub fn init(gpa: std.mem.Allocator, buffer: [:0]const u8, reporter: *Reporter) P
         .reporter = reporter,
         .buffer = buffer,
         .lexer = .{ .reporter = reporter, .buffer = buffer },
-        .cur_token = Token.at(0),
         .tokens = std.ArrayList(Token).init(gpa),
         .nodes = nodes,
         .extra = std.ArrayList(u32).init(gpa),
-        .str_interner = .{},
-        .symbols = std.MultiArrayList(Symbol){},
-        .declarations = std.StringHashMap(Symbol.Index).init(gpa),
+        .types = Type.initArray(gpa),
     };
 }
 
@@ -72,15 +68,18 @@ pub fn deinit(self: *Parser) void {
     self.tokens.deinit();
     self.nodes.deinit();
     self.extra.deinit();
+    self.types.deinit();
     self.str_interner.deinit(self.gpa);
-    self.symbols.deinit(self.gpa);
-    self.declarations.deinit();
 }
 
 pub const getNode = AST.getNode;
 pub const getRawNode = AST.getRawNode;
 pub const addNode = AST.addNode;
 pub const listToSubrange = AST.listToSubrange;
+
+pub fn lookupStr(self: *Parser, string_id: StringId) []const u8 {
+    return self.str_interner.lookup(string_id).?;
+}
 
 pub fn internStr(self: *Parser, tok_idx: Token.Index) StringId {
     if (tok_idx == Token.Empty) {
@@ -89,29 +88,6 @@ pub fn internStr(self: *Parser, tok_idx: Token.Index) StringId {
 
     return self.str_interner.intern(self.gpa, self.tokens.items[tok_idx.int()].literal(self.buffer));
 }
-
-pub fn getSymbol(self: Parser, index: Symbol.Index) Symbol {
-    return self.symbols.get(index.int());
-}
-
-pub fn addSymbolNoDecl(self: *Parser, source: AST.Node.Index) Symbol.Index {
-    return self.addSymbol(source, Symbol.None);
-}
-
-pub fn addSymbol(self: *Parser, source: AST.Node.Index, declaration: Symbol.Index) Symbol.Index {
-    const index = Symbol.at(self.symbols.len);
-    self.symbols.append(self.gpa, Symbol{
-        .type = .other_type,
-        .source = source,
-        .declaration = declaration,
-    }) catch unreachable;
-    return index;
-}
-
-pub fn addDeclaration(self: *Parser, name: []const u8, symbol: Symbol.Index) void {
-    self.declarations.put(name, symbol) catch unreachable;
-}
-
 pub fn parse(self: *Parser) ParserError!AST.Node.Index {
     var nodes = std.ArrayList(AST.Node.Index).init(self.gpa);
     defer nodes.deinit();
@@ -303,10 +279,11 @@ test "should parse statements" {
     ;
 
     try TestParser.run(text, parse, struct {
-        pub fn expect(t: TestParser, node: AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{
+        pub fn expect(t: TestParser, node_idx: AST.Node.Index, _: MarkerList(text)) !void {
+            const node = t.parser.getNode(node_idx);
+            try std.testing.expectEqualDeep(AST.Node{
                 .root = @constCast(&[_]AST.Node.Index{ AST.Node.at(1), AST.Node.at(2), AST.Node.at(3) }),
-            });
+            }, node);
         }
     });
 }

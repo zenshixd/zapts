@@ -3,6 +3,7 @@ const Token = @import("consts.zig").Token;
 const StringId = @import("string_interner.zig").StringId;
 const Parser = @import("parser.zig");
 const Reporter = @import("reporter.zig");
+const Type = @import("type.zig");
 const assert = std.debug.assert;
 const expectEqual = std.testing.expectEqual;
 const expectEqualDeep = std.testing.expectEqualDeep;
@@ -185,22 +186,23 @@ pub const Raw = struct {
     tag: Tag = .root,
     main_token: Token.Index = Token.at(0),
     data: Data = .{},
+    ty: Type.Index = .none,
 
     comptime {
-        assert(@sizeOf(Raw) == @sizeOf(u128));
-        assert(@bitSizeOf(Raw) == @bitSizeOf(u128));
+        assert(@sizeOf(Raw) * 8 == @bitSizeOf(Raw));
     }
 
     pub const Data = struct {
-        lhs: u32 = 0,
-        rhs: u32 = 0,
+        lhs: u32 = Node.Index.empty.int(),
+        rhs: u32 = Node.Index.empty.int(),
     };
 
     // LCOV_EXCL_START
     pub fn format(self: Raw, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
-        try std.fmt.format(writer, "AST.Raw{{.tag = .{s}, .main_token = {d}, .data.lhs = {d}, .data.rhs = {d}}}", .{
+        try std.fmt.format(writer, "AST.Raw{{.tag = .{s}, .main_token = {d}, .ty = {d}, .data.lhs = {d}, .data.rhs = {d}}}", .{
             @tagName(self.tag),
             self.main_token,
+            self.ty,
             self.data.lhs,
             self.data.rhs,
         });
@@ -231,8 +233,11 @@ pub const SimpleValueKind = enum(u8) {
     identifier,
     private_identifier,
     number,
+    number_literal,
     bigint,
+    bigint_literal,
     string,
+    string_literal,
     boolean,
     regex,
     true,
@@ -240,6 +245,7 @@ pub const SimpleValueKind = enum(u8) {
     null,
     undefined,
     unknown,
+    never,
     void,
     any,
 };
@@ -455,9 +461,10 @@ pub const Node = union(enum) {
     type_decl: Binary,
     interface_decl: InterfaceDecl,
 
-    pub const Empty = at(0);
+    pub const Empty = Index.empty;
     pub const Index = enum(u32) {
         root,
+        empty = std.math.maxInt(u32),
         _,
 
         pub inline fn int(self: Index) u32 {
@@ -1323,6 +1330,7 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
 }
 
 pub fn getNode(self: Parser, index: Node.Index) Node {
+    assert(index != Node.Empty);
     const node = self.nodes.items[index.int()];
 
     switch (node.tag) {
@@ -1951,15 +1959,15 @@ test "imports" {
         },
         .{
             Node{ .import_binding = .{ .default = identifier_token } },
-            Raw{ .tag = .import_binding_default, .main_token = Token.at(0), .data = .{ .lhs = identifier_token.int(), .rhs = 0 } },
+            Raw{ .tag = .import_binding_default, .main_token = Token.at(0), .data = .{ .lhs = identifier_token.int() } },
         },
         .{
             Node{ .import_binding = .{ .namespace = identifier_token } },
-            Raw{ .tag = .import_binding_namespace, .main_token = Token.at(0), .data = .{ .lhs = identifier_token.int(), .rhs = 0 } },
+            Raw{ .tag = .import_binding_namespace, .main_token = Token.at(0), .data = .{ .lhs = identifier_token.int() } },
         },
         .{
             Node{ .import = .{ .simple = path_node_index } },
-            Raw{ .tag = .import, .main_token = Token.at(0), .data = .{ .lhs = 0, .rhs = path_node_index.int() } },
+            Raw{ .tag = .import, .main_token = Token.at(0), .data = .{ .rhs = path_node_index.int() } },
         },
         .{
             Node{ .import = .{ .full = .{ .bindings = &import_bindings, .path = path_node_index } } },
@@ -1972,6 +1980,7 @@ test "imports" {
     };
 
     inline for (tests) |test_case| {
+        std.debug.print("test case: {}\n", .{test_case});
         try expectRawNode(test_case[1], test_case[0]);
     }
 }
@@ -1997,11 +2006,11 @@ test "exports" {
         },
         .{
             Node{ .@"export" = .{ .default = node_index } },
-            Raw{ .tag = .export_default, .main_token = Token.at(0), .data = .{ .lhs = node_index.int(), .rhs = 0 } },
+            Raw{ .tag = .export_default, .main_token = Token.at(0), .data = .{ .lhs = node_index.int() } },
         },
         .{
             Node{ .@"export" = .{ .node = node_index } },
-            Raw{ .tag = .export_node, .main_token = Token.at(0), .data = .{ .lhs = node_index.int(), .rhs = 0 } },
+            Raw{ .tag = .export_node, .main_token = Token.at(0), .data = .{ .lhs = node_index.int() } },
         },
     };
 
@@ -2407,7 +2416,7 @@ test "empty" {
         try expectRawNode(Raw{
             .tag = test_case[1],
             .main_token = Token.at(0),
-            .data = .{ .lhs = 0, .rhs = 0 },
+            .data = .{},
         }, test_case[0]);
     }
 }

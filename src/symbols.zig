@@ -1,39 +1,24 @@
 const std = @import("std");
 const Token = @import("consts.zig").Token;
+const StringId = @import("string_interner.zig").StringId;
+const Type = @import("type.zig");
 
 const AST = @import("ast.zig");
 
 pub const Symbol = struct {
-    type: Type,
-    source: AST.Node.Index,
-    declaration: Symbol.Index,
+    name: StringId,
+    kind: Kind,
+    ty: Type.Index,
 
-    pub const Type = enum {
-        number_literal,
-        bigint_literal,
-        string_literal,
-        boolean_literal,
-        number,
-        bigint,
-        string,
-        boolean,
-        regex,
-        null,
-        undefined,
-        unknown,
-        any,
-        never,
-        object,
-        array,
-        tuple,
-        function,
+    pub const None = Index.none;
 
-        other_type,
+    pub const Kind = enum {
+        value,
+        type,
     };
 
-    pub const None = Index.at(0);
-
     pub const Index = enum(u32) {
+        none = std.math.maxInt(u32),
         _,
 
         pub inline fn int(self: Index) u32 {
@@ -41,7 +26,7 @@ pub const Symbol = struct {
         }
     };
 
-    pub fn at(index: u32) Index {
+    pub fn at(index: anytype) Index {
         return @enumFromInt(index);
     }
 };
