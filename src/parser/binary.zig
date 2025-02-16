@@ -13,9 +13,9 @@ const parseAsyncArrowFunction = @import("functions.zig").parseAsyncArrowFunction
 const parseArrowFunction = @import("functions.zig").parseArrowFunction;
 const parseConditionalExpression = @import("expressions.zig").parseConditionalExpression;
 
-const TestParser = @import("../test_parser.zig");
-const MarkerList = @import("../test_parser.zig").MarkerList;
-const Marker = @import("../test_parser.zig").Marker;
+const TestParser = @import("../tests/test_parser.zig");
+const Marker = TestParser.Marker;
+const MarkerList = TestParser.MarkerList;
 
 const expectEqual = std.testing.expectEqual;
 const expectEqualDeep = std.testing.expectEqualDeep;

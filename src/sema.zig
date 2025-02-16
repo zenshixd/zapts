@@ -36,19 +36,23 @@ pub fn getType(self: Sema, index: Type.Index) Type {
     return self.parser.types.items[index.int()];
 }
 
-pub fn addType(self: *Sema, kind: Type.Kind, data: Type.Data) Type.Index {
-    return self.parser.types.append(.{
+pub fn addType(self: *Sema, kind: Type.Kind, data: Type.Data) !Type.Index {
+    const idx = self.parser.types.items.len;
+
+    try self.parser.types.append(.{
         .kind = kind,
         .data = data,
     });
+
+    return Type.at(@intCast(idx));
 }
 
 pub fn getNodeType(self: Sema, index: AST.Node.Index) Type.Index {
-    return self.parser.nodes.items[index.int()].ty;
+    return self.parser.getRawNode(index).ty;
 }
 
 pub fn setNodeType(self: *Sema, index: AST.Node.Index, ty: Type.Index) void {
-    self.parser.nodes.items[index.int()].ty = ty;
+    self.parser.ast.nodes.items[index.int()].ty = ty;
 }
 
 pub fn getSymbol(self: Sema, index: Symbol.Index) Symbol {
@@ -162,15 +166,15 @@ pub fn analyzeNode(self: *Sema, node_idx: AST.Node.Index) SemaError!void {
                 .bigint => self.setNodeType(node_idx, .bigint),
                 .string => self.setNodeType(node_idx, .string),
                 .number_literal => {
-                    const ty_idx = self.addType(.number_literal, .{ .literal = simple_type.id });
+                    const ty_idx = try self.addType(.number_literal, .{ .literal = simple_type.id });
                     self.setNodeType(node_idx, ty_idx);
                 },
                 .bigint_literal => {
-                    const ty_idx = self.addType(.bigint_literal, .{ .literal = simple_type.id });
+                    const ty_idx = try self.addType(.bigint_literal, .{ .literal = simple_type.id });
                     self.setNodeType(node_idx, ty_idx);
                 },
                 .string_literal => {
-                    const ty_idx = self.addType(.string_literal, .{ .literal = simple_type.id });
+                    const ty_idx = try self.addType(.string_literal, .{ .literal = simple_type.id });
                     self.setNodeType(node_idx, ty_idx);
                 },
                 .boolean => self.setNodeType(node_idx, .boolean),

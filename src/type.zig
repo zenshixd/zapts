@@ -53,6 +53,7 @@ pub const Kind = enum {
 };
 
 pub const Data = union(enum) {
+    none: void,
     literal: StringId,
 };
 
@@ -80,7 +81,7 @@ comptime {
 }
 
 kind: Kind,
-data: Data,
+data: Data = .none,
 
 pub fn initArray(gpa: std.mem.Allocator) std.ArrayList(Type) {
     var arr = std.ArrayList(Type).init(gpa);
@@ -92,6 +93,6 @@ pub fn format(self: Type, comptime _: []const u8, _: std.fmt.FormatOptions, writ
     if (self.kind != .other_type) {
         try writer.print("{s}", .{@tagName(self.kind)});
     } else {
-        try writer.print("{s}", .{self.data.literal});
+        try writer.print("{}", .{self.data.literal});
     }
 }

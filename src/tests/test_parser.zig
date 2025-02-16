@@ -1,15 +1,18 @@
 const std = @import("std");
 
-const AST = @import("ast.zig");
-const Token = @import("consts.zig").Token;
-const TokenType = @import("consts.zig").TokenType;
-const diagnostics = @import("diagnostics.zig");
-const Parser = @import("parser.zig");
-const ParserError = @import("parser.zig").ParserError;
-const Reporter = @import("reporter.zig");
+const AST = @import("../ast.zig");
+const Token = @import("../consts.zig").Token;
+const TokenType = @import("../consts.zig").TokenType;
+const diagnostics = @import("../diagnostics.zig");
+const Parser = @import("../parser.zig");
+const ParserError = @import("../parser.zig").ParserError;
+const Reporter = @import("../reporter.zig");
 
-const ReturnTypeOf = @import("meta.zig").ReturnTypeOf;
-const ErrorUnionOf = @import("meta.zig").ErrorUnionOf;
+const Snapshot = @import("snapshots.zig").Snapshot;
+const check = Snapshot.check;
+
+const ReturnTypeOf = @import("../meta.zig").ReturnTypeOf;
+const ErrorUnionOf = @import("../meta.zig").ErrorUnionOf;
 
 const assert = std.debug.assert;
 const expectEqual = std.testing.expectEqual;
@@ -168,6 +171,11 @@ pub fn expectAST(t: TestParser, maybe_node: ?AST.Node.Index, expected: ?AST.Node
     try std.testing.expectEqualDeep(expected, if (maybe_node) |node| t.parser.getNode(node) else null);
 }
 
+pub fn expectASTSnapshot(t: TestParser, maybe_node: ?AST.Node.Index, expected: Snapshot) !void {
+    const node = if (maybe_node) |node| t.parser.getNode(node) else null;
+    try check(node, expected);
+}
+
 pub fn expectTokenAt(t: TestParser, comptime marker: Marker, node: AST.Node.Index) !void {
     const raw = t.parser.getRawNode(node);
     const tok = t.parser.tokens.items[raw.main_token.int()];
@@ -250,5 +258,5 @@ pub fn expectSimpleMethod(t: TestParser, node_idx: AST.Node.Index, expected_flag
 }
 
 pub fn expectNodesToEqual(t: TestParser, expected_nodes: []const AST.Raw) !void {
-    try expectEqualSlices(AST.Raw, expected_nodes, t.parser.nodes.items[1..]);
+    try expectEqualSlices(AST.Raw, expected_nodes, t.parser.ast.nodes.items[1..]);
 }

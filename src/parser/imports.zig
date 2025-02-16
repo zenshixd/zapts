@@ -16,9 +16,9 @@ const parseAsyncFunctionStatement = @import("functions.zig").parseAsyncFunctionS
 const parseIdentifier = @import("primary.zig").parseIdentifier;
 const parseKeywordAsIdentifier = @import("primary.zig").parseKeywordAsIdentifier;
 
-const TestParser = @import("../test_parser.zig");
-const MarkerList = @import("../test_parser.zig").MarkerList;
-const Marker = @import("../test_parser.zig").Marker;
+const TestParser = @import("../tests/test_parser.zig");
+const Marker = TestParser.Marker;
+const MarkerList = TestParser.MarkerList;
 
 const assert = std.debug.assert;
 const expectEqual = std.testing.expectEqual;

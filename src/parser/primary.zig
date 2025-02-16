@@ -24,9 +24,10 @@ const parseObjectElementName = @import("functions.zig").parseObjectElementName;
 const parseExpression = @import("expressions.zig").parseExpression;
 const expectExpression = @import("expressions.zig").expectExpression;
 
-const Marker = @import("../test_parser.zig").Marker;
-const MarkerList = @import("../test_parser.zig").MarkerList;
-const TestParser = @import("../test_parser.zig");
+const snap = @import("../tests/snapshots.zig").snap;
+const TestParser = @import("../tests/test_parser.zig");
+const Marker = TestParser.Marker;
+const MarkerList = TestParser.MarkerList;
 
 const expectEqual = std.testing.expectEqual;
 const expectEqualDeep = std.testing.expectEqualDeep;
@@ -736,16 +737,19 @@ test "should parse template literal with object as substitution" {
     ;
 
     try TestParser.run(text, parseTemplateLiteral, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            const expected_node = AST.Node{
-                .template_literal = @constCast(&[_]AST.Node.Index{ AST.Node.at(1), AST.Node.at(5), AST.Node.at(6) }),
-            };
-            try t.expectAST(node, expected_node);
-            try t.expectTokenAt(markers[0], node.?);
-
-            try t.expectAST(expected_node.template_literal[0], AST.Node{ .template_part = StringId.at(1) });
-            try t.expectAST(expected_node.template_literal[1], AST.Node{ .object_literal = @constCast(&[_]AST.Node.Index{AST.Node.at(4)}) });
-            try t.expectAST(expected_node.template_literal[2], AST.Node{ .template_part = StringId.at(4) });
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime _: MarkerList(text)) !void {
+            // const expected_node = AST.Node{
+            //     .template_literal = @constCast(&[_]AST.Node.Index{ AST.Node.at(1), AST.Node.at(5), AST.Node.at(6) }),
+            // };
+            // try t.expectAST(node, expected_node);
+            // try t.expectTokenAt(markers[0], node.?);
+            //
+            // try t.expectAST(expected_node.template_literal[0], AST.Node{ .template_part = StringId.at(1) });
+            // try t.expectAST(expected_node.template_literal[1], AST.Node{ .object_literal = @constCast(&[_]AST.Node.Index{AST.Node.at(4)}) });
+            // try t.expectAST(expected_node.template_literal[2], AST.Node{ .template_part = StringId.at(4) });
+            try t.expectASTSnapshot(node, snap(@src(),
+                \\
+            ));
         }
     });
 }

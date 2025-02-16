@@ -35,5 +35,6 @@ test {
     _ = @import("parser.zig");
     _ = @import("sema.zig");
     _ = @import("string_interner.zig");
-    _ = @import("test_parser.zig");
+    _ = @import("tests/test_parser.zig");
+    _ = @import("tests/snapshots.zig");
 }

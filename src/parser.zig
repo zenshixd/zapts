@@ -23,8 +23,8 @@ const Lexer = @import("lexer.zig");
 const Context = @import("lexer.zig").Context;
 const AST = @import("ast.zig");
 const diagnostics = @import("diagnostics.zig");
-const TestParser = @import("test_parser.zig");
-const MarkerList = @import("test_parser.zig").MarkerList;
+const TestParser = @import("tests/test_parser.zig");
+const MarkerList = TestParser.MarkerList;
 
 const parseStatement = @import("parser/statements.zig").parseStatement;
 
@@ -43,39 +43,47 @@ reporter: *Reporter,
 lexer: Lexer,
 tokens: std.ArrayList(Token),
 cur_token: Token.Index = Token.at(0),
-nodes: std.ArrayList(AST.Raw),
-extra: std.ArrayList(u32),
+ast: AST = .{},
 str_interner: StringInterner = .{},
 types: std.ArrayList(Type),
 
 pub fn init(gpa: std.mem.Allocator, buffer: [:0]const u8, reporter: *Reporter) Parser {
-    var nodes = std.ArrayList(AST.Raw).init(gpa);
-    _ = nodes.addOne() catch @panic("out of memory");
-
     return .{
         .gpa = gpa,
         .reporter = reporter,
         .buffer = buffer,
         .lexer = .{ .reporter = reporter, .buffer = buffer },
         .tokens = std.ArrayList(Token).init(gpa),
-        .nodes = nodes,
-        .extra = std.ArrayList(u32).init(gpa),
         .types = Type.initArray(gpa),
     };
 }
 
 pub fn deinit(self: *Parser) void {
     self.tokens.deinit();
-    self.nodes.deinit();
-    self.extra.deinit();
+    self.ast.deinit(self.gpa);
     self.types.deinit();
     self.str_interner.deinit(self.gpa);
 }
 
-pub const getNode = AST.getNode;
-pub const getRawNode = AST.getRawNode;
-pub const addNode = AST.addNode;
-pub const listToSubrange = AST.listToSubrange;
+pub fn getNode(self: Parser, index: AST.Node.Index) AST.Node {
+    return self.ast.getNode(index);
+}
+
+pub fn getRawNode(self: Parser, index: AST.Node.Index) AST.Raw {
+    return self.ast.getRawNode(index);
+}
+
+pub fn addNode(self: *Parser, main_token: Token.Index, key: AST.Node) AST.Node.Index {
+    return self.ast.addNode(self.gpa, main_token, key);
+}
+
+pub fn addRawNode(self: *Parser, node: AST.Raw) AST.Node.Index {
+    return self.ast.addRawNode(self.gpa, node);
+}
+
+pub fn listToSubrange(self: *Parser, list: anytype) AST.Extra.Subrange {
+    return self.ast.listToSubrange(self.gpa, list);
+}
 
 pub fn lookupStr(self: *Parser, string_id: StringId) []const u8 {
     return self.str_interner.lookup(string_id).?;
@@ -89,6 +97,12 @@ pub fn internStr(self: *Parser, tok_idx: Token.Index) StringId {
     return self.str_interner.intern(self.gpa, self.tokens.items[tok_idx.int()].literal(self.buffer));
 }
 pub fn parse(self: *Parser) ParserError!AST.Node.Index {
+    const root_idx = self.addRawNode(.{
+        .tag = .root,
+        .main_token = Token.at(0),
+        .data = .{},
+    });
+
     var nodes = std.ArrayList(AST.Node.Index).init(self.gpa);
     defer nodes.deinit();
 
@@ -104,12 +118,11 @@ pub fn parse(self: *Parser) ParserError!AST.Node.Index {
 
     const subrange = self.listToSubrange(nodes.items);
 
-    self.nodes.items[0] = .{
-        .tag = .root,
-        .main_token = Token.at(0),
-        .data = .{ .lhs = subrange.start.int(), .rhs = subrange.end.int() },
+    self.ast.nodes.items[root_idx.int()].data = .{
+        .lhs = subrange.start.int(),
+        .rhs = subrange.end.int(),
     };
-    return AST.Node.at(0);
+    return root_idx;
 }
 
 pub fn endIndexAt(self: *Parser, at: u32) u32 {
@@ -207,15 +220,15 @@ pub fn consumeOrNull(self: *Parser, token_type: TokenType) ?Token.Index {
 pub fn checkpoint(self: *Parser) Checkpoint {
     return Checkpoint{
         .tok_idx = self.cur_token,
-        .node_idx = @intCast(self.nodes.items.len),
-        .extra_idx = @intCast(self.extra.items.len),
+        .node_idx = @intCast(self.ast.nodes.items.len),
+        .extra_idx = @intCast(self.ast.extra.items.len),
     };
 }
 
 pub fn rewindTo(self: *Parser, cp: Checkpoint) void {
     self.cur_token = cp.tok_idx;
-    self.nodes.items.len = cp.node_idx;
-    self.extra.items.len = cp.extra_idx;
+    self.ast.nodes.items.len = cp.node_idx;
+    self.ast.extra.items.len = cp.extra_idx;
 }
 
 pub fn setContext(self: *Parser, context: Context) void {

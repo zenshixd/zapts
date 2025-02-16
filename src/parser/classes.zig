@@ -19,9 +19,9 @@ const parseKeywordAsIdentifier = @import("primary.zig").parseKeywordAsIdentifier
 const parseOptionalDataType = @import("types.zig").parseOptionalDataType;
 const parseCallableExpression = @import("expressions.zig").parseCallableExpression;
 
-const TestParser = @import("../test_parser.zig");
-const MarkerList = @import("../test_parser.zig").MarkerList;
-const Marker = @import("../test_parser.zig").Marker;
+const TestParser = @import("../tests/test_parser.zig");
+const Marker = TestParser.Marker;
+const MarkerList = TestParser.MarkerList;
 
 const expectEqualDeep = std.testing.expectEqualDeep;
 

@@ -17,9 +17,9 @@ const parseIdentifier = @import("primary.zig").parseIdentifier;
 const parseOptionalDataType = @import("types.zig").parseOptionalDataType;
 const parseBlock = @import("statements.zig").parseBlock;
 
-const TestParser = @import("../test_parser.zig");
-const MarkerList = @import("../test_parser.zig").MarkerList;
-const Marker = @import("../test_parser.zig").Marker;
+const TestParser = @import("../tests/test_parser.zig");
+const Marker = TestParser.Marker;
+const MarkerList = TestParser.MarkerList;
 
 pub fn parseMethodAsyncGenerator(self: *Parser) ParserError!?AST.Node.Index {
     const main_token = self.cur_token;

@@ -13,9 +13,9 @@ const parseExpression = @import("expressions.zig").parseExpression;
 const expectExpression = @import("expressions.zig").expectExpression;
 const parseDeclaration = @import("statements.zig").parseDeclaration;
 
-const TestParser = @import("../test_parser.zig");
-const MarkerList = @import("../test_parser.zig").MarkerList;
-const Marker = @import("../test_parser.zig").Marker;
+const TestParser = @import("../tests/test_parser.zig");
+const Marker = TestParser.Marker;
+const MarkerList = TestParser.MarkerList;
 
 const expectEqual = std.testing.expectEqual;
 const expectEqualDeep = std.testing.expectEqualDeep;

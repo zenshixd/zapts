@@ -27,12 +27,14 @@ pub fn build(b: *std.Build) void {
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
 
+    const maybe_filter = b.option([]const u8, "filter", "Filter tests to run");
     const exe_unit_tests = b.addTest(.{
         .root_source_file = b.path("src/main.zig"),
+        .name = maybe_filter orelse "test",
         .target = target,
         .optimize = optimize,
         .test_runner = b.path("tests/unit_tests_runner.zig"),
-        .filter = b.option([]const u8, "filter", "Filter tests to run"),
+        .filter = maybe_filter,
     });
 
     const run_unit_tests = b.addSystemCommand(&.{

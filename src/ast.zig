@@ -9,6 +9,8 @@ const expectEqual = std.testing.expectEqual;
 const expectEqualDeep = std.testing.expectEqualDeep;
 const expectEqualSlices = std.testing.expectEqualSlices;
 
+const AST = @This();
+
 pub const Tag = enum {
     root,
     // lhs: Extra.Subrange or empty, rhs: path
@@ -463,7 +465,6 @@ pub const Node = union(enum) {
 
     pub const Empty = Index.empty;
     pub const Index = enum(u32) {
-        root,
         empty = std.math.maxInt(u32),
         _,
 
@@ -667,20 +668,65 @@ pub const Node = union(enum) {
     pub inline fn at(index: u32) Node.Index {
         return @enumFromInt(index);
     }
+
+    fn writeIndent(indent: u32, writer: anytype) !void {
+        for (0..indent) |_| {
+            try writer.writeAll("  ");
+        }
+    }
+
+    pub fn format(self: Node, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        const UnionTagType = @typeInfo(Node).@"union".tag_type.?;
+        var indent: u32 = 0;
+        try writer.writeAll("AST.Node{\n");
+        indent += 1;
+        inline for (std.meta.fields(Node)) |field| {
+            if (@field(UnionTagType, field.name) == std.meta.activeTag(self)) {
+                try writeIndent(indent, writer);
+                try writer.print(".{s} = ", .{field.name});
+                const val = @field(self, field.name);
+                if (@TypeOf(val) == Node.Index) {
+                    try writer.print("Node.Index({d})\n", .{val.int()});
+                } else if (@TypeOf(val) == []Node.Index) {
+                    try writer.writeAll("[_].{\n");
+                    indent += 1;
+                    for (val) |node| {
+                        try writeIndent(indent, writer);
+                        try writer.print("Node.Index({d}),\n", .{node.int()});
+                    }
+                    indent -= 1;
+                    try writeIndent(indent, writer);
+                    try writer.writeAll("}\n");
+                } else {
+                    try writer.print("{any}\n, ", .{@field(self, field.name)});
+                }
+            }
+        }
+        indent -= 1;
+        try writer.writeAll("}");
+    }
 };
 
-pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
+nodes: std.ArrayListUnmanaged(Raw) = .empty,
+extra: std.ArrayListUnmanaged(u32) = .empty,
+
+pub fn deinit(self: *AST, allocator: std.mem.Allocator) void {
+    self.nodes.deinit(allocator);
+    self.extra.deinit(allocator);
+}
+
+pub fn addNode(self: *AST, allocator: std.mem.Allocator, main_token: Token.Index, key: Node) Node.Index {
     switch (key) {
         .root => |root| {
-            const subrange = listToSubrange(self, root);
-            return addRawNode(self, .{
+            const subrange = self.listToSubrange(allocator, root);
+            return self.addRawNode(allocator, .{
                 .tag = .root,
                 .main_token = main_token,
                 .data = .{ .lhs = subrange.start.int(), .rhs = subrange.end.int() },
             });
         },
         .binding_decl => |binding_decl| {
-            return addRawNode(self, .{
+            return self.addRawNode(allocator, .{
                 .tag = .binding_decl,
                 .main_token = main_token,
                 .data = .{ .lhs = binding_decl.name.int(), .rhs = binding_decl.alias.int() },
@@ -689,19 +735,19 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
         .import => |import| {
             switch (import) {
                 .simple => |simple| {
-                    return addRawNode(self, .{
+                    return self.addRawNode(allocator, .{
                         .tag = .import,
                         .main_token = main_token,
                         .data = .{ .rhs = simple.int() },
                     });
                 },
                 .full => |full| {
-                    const span = listToSubrange(self, full.bindings);
-                    return addRawNode(self, .{
+                    const span = self.listToSubrange(allocator, full.bindings);
+                    return self.addRawNode(allocator, .{
                         .tag = .import,
                         .main_token = main_token,
                         .data = .{
-                            .lhs = addExtra(self, span).int(),
+                            .lhs = self.addExtra(allocator, span).int(),
                             .rhs = full.path.int(),
                         },
                     });
@@ -711,8 +757,8 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
         .import_binding => |import_binding| {
             switch (import_binding) {
                 .named => |named| {
-                    const span = listToSubrange(self, named);
-                    return addRawNode(self, .{
+                    const span = self.listToSubrange(allocator, named);
+                    return self.addRawNode(allocator, .{
                         .tag = .import_binding_named,
                         .main_token = main_token,
                         .data = .{
@@ -722,14 +768,14 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                     });
                 },
                 .default => |default| {
-                    return addRawNode(self, .{
+                    return self.addRawNode(allocator, .{
                         .tag = .import_binding_default,
                         .main_token = main_token,
                         .data = .{ .lhs = default.int() },
                     });
                 },
                 .namespace => |namespace| {
-                    return addRawNode(self, .{
+                    return self.addRawNode(allocator, .{
                         .tag = .import_binding_namespace,
                         .main_token = main_token,
                         .data = .{ .lhs = namespace.int() },
@@ -740,8 +786,8 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
         .@"export" => |@"export"| {
             switch (@"export") {
                 .named => |named| {
-                    const span = listToSubrange(self, named);
-                    return addRawNode(self, .{
+                    const span = self.listToSubrange(allocator, named);
+                    return self.addRawNode(allocator, .{
                         .tag = .export_named,
                         .main_token = main_token,
                         .data = .{
@@ -751,18 +797,18 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                     });
                 },
                 .from => |from| {
-                    const span = listToSubrange(self, from.bindings);
-                    return addRawNode(self, .{
+                    const span = self.listToSubrange(allocator, from.bindings);
+                    return self.addRawNode(allocator, .{
                         .tag = .export_from,
                         .main_token = main_token,
                         .data = .{
-                            .lhs = addExtra(self, span).int(),
+                            .lhs = self.addExtra(allocator, span).int(),
                             .rhs = from.path.int(),
                         },
                     });
                 },
                 .from_all => |from| {
-                    return addRawNode(self, .{
+                    return self.addRawNode(allocator, .{
                         .tag = .export_from_all,
                         .main_token = main_token,
                         .data = .{
@@ -772,14 +818,14 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                     });
                 },
                 .default => |default| {
-                    return addRawNode(self, .{
+                    return self.addRawNode(allocator, .{
                         .tag = .export_default,
                         .main_token = main_token,
                         .data = .{ .lhs = default.int() },
                     });
                 },
                 .node => |node| {
-                    return addRawNode(self, .{
+                    return self.addRawNode(allocator, .{
                         .tag = .export_node,
                         .main_token = main_token,
                         .data = .{ .lhs = node.int() },
@@ -788,14 +834,14 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
             }
         },
         .class => |class| {
-            const implements_span = listToSubrange(self, class.implements);
-            const subrange = listToSubrange(self, class.body);
-            return addRawNode(self, .{
+            const implements_span = self.listToSubrange(allocator, class.implements);
+            const subrange = self.listToSubrange(allocator, class.body);
+            return self.addRawNode(allocator, .{
                 .tag = if (class.abstract) .abstract_class_decl else .class_decl,
                 .main_token = main_token,
                 .data = .{
                     .lhs = class.name.int(),
-                    .rhs = addExtra(self, Extra.ClassDeclaration{
+                    .rhs = self.addExtra(allocator, Extra.ClassDeclaration{
                         .super_class = class.super_class,
                         .implements_start = implements_span.start,
                         .implements_end = implements_span.end,
@@ -806,8 +852,8 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
             });
         },
         .class_static_block => |static_block| {
-            const subrange = listToSubrange(self, static_block);
-            return addRawNode(self, .{
+            const subrange = self.listToSubrange(allocator, static_block);
+            return self.addRawNode(allocator, .{
                 .tag = .class_static_block,
                 .main_token = main_token,
                 .data = .{
@@ -817,7 +863,7 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
             });
         },
         .class_member => |member| {
-            return addRawNode(self, .{
+            return self.addRawNode(allocator, .{
                 .tag = .class_member,
                 .main_token = main_token,
                 .data = .{
@@ -827,11 +873,11 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
             });
         },
         .class_field => |field| {
-            const binding = addExtra(self, Extra.Declaration{
+            const binding = self.addExtra(allocator, Extra.Declaration{
                 .decl_type = field.decl_type,
                 .value = field.value,
             });
-            return addRawNode(self, .{
+            return self.addRawNode(allocator, .{
                 .tag = .class_field,
                 .main_token = main_token,
                 .data = .{
@@ -846,8 +892,8 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                 .@"var" => .var_decl,
                 .@"const" => .const_decl,
             };
-            const subrange = listToSubrange(self, declaration.list);
-            return addRawNode(self, .{
+            const subrange = self.listToSubrange(allocator, declaration.list);
+            return self.addRawNode(allocator, .{
                 .tag = tag,
                 .main_token = main_token,
                 .data = .{
@@ -857,12 +903,12 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
             });
         },
         .decl_binding => |declaration| {
-            return addRawNode(self, .{
+            return self.addRawNode(allocator, .{
                 .tag = .decl_binding,
                 .main_token = main_token,
                 .data = .{
                     .lhs = declaration.name.int(),
-                    .rhs = addExtra(self, Extra.Declaration{
+                    .rhs = self.addExtra(allocator, Extra.Declaration{
                         .decl_type = declaration.decl_type,
                         .value = declaration.value,
                     }).int(),
@@ -870,11 +916,11 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
             });
         },
         .@"if", .ternary_expr => |if_node| {
-            return addRawNode(self, .{
+            return self.addRawNode(allocator, .{
                 .tag = if (key == .@"if") .@"if" else .ternary,
                 .main_token = main_token,
                 .data = .{
-                    .lhs = addExtra(self, Extra.If{
+                    .lhs = self.addExtra(allocator, Extra.If{
                         .expr = if_node.expr,
                         .body = if_node.body,
                     }).int(),
@@ -883,21 +929,21 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
             });
         },
         .@"switch" => |switch_node| {
-            const cases = listToSubrange(self, switch_node.cases);
-            return addRawNode(self, .{
+            const cases = self.listToSubrange(allocator, switch_node.cases);
+            return self.addRawNode(allocator, .{
                 .tag = .@"switch",
                 .main_token = main_token,
                 .data = .{
                     .lhs = switch_node.expr.int(),
-                    .rhs = addExtra(self, cases).int(),
+                    .rhs = self.addExtra(allocator, cases).int(),
                 },
             });
         },
         .case => |case_key| {
             switch (case_key) {
                 .default => |default_node| {
-                    const stmts = listToSubrange(self, default_node);
-                    return addRawNode(self, .{
+                    const stmts = self.listToSubrange(allocator, default_node);
+                    return self.addRawNode(allocator, .{
                         .tag = .default,
                         .main_token = main_token,
                         .data = .{
@@ -907,13 +953,13 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                     });
                 },
                 .case => |case_node| {
-                    const stmts = listToSubrange(self, case_node.body);
-                    return addRawNode(self, .{
+                    const stmts = self.listToSubrange(allocator, case_node.body);
+                    return self.addRawNode(allocator, .{
                         .tag = .case,
                         .main_token = main_token,
                         .data = .{
                             .lhs = case_node.expr.int(),
-                            .rhs = addExtra(self, stmts).int(),
+                            .rhs = self.addExtra(allocator, stmts).int(),
                         },
                     });
                 },
@@ -922,11 +968,11 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
         .@"for" => |for_node| {
             switch (for_node) {
                 .classic => |classic| {
-                    return addRawNode(self, .{
+                    return self.addRawNode(allocator, .{
                         .tag = .@"for",
                         .main_token = main_token,
                         .data = .{
-                            .lhs = addExtra(self, Extra.ForThree{
+                            .lhs = self.addExtra(allocator, Extra.ForThree{
                                 .init = classic.init,
                                 .cond = classic.cond,
                                 .post = classic.post,
@@ -936,11 +982,11 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                     });
                 },
                 .in => |in| {
-                    return addRawNode(self, .{
+                    return self.addRawNode(allocator, .{
                         .tag = .for_in,
                         .main_token = main_token,
                         .data = .{
-                            .lhs = addExtra(self, Extra.ForTwo{
+                            .lhs = self.addExtra(allocator, Extra.ForTwo{
                                 .left = in.left,
                                 .right = in.right,
                             }).int(),
@@ -949,11 +995,11 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                     });
                 },
                 .of => |of| {
-                    return addRawNode(self, .{
+                    return self.addRawNode(allocator, .{
                         .tag = .for_of,
                         .main_token = main_token,
                         .data = .{
-                            .lhs = addExtra(self, Extra.ForTwo{
+                            .lhs = self.addExtra(allocator, Extra.ForTwo{
                                 .left = of.left,
                                 .right = of.right,
                             }).int(),
@@ -964,7 +1010,7 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
             }
         },
         .@"while", .do_while => |while_node| {
-            return addRawNode(self, .{
+            return self.addRawNode(allocator, .{
                 .tag = if (key == .@"while") .@"while" else .do_while,
                 .main_token = main_token,
                 .data = .{
@@ -974,8 +1020,8 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
             });
         },
         .block, .array_literal, .object_literal => |nodes| {
-            const subrange = listToSubrange(self, nodes);
-            return addRawNode(self, .{
+            const subrange = self.listToSubrange(allocator, nodes);
+            return self.addRawNode(allocator, .{
                 .tag = switch (key) {
                     .block => .block,
                     .array_literal => .array_literal,
@@ -987,7 +1033,7 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
             });
         },
         .function_param => |param| {
-            return addRawNode(self, .{
+            return self.addRawNode(allocator, .{
                 .tag = .function_param,
                 .main_token = main_token,
                 .data = .{ .lhs = param.identifier.int(), .rhs = param.type.int() },
@@ -999,13 +1045,13 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                 .function_expr => .func_expr,
                 else => unreachable, // LCOV_EXCL_LINE
             };
-            const subrange = listToSubrange(self, func_decl.params);
-            return addRawNode(self, .{
+            const subrange = self.listToSubrange(allocator, func_decl.params);
+            return self.addRawNode(allocator, .{
                 .tag = tag,
                 .main_token = main_token,
                 .data = .{
                     .lhs = func_decl.name.int(),
-                    .rhs = addExtra(self, Extra.Function{
+                    .rhs = self.addExtra(allocator, Extra.Function{
                         .flags = func_decl.flags,
                         .params_start = subrange.start,
                         .params_end = subrange.end,
@@ -1021,13 +1067,13 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                 .object_method => .object_method,
                 else => unreachable, // LCOV_EXCL_LINE
             };
-            const subrange = listToSubrange(self, method_decl.params);
-            return addRawNode(self, .{
+            const subrange = self.listToSubrange(allocator, method_decl.params);
+            return self.addRawNode(allocator, .{
                 .tag = tag,
                 .main_token = main_token,
                 .data = .{
                     .lhs = method_decl.name.int(),
-                    .rhs = addExtra(self, Extra.Function{
+                    .rhs = self.addExtra(allocator, Extra.Function{
                         .flags = method_decl.flags,
                         .params_start = subrange.start,
                         .params_end = subrange.end,
@@ -1038,12 +1084,12 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
             });
         },
         .arrow_function => |arrow_func| {
-            const subrange = listToSubrange(self, arrow_func.params);
-            return addRawNode(self, .{
+            const subrange = self.listToSubrange(allocator, arrow_func.params);
+            return self.addRawNode(allocator, .{
                 .tag = if (arrow_func.type == .async_arrow) .async_arrow_function else .arrow_function,
                 .main_token = main_token,
                 .data = .{
-                    .lhs = addExtra(self, Extra.ArrowFunction{
+                    .lhs = self.addExtra(allocator, Extra.ArrowFunction{
                         .params_start = subrange.start,
                         .params_end = subrange.end,
                         .return_type = arrow_func.return_type,
@@ -1054,25 +1100,25 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
             });
         },
         .call_expr => |expr| {
-            const subrange = listToSubrange(self, expr.params);
-            return addRawNode(self, .{
+            const subrange = self.listToSubrange(allocator, expr.params);
+            return self.addRawNode(allocator, .{
                 .tag = .call_expr,
                 .main_token = main_token,
                 .data = .{
                     .lhs = expr.node.int(),
-                    .rhs = addExtra(self, subrange).int(),
+                    .rhs = self.addExtra(allocator, subrange).int(),
                 },
             });
         },
         .object_type, .tuple_type, .template_literal => |obj_type| {
-            const subrange = listToSubrange(self, obj_type);
+            const subrange = self.listToSubrange(allocator, obj_type);
             const tag: Tag = switch (key) {
                 .object_type => .object_type,
                 .tuple_type => .tuple_type,
                 .template_literal => .template_literal,
                 else => unreachable, // LCOV_EXCL_LINE
             };
-            return addRawNode(self, .{
+            return self.addRawNode(allocator, .{
                 .tag = tag,
                 .main_token = main_token,
                 .data = .{
@@ -1082,22 +1128,22 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
             });
         },
         .template_part => |template_part| {
-            return addRawNode(self, .{
+            return self.addRawNode(allocator, .{
                 .tag = .template_part,
                 .main_token = main_token,
                 .data = .{ .lhs = template_part.int() },
             });
         },
         .function_type => |func_type| {
-            const generic_params_subrange = listToSubrange(self, func_type.generic_params);
-            const params_subrange = listToSubrange(self, func_type.params);
-            const extra = addExtra(self, Extra.FunctionType{
+            const generic_params_subrange = self.listToSubrange(allocator, func_type.generic_params);
+            const params_subrange = self.listToSubrange(allocator, func_type.params);
+            const extra = self.addExtra(allocator, Extra.FunctionType{
                 .generic_params_start = generic_params_subrange.start,
                 .generic_params_end = generic_params_subrange.end,
                 .params_start = params_subrange.start,
                 .params_end = params_subrange.end,
             });
-            return addRawNode(self, .{
+            return self.addRawNode(allocator, .{
                 .tag = .function_type,
                 .main_token = main_token,
                 .data = .{
@@ -1209,7 +1255,7 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                 .type_decl => .type_decl,
                 else => unreachable, // LCOV_EXCL_LINE
             };
-            return addRawNode(self, .{
+            return self.addRawNode(allocator, .{
                 .tag = tag,
                 .main_token = main_token,
                 .data = .{
@@ -1263,7 +1309,7 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                 .index_type => .index_type,
                 else => unreachable, // LCOV_EXCL_LINE
             };
-            return addRawNode(self, .{
+            return self.addRawNode(allocator, .{
                 .tag = tag,
                 .main_token = main_token,
                 .data = .{ .lhs = node.int() },
@@ -1278,46 +1324,46 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
                 .@"continue" => .@"continue",
                 else => unreachable, // LCOV_EXCL_LINE
             };
-            return addRawNode(self, .{
+            return self.addRawNode(allocator, .{
                 .tag = tag,
                 .main_token = main_token,
                 .data = .{},
             });
         },
         .simple_value, .simple_type => |simple_value| {
-            return addRawNode(self, .{
+            return self.addRawNode(allocator, .{
                 .tag = if (key == .simple_value) .simple_value else .simple_type,
                 .main_token = main_token,
                 .data = .{ .lhs = @intFromEnum(simple_value.kind), .rhs = @intFromEnum(simple_value.id) },
             });
         },
         .object_type_field => |obj_field_type| {
-            return addRawNode(self, .{
+            return self.addRawNode(allocator, .{
                 .tag = .object_type_field,
                 .main_token = main_token,
                 .data = .{ .lhs = obj_field_type.name.int(), .rhs = obj_field_type.type.int() },
             });
         },
         .generic_type => |generic_type| {
-            const span = listToSubrange(self, generic_type.params);
-            return addRawNode(self, .{
+            const span = self.listToSubrange(allocator, generic_type.params);
+            return self.addRawNode(allocator, .{
                 .tag = .generic_type,
                 .main_token = main_token,
                 .data = .{
                     .lhs = generic_type.name.int(),
-                    .rhs = addExtra(self, span).int(),
+                    .rhs = self.addExtra(allocator, span).int(),
                 },
             });
         },
         .interface_decl => |interface_decl| {
-            const extends_span = listToSubrange(self, interface_decl.extends);
-            const body_span = listToSubrange(self, interface_decl.body);
-            return addRawNode(self, .{
+            const extends_span = self.listToSubrange(allocator, interface_decl.extends);
+            const body_span = self.listToSubrange(allocator, interface_decl.body);
+            return self.addRawNode(allocator, .{
                 .tag = .interface_decl,
                 .main_token = main_token,
                 .data = .{
                     .lhs = interface_decl.name.int(),
-                    .rhs = addExtra(self, Extra.Interface{
+                    .rhs = self.addExtra(allocator, Extra.Interface{
                         .extends_start = extends_span.start,
                         .extends_end = extends_span.end,
                         .body_start = body_span.start,
@@ -1329,7 +1375,7 @@ pub fn addNode(self: *Parser, main_token: Token.Index, key: Node) Node.Index {
     }
 }
 
-pub fn getNode(self: Parser, index: Node.Index) Node {
+pub fn getNode(self: AST, index: Node.Index) Node {
     assert(index != Node.Empty);
     const node = self.nodes.items[index.int()];
 
@@ -1876,30 +1922,30 @@ pub fn getNode(self: Parser, index: Node.Index) Node {
     }
 }
 
-pub fn getRawNode(self: Parser, index: Node.Index) Raw {
+pub fn getRawNode(self: AST, index: Node.Index) Raw {
     return self.nodes.items[index.int()];
 }
 
-pub fn addRawNode(self: *Parser, node: Raw) Node.Index {
+pub fn addRawNode(self: *AST, allocator: std.mem.Allocator, node: Raw) Node.Index {
     const index = self.nodes.items.len;
-    self.nodes.append(node) catch @panic("Out of memory");
+    self.nodes.append(allocator, node) catch @panic("Out of memory");
     return Node.at(@intCast(index));
 }
 
-pub fn getExtra(self: Parser, ty: type, index: Extra.Index) ty {
+pub fn getExtra(self: AST, ty: type, index: Extra.Index) ty {
     const fields = std.meta.fields(ty);
     var result: [fields.len]Node.Index = undefined;
     @memcpy(&result, getExtraItems(self, Node.Index, index.int(), index.int() + fields.len));
     return @as(*ty, @ptrCast(&result)).*;
 }
 
-pub fn getExtraItems(self: Parser, ty: type, start: usize, end: usize) []ty {
+pub fn getExtraItems(self: AST, ty: type, start: usize, end: usize) []ty {
     return @as([]ty, @ptrCast(self.extra.items[start..end]));
 }
 
-pub fn addExtra(self: *Parser, extra: anytype) Extra.Index {
+pub fn addExtra(self: *AST, allocator: std.mem.Allocator, extra: anytype) Extra.Index {
     const fields = std.meta.fields(@TypeOf(extra));
-    self.extra.ensureUnusedCapacity(fields.len) catch @panic("Out of memory");
+    self.extra.ensureUnusedCapacity(allocator, fields.len) catch @panic("Out of memory");
     const result = self.extra.items.len;
     inline for (fields) |field| {
         if (field.type == Node.Index or field.type == Extra.Index or field.type == StringId) {
@@ -1913,9 +1959,9 @@ pub fn addExtra(self: *Parser, extra: anytype) Extra.Index {
     return Extra.at(@intCast(result));
 }
 
-pub fn listToSubrange(self: *Parser, list: anytype) Extra.Subrange {
+pub fn listToSubrange(self: *AST, allocator: std.mem.Allocator, list: anytype) Extra.Subrange {
     assert(@TypeOf(list) == []Node.Index or @TypeOf(list) == []StringId);
-    self.extra.appendSlice(@as([]u32, @ptrCast(list))) catch @panic("Out of memory");
+    self.extra.appendSlice(allocator, @as([]u32, @ptrCast(list))) catch @panic("Out of memory");
     return .{
         .start = Extra.at(@intCast(self.extra.items.len - list.len)),
         .end = Extra.at(@intCast(self.extra.items.len)),
@@ -1923,16 +1969,17 @@ pub fn listToSubrange(self: *Parser, list: anytype) Extra.Subrange {
 }
 
 fn expectRawNode(expected_raw: Raw, node: Node) !void {
-    var reporter = Reporter.init(std.testing.allocator);
+    const gpa = std.testing.allocator;
+    var reporter = Reporter.init(gpa);
     defer reporter.deinit();
 
-    var parser = Parser.init(std.testing.allocator, "1", &reporter);
+    var parser = Parser.init(gpa, "1", &reporter);
     defer parser.deinit();
 
-    const node_idx = addNode(&parser, Token.at(0), node);
+    const node_idx = parser.addNode(Token.at(0), node);
 
-    try expectEqualDeep(expected_raw, getRawNode(parser, node_idx));
-    try expectEqualDeep(node, getNode(parser, node_idx));
+    try expectEqualDeep(expected_raw, parser.getRawNode(node_idx));
+    try expectEqualDeep(node, parser.getNode(node_idx));
 }
 
 test "root" {

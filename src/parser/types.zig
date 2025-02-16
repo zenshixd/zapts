@@ -10,9 +10,9 @@ const diagnostics = @import("../diagnostics.zig");
 const parseIdentifier = @import("primary.zig").parseIdentifier;
 const parseKeywordAsIdentifier = @import("primary.zig").parseKeywordAsIdentifier;
 
-const Marker = @import("../test_parser.zig").Marker;
-const MarkerList = @import("../test_parser.zig").MarkerList;
-const TestParser = @import("../test_parser.zig");
+const TestParser = @import("../tests/test_parser.zig");
+const Marker = TestParser.Marker;
+const MarkerList = TestParser.MarkerList;
 
 const expectEqual = std.testing.expectEqual;
 

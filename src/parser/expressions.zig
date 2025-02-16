@@ -14,9 +14,9 @@ const parsePrimaryExpression = @import("primary.zig").parsePrimaryExpression;
 const parseIdentifier = @import("primary.zig").parseIdentifier;
 const expectIdentifier = @import("primary.zig").expectIdentifier;
 
-const TestParser = @import("../test_parser.zig");
-const MarkerList = @import("../test_parser.zig").MarkerList;
-const Marker = @import("../test_parser.zig").Marker;
+const TestParser = @import("../tests/test_parser.zig");
+const Marker = TestParser.Marker;
+const MarkerList = TestParser.MarkerList;
 
 pub fn parseExpression(self: *Parser) ParserError!?AST.Node.Index {
     var node = try parseAssignment(self) orelse return null;
