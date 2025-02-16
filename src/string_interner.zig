@@ -18,6 +18,10 @@ pub const StringId = enum(u32) {
     pub inline fn int(self: StringId) u32 {
         return @intFromEnum(self);
     }
+
+    pub fn format(self: StringId, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        try writer.print("StringId({})", .{self.int()});
+    }
 };
 
 strings: std.StringHashMapUnmanaged(StringId) = .{},

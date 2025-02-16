@@ -737,18 +737,28 @@ test "should parse template literal with object as substitution" {
     ;
 
     try TestParser.run(text, parseTemplateLiteral, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime _: MarkerList(text)) !void {
-            // const expected_node = AST.Node{
-            //     .template_literal = @constCast(&[_]AST.Node.Index{ AST.Node.at(1), AST.Node.at(5), AST.Node.at(6) }),
-            // };
-            // try t.expectAST(node, expected_node);
-            // try t.expectTokenAt(markers[0], node.?);
-            //
-            // try t.expectAST(expected_node.template_literal[0], AST.Node{ .template_part = StringId.at(1) });
-            // try t.expectAST(expected_node.template_literal[1], AST.Node{ .object_literal = @constCast(&[_]AST.Node.Index{AST.Node.at(4)}) });
-            // try t.expectAST(expected_node.template_literal[2], AST.Node{ .template_part = StringId.at(4) });
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
             try t.expectASTSnapshot(node, snap(@src(),
-                \\
+                \\AST.Node{
+                \\  .template_literal = { Node.Index(0), Node.Index(4), Node.Index(5) },
+                \\}
+            ));
+            try t.expectTokenAt(markers[0], node.?);
+
+            try t.expectASTSnapshot(t.parser.getNode(node.?).template_literal[0], snap(@src(),
+                \\AST.Node{
+                \\  .template_part = StringId(1),
+                \\}
+            ));
+            try t.expectASTSnapshot(t.parser.getNode(node.?).template_literal[1], snap(@src(),
+                \\AST.Node{
+                \\  .object_literal = { Node.Index(3) },
+                \\}
+            ));
+            try t.expectASTSnapshot(t.parser.getNode(node.?).template_literal[2], snap(@src(),
+                \\AST.Node{
+                \\  .template_part = StringId(4),
+                \\}
             ));
         }
     });

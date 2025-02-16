@@ -9,7 +9,7 @@ const ParserError = @import("../parser.zig").ParserError;
 const Reporter = @import("../reporter.zig");
 
 const Snapshot = @import("snapshots.zig").Snapshot;
-const check = Snapshot.check;
+const expectSnapshotMatch = @import("snapshots.zig").expectSnapshotMatch;
 
 const ReturnTypeOf = @import("../meta.zig").ReturnTypeOf;
 const ErrorUnionOf = @import("../meta.zig").ErrorUnionOf;
@@ -44,6 +44,7 @@ pub fn run(comptime text: []const u8, comptime fn_ptr: anytype, Expects: type) !
         return err;
         // LCOV_EXCL_STOP
     };
+    Snapshot.deinitGlobals(std.testing.allocator);
 }
 
 pub fn runAny(comptime text: []const u8, comptime fn_ptr: anytype, Expects: type) !void {
@@ -59,6 +60,7 @@ pub fn runAny(comptime text: []const u8, comptime fn_ptr: anytype, Expects: type
         return err;
         // LCOV_EXCL_STOP
     };
+    Snapshot.deinitGlobals(std.testing.allocator);
 }
 
 pub const Marker = struct {
@@ -173,7 +175,7 @@ pub fn expectAST(t: TestParser, maybe_node: ?AST.Node.Index, expected: ?AST.Node
 
 pub fn expectASTSnapshot(t: TestParser, maybe_node: ?AST.Node.Index, expected: Snapshot) !void {
     const node = if (maybe_node) |node| t.parser.getNode(node) else null;
-    try check(node, expected);
+    try expectSnapshotMatch(node, expected);
 }
 
 pub fn expectTokenAt(t: TestParser, comptime marker: Marker, node: AST.Node.Index) !void {

@@ -23,6 +23,10 @@ pub const Index = enum(u32) {
     pub inline fn int(self: Index) u32 {
         return @intFromEnum(self);
     }
+
+    pub fn format(self: Index, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        try writer.print("Type.Index({})", .{self.int()});
+    }
 };
 
 pub fn at(index: u32) Index {
@@ -50,6 +54,10 @@ pub const Kind = enum {
     tuple,
     function,
     other_type,
+
+    pub fn format(self: Kind, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        try writer.print("Type.Kind.{s}", .{@tagName(self)});
+    }
 };
 
 pub const Data = union(enum) {

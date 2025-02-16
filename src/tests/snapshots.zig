@@ -4,74 +4,72 @@ const assert = std.debug.assert;
 const SourceLocation = std.builtin.SourceLocation;
 const Allocator = std.mem.Allocator;
 
+const expectEqual = std.testing.expectEqual;
 const expectEqualStrings = std.testing.expectEqualStrings;
 const expectError = std.testing.expectError;
 
 pub const Snapshot = @This();
-const Source = struct {
-    content: std.ArrayListUnmanaged(u8),
-    shifts: std.ArrayListUnmanaged(i32),
+
+const SourceShift = struct {
+    line_num: u32,
+    line_shift: i32,
 };
 
-var snapshot_sources: std.StringHashMapUnmanaged(Source) = .empty;
+var source_shifts: std.StringHashMapUnmanaged(std.ArrayListUnmanaged(SourceShift)) = .empty;
+var snapshots_updated: u32 = 0;
 
 source_location: SourceLocation,
 text: []const u8,
 should_update: bool = false,
+
+pub fn deinitGlobals(allocator: Allocator) void {
+    var it = source_shifts.iterator();
+    while (it.next()) |entry| {
+        entry.value_ptr.clearAndFree(allocator);
+    }
+    source_shifts.clearAndFree(allocator);
+}
+
+pub fn getSnapshotsUpdated() u32 {
+    return snapshots_updated;
+}
 
 pub fn openSourceDir() !std.fs.Dir {
     return try std.fs.cwd().openDir("src/", .{});
 }
 
 pub fn getSourceFile(self: Snapshot, allocator: Allocator) ![]const u8 {
-    const result = try snapshot_sources.getOrPut(allocator, self.source_location.file);
-    if (result.found_existing) {
-        return result.value_ptr.content.items;
-    }
-
     var dir = try openSourceDir();
     defer dir.close();
 
     var file = try dir.openFileZ(self.source_location.file, .{});
     defer file.close();
 
-    var file_content: std.ArrayListUnmanaged(u8) = .empty;
-    while (true) {
-        const c = file.reader().readByte() catch |err| {
-            if (err == error.EndOfStream) break;
-            return err;
-        };
-        try file_content.append(allocator, c);
-    }
-
-    result.value_ptr.* = .{
-        .content = file_content,
-        .shifts = .empty,
-    };
-
-    return result.value_ptr.content.items;
+    return try file.readToEndAlloc(allocator, std.math.maxInt(u32));
 }
 
 pub const SourceFileParts = struct {
     beginning: []const u8,
     snapshot: []const u8,
     snapshot_indent: u32,
+    snapshot_end_line: u32,
     ending: []const u8,
 };
 
-pub fn getSourceFileParts(self: Snapshot, allocator: Allocator) !SourceFileParts {
-    const content = try self.getSourceFile(allocator);
+pub fn getSourceFileParts(self: Snapshot, content: []const u8) !SourceFileParts {
     var state: enum { begin, snapshot } = .begin;
     var begin_end_idx: usize = 0;
     var snapshot_end_idx: usize = 0;
+    var snapshot_end_line: u32 = 0;
     var indent: u32 = 0;
     var it = std.mem.splitScalar(u8, content, '\n');
 
     var line_num: u32 = 1;
+    const snapshot_begin_line = self.getSnapshotBeginLine();
     while (it.next()) |line| : (line_num += 1) {
         switch (state) {
             .begin => {
-                if (line_num == self.source_location.line) {
+                if (line_num == snapshot_begin_line) {
                     begin_end_idx = it.index.?;
                     state = .snapshot;
                 }
@@ -85,6 +83,7 @@ pub fn getSourceFileParts(self: Snapshot, allocator: Allocator) !SourceFileParts
                 }
 
                 if (std.mem.indexOf(u8, line, "\\\\") == null) {
+                    snapshot_end_line = line_num - 1;
                     break;
                 } else {
                     snapshot_end_idx = it.index.?;
@@ -97,6 +96,7 @@ pub fn getSourceFileParts(self: Snapshot, allocator: Allocator) !SourceFileParts
         .beginning = content[0..begin_end_idx],
         .snapshot = content[begin_end_idx..snapshot_end_idx],
         .snapshot_indent = indent,
+        .snapshot_end_line = snapshot_end_line,
         .ending = content[snapshot_end_idx..],
     };
 }
@@ -114,42 +114,55 @@ fn getIndent(text: []const u8) u32 {
     return indent;
 }
 
-pub fn formatAsSnapshotString(_: Snapshot, writer: anytype, indent: u32, text: []const u8) !void {
-    var it = std.mem.splitScalar(u8, text, '\n');
+pub fn getSnapshotBeginLine(self: Snapshot) u32 {
+    if (source_shifts.getPtr(self.source_location.file)) |shifts| {
+        var new_line_num = self.source_location.line;
+        for (shifts.items) |shift| {
+            if (new_line_num >= shift.line_num) {
+                const signed_line_num: i32 = @intCast(new_line_num);
+                new_line_num = @intCast(signed_line_num + shift.line_shift);
+            }
+        }
+
+        return new_line_num;
+    }
+
+    return self.source_location.line;
+}
+
+pub fn writeNewSnapshot(self: Snapshot, allocator: Allocator, writer: anytype, parts: SourceFileParts, new_snapshot: []const u8) !void {
+    const old_snapshot_line_count: i32 = @intCast(std.mem.count(u8, parts.snapshot, "\n"));
+    var new_snapshot_line_count: i32 = 0;
+    var it = std.mem.splitScalar(u8, new_snapshot, '\n');
 
     while (it.next()) |line| {
-        for (0..indent) |_| {
+        for (0..parts.snapshot_indent) |_| {
             try writer.writeByte(' ');
         }
         try writer.writeAll("\\\\");
         try writer.writeAll(line);
         try writer.writeByte('\n');
+        new_snapshot_line_count += 1;
+    }
+
+    const line_shift: i32 = new_snapshot_line_count - old_snapshot_line_count;
+    if (line_shift != 0) {
+        const result = try source_shifts.getOrPutValue(allocator, self.source_location.file, .empty);
+        try result.value_ptr.append(allocator, .{
+            .line_num = parts.snapshot_end_line,
+            .line_shift = line_shift,
+        });
     }
 }
 
-pub fn updateSourceFile(self: Snapshot, allocator: Allocator, new_text: []const u8) !void {
-    var result = snapshot_sources.getPtr(self.source_location.file).?;
-
-    result.content.clearRetainingCapacity();
-    try result.content.appendSlice(allocator, new_text);
-}
-
-pub fn flushSourceFiles(allocator: Allocator) !void {
-    var it = snapshot_sources.iterator();
+pub fn updateSourceFile(self: Snapshot, new_text: []const u8) !void {
     var dir = try openSourceDir();
     defer dir.close();
 
-    while (it.next()) |entry| {
-        var file = try dir.createFile(entry.key_ptr.*, .{});
-        defer file.close();
+    var file = try dir.createFile(self.source_location.file, .{});
+    defer file.close();
 
-        try file.writeAll(entry.value_ptr.content.items);
-
-        entry.value_ptr.content.clearAndFree(allocator);
-        entry.value_ptr.shifts.clearAndFree(allocator);
-    }
-
-    snapshot_sources.clearAndFree(allocator);
+    try file.writeAll(new_text);
 }
 
 pub fn diff(expected: Snapshot, got: []const u8) !void {
@@ -172,15 +185,18 @@ pub fn update(self: Snapshot, new_text: []const u8) !void {
     var new_file_content = std.ArrayList(u8).init(gpa);
     defer new_file_content.deinit();
 
-    const parts = try self.getSourceFileParts(gpa);
+    const content = try self.getSourceFile(gpa);
+    defer gpa.free(content);
+
+    const parts = try self.getSourceFileParts(content);
 
     try new_file_content.appendSlice(parts.beginning);
-    try self.formatAsSnapshotString(new_file_content.writer(), parts.snapshot_indent, new_text);
+    try self.writeNewSnapshot(gpa, new_file_content.writer(), parts, new_text);
     try new_file_content.appendSlice(parts.ending);
 
-    try self.updateSourceFile(gpa, new_file_content.items);
+    try self.updateSourceFile(new_file_content.items);
 
-    return error.SnapshotUpdated;
+    snapshots_updated += 1;
 }
 
 pub fn snap(source_location: SourceLocation, text: []const u8) Snapshot {
@@ -191,18 +207,19 @@ pub fn snap(source_location: SourceLocation, text: []const u8) Snapshot {
 }
 
 pub fn expectSnapshotMatch(received: anytype, expected: Snapshot) !void {
-    var buf: [1024]u8 = undefined;
+    const gpa = std.testing.allocator;
     const type_info = @typeInfo(@TypeOf(received));
     const received_text = switch (type_info) {
-        .optional => try std.fmt.bufPrint(&buf, "{?}", .{received}),
-        .array => try std.fmt.bufPrint(&buf, "{s}", .{received}),
+        .optional => try std.fmt.allocPrint(gpa, "{?}", .{received}),
+        .array => try std.fmt.allocPrint(gpa, "{s}", .{received}),
         .pointer => |ptr| switch (ptr.size) {
-            .one => try std.fmt.bufPrint(&buf, "{s}", .{received}),
-            .slice => try std.fmt.bufPrint(&buf, "{s}", .{received}),
-            else => @compileError(std.fmt.comptimePrint("unsupported pointer size {s}", .{@tagName(ptr.size)})),
+            .one => try std.fmt.allocPrint(gpa, "{s}", .{received}),
+            .slice => try std.fmt.allocPrint(gpa, "{s}", .{received}),
+            else => try std.fmt.allocPrint(gpa, "{}", .{received}),
         },
-        else => @compileError(std.fmt.comptimePrint("unsupported type {s}", .{@typeName(received)})),
+        else => try std.fmt.allocPrint(gpa, "{}", .{received}),
     };
+    defer gpa.free(received_text);
 
     expected.diff(received_text) catch |err| {
         if (err == error.SnapshotMismatch) {
@@ -289,6 +306,7 @@ fn testSnapshotsExtra(snapshot_text: []const u8, file_content: []const u8, Expec
     defer testDeleteFile(snapshot.source_location.file) catch @panic("couldnt delete file");
 
     try Expect.run(snapshot);
+    deinitGlobals(std.testing.allocator);
 }
 
 fn testMultipleSnapshots(snapshots_texts: []const []const u8, Expect: anytype) !void {
@@ -316,6 +334,7 @@ fn testMultipleSnapshots(snapshots_texts: []const []const u8, Expect: anytype) !
     }
 
     try Expect.run(snapshots.items);
+    deinitGlobals(std.testing.allocator);
 }
 
 test "should return void if snapshot matches" {
@@ -348,7 +367,6 @@ test "should return error if snapshot is not found" {
     try testSnapshotsExtra("hello world", file_content, struct {
         fn run(snapshot: Snapshot) !void {
             const result = snapshot.update("hello worlds");
-            try flushSourceFiles(std.testing.allocator);
 
             try expectError(error.SnapshotNotFound, result);
         }
@@ -361,11 +379,9 @@ test "should update single line snapshot" {
     ;
     try testSnapshots(snapshot_text, struct {
         fn run(snapshot: Snapshot) !void {
-            const result = snapshot.update(
+            try snapshot.update(
                 \\2
             );
-            try flushSourceFiles(std.testing.allocator);
-            try expectError(error.SnapshotUpdated, result);
 
             const content = try testReadFile();
             defer std.testing.allocator.free(content);
@@ -388,15 +404,13 @@ test "should update multiline snapshot" {
     ;
     try testSnapshots(snapshot_text, struct {
         fn run(snapshot: Snapshot) !void {
-            const result = snapshot.update(
+            try snapshot.update(
                 \\1
                 \\2
                 \\3
                 \\4
                 \\5
             );
-            try flushSourceFiles(std.testing.allocator);
-            try expectError(error.SnapshotUpdated, result);
 
             const content = try testReadFile();
             defer std.testing.allocator.free(content);
@@ -425,18 +439,14 @@ test "should update multiple snapshots" {
 
     try testMultipleSnapshots(&[_][]const u8{ snapshot_text1, snapshot_text2 }, struct {
         fn run(snapshots: []Snapshot) !void {
-            const result1 = snapshots[0].update(
+            try snapshots[0].update(
                 \\11
                 \\12
             );
-            const result2 = snapshots[1].update(
+            try snapshots[1].update(
                 \\21
                 \\22
             );
-            try flushSourceFiles(std.testing.allocator);
-
-            try expectError(error.SnapshotUpdated, result1);
-            try expectError(error.SnapshotUpdated, result2);
 
             const content = try testReadFile();
             defer std.testing.allocator.free(content);
@@ -449,6 +459,81 @@ test "should update multiple snapshots" {
                 \\snap(@src(),
                 \\    \\21
                 \\    \\22
+                \\);
+                \\
+            , content);
+        }
+    });
+}
+
+test "should update multiple multiline snapshots" {
+    const snapshot_texts = [_][]const u8{
+        \\1
+        ,
+        \\2
+        ,
+        \\3
+        ,
+        \\4
+        ,
+    };
+
+    const updated_texts = [_][]const u8{
+        \\11
+        \\12
+        \\13
+        \\14
+        ,
+        \\21
+        \\22
+        \\23
+        \\24
+        ,
+        \\31
+        \\32
+        \\33
+        \\34
+        ,
+        \\41
+        \\42
+        \\43
+        \\44
+        ,
+    };
+
+    try testMultipleSnapshots(&snapshot_texts, struct {
+        fn run(snapshots: []Snapshot) !void {
+            for (snapshots, 0..) |snapshot, i| {
+                try snapshot.update(updated_texts[i]);
+            }
+
+            const content = try testReadFile();
+            defer std.testing.allocator.free(content);
+
+            try expectEqualStrings(
+                \\snap(@src(),
+                \\    \\11
+                \\    \\12
+                \\    \\13
+                \\    \\14
+                \\);
+                \\snap(@src(),
+                \\    \\21
+                \\    \\22
+                \\    \\23
+                \\    \\24
+                \\);
+                \\snap(@src(),
+                \\    \\31
+                \\    \\32
+                \\    \\33
+                \\    \\34
+                \\);
+                \\snap(@src(),
+                \\    \\41
+                \\    \\42
+                \\    \\43
+                \\    \\44
                 \\);
                 \\
             , content);

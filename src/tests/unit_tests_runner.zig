@@ -1,7 +1,7 @@
-//! Default test runner for unit tests.
 const std = @import("std");
 const io = std.io;
 const builtin = @import("builtin");
+const Snapshot = @import("snapshots.zig");
 
 var log_err_count: usize = 0;
 var cmdline_buffer: [4096]u8 = undefined;
@@ -27,6 +27,8 @@ pub fn main() void {
     for (test_fn_list, 0..) |test_fn, i| {
         std.testing.allocator_instance = .{};
         defer {
+            // Snapshot.deinit(std.testing.allocator);
+
             if (std.testing.allocator_instance.deinit() == .leak) {
                 leaks += 1;
             }
@@ -68,6 +70,9 @@ pub fn main() void {
     }
     if (leaks != 0) {
         std.debug.print("{d} tests leaked memory.\n", .{leaks});
+    }
+    if (Snapshot.getSnapshotsUpdated() > 0) {
+        std.debug.print("{d} snapshots were updated.\n", .{Snapshot.getSnapshotsUpdated()});
     }
     std.debug.print("Done in {}\n", .{std.fmt.fmtDuration(timer.read())});
     if (leaks != 0 or log_err_count != 0 or fail_count != 0) {

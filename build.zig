@@ -2,6 +2,7 @@ const std = @import("std");
 const FileSource = std.build.FileSource;
 
 pub fn build(b: *std.Build) void {
+    const gpa = std.heap.page_allocator;
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
     const zapts_module = b.addModule("zapts", .{
@@ -28,12 +29,21 @@ pub fn build(b: *std.Build) void {
     run_step.dependOn(&run_cmd.step);
 
     const maybe_filter = b.option([]const u8, "filter", "Filter tests to run");
+    const test_name = if (maybe_filter) |filter|
+        std.mem.replaceOwned(u8, gpa, filter, " ", "_") catch @panic("oom")
+    else
+        "test";
+    defer {
+        if (maybe_filter) |_| {
+            gpa.free(test_name);
+        }
+    }
     const exe_unit_tests = b.addTest(.{
         .root_source_file = b.path("src/main.zig"),
-        .name = maybe_filter orelse "test",
+        .name = test_name,
         .target = target,
         .optimize = optimize,
-        .test_runner = b.path("tests/unit_tests_runner.zig"),
+        .test_runner = b.path("src/tests/unit_tests_runner.zig"),
         .filter = maybe_filter,
     });
 
@@ -44,6 +54,10 @@ pub fn build(b: *std.Build) void {
         b.pathJoin(&.{ b.build_root.path.?, "lcov-report" }),
     });
     run_unit_tests.addArtifactArg(exe_unit_tests);
+
+    if (b.option(bool, "update", "Update snapshots")) |_| {
+        run_unit_tests.setEnvironmentVariable("ZAPTS_SNAPSHOT_UPDATE", "1");
+    }
 
     const unit_tests_step = b.step("test", "Run unit tests");
     unit_tests_step.dependOn(&run_unit_tests.step);
