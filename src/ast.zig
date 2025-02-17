@@ -259,10 +259,6 @@ pub const Extra = struct {
         pub inline fn int(self: Index) u32 {
             return @intFromEnum(self);
         }
-
-        pub fn format(self: Index, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
-            try writer.print("Extra.Index({})", .{self.int()});
-        }
     };
 
     pub inline fn at(index: u32) Index {
@@ -475,10 +471,6 @@ pub const Node = union(enum) {
         pub inline fn int(self: Index) u32 {
             return @intFromEnum(self);
         }
-
-        pub fn format(self: Index, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
-            try writer.print("Node.Index({})", .{self.int()});
-        }
     };
 
     pub const Import = union(enum) {
@@ -677,53 +669,10 @@ pub const Node = union(enum) {
         return @enumFromInt(index);
     }
 
-    fn writeIndent(indent: u32, writer: anytype) !void {
+    fn writeIndent(writer: anytype, indent: u32) !void {
         for (0..indent) |_| {
             try writer.writeAll("  ");
         }
-    }
-
-    pub fn format(self: Node, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
-        const UnionTagType = @typeInfo(Node).@"union".tag_type.?;
-        var indent: u32 = 0;
-        try writer.writeAll("AST.Node{\n");
-        indent += 1;
-        inline for (std.meta.fields(Node)) |field| {
-            if (@field(UnionTagType, field.name) == std.meta.activeTag(self)) {
-                const val = @field(self, field.name);
-                try writeIndent(indent, writer);
-                try writer.print(".{s} = ", .{field.name});
-
-                const type_info: std.builtin.Type = @typeInfo(@TypeOf(val));
-                switch (type_info) {
-                    .pointer => |ptr| {
-                        switch (ptr.size) {
-                            .slice => try writer.print("{s}", .{val}),
-                            else => try writer.print("{}", .{val}),
-                        }
-                    },
-                    else => try writer.print("{}", .{val}),
-                }
-                try writer.writeAll(",\n");
-                // if (@TypeOf(val) == Node.Index) {
-                //     try writer.print("Node.Index({d})\n", .{val.int()});
-                // } else if (@TypeOf(val) == []Node.Index) {
-                //     try writer.writeAll("[_].{\n");
-                //     indent += 1;
-                //     for (val) |node| {
-                //         try writeIndent(indent, writer);
-                //         try writer.print("Node.Index({d}),\n", .{node.int()});
-                //     }
-                //     indent -= 1;
-                //     try writeIndent(indent, writer);
-                //     try writer.writeAll("}\n");
-                // } else {
-                //     try writer.print("{any}\n, ", .{@field(self, field.name)});
-                // }
-            }
-        }
-        indent -= 1;
-        try writer.writeAll("}");
     }
 };
 

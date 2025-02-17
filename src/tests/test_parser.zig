@@ -44,7 +44,6 @@ pub fn run(comptime text: []const u8, comptime fn_ptr: anytype, Expects: type) !
         return err;
         // LCOV_EXCL_STOP
     };
-    Snapshot.deinitGlobals(std.testing.allocator);
 }
 
 pub fn runAny(comptime text: []const u8, comptime fn_ptr: anytype, Expects: type) !void {
@@ -60,7 +59,24 @@ pub fn runAny(comptime text: []const u8, comptime fn_ptr: anytype, Expects: type
         return err;
         // LCOV_EXCL_STOP
     };
-    Snapshot.deinitGlobals(std.testing.allocator);
+}
+
+pub fn runSnapshot(comptime text: []const u8, comptime fn_ptr: anytype, expected: Snapshot) !void {
+    const sourceText, const markers = comptime getMarkers(text);
+    var parser = Parser.testInstance(&sourceText);
+    defer parser.testDeinit();
+
+    const node = try fn_ptr(&parser);
+    const t = TestParser{ .parser = &parser };
+    t.expectASTSnapshot(node, expected) catch |err| {
+        // LCOV_EXCL_START
+        std.debug.print("\nParsing failed, text: {s}\n", .{sourceText});
+        return err;
+        // LCOV_EXCL_STOP
+    };
+    if (markers.len > 0) {
+        try t.expectTokenAt(markers[0], node.?);
+    }
 }
 
 pub const Marker = struct {

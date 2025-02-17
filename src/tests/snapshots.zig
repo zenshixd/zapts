@@ -171,7 +171,13 @@ pub fn diff(expected: Snapshot, got: []const u8) !void {
             return error.SnapshotMismatch;
         }
 
-        return expected.update(got);
+        return expected.update(got) catch |err| {
+            if (err == error.SnapshotNotFound) {
+                std.debug.print("Snapshot not found ! Expected snapshot at {s}:{}", .{ expected.source_location.file, getSnapshotBeginLine(expected) });
+            }
+
+            return err;
+        };
     }
 }
 
@@ -199,7 +205,7 @@ pub fn update(self: Snapshot, new_text: []const u8) !void {
     snapshots_updated += 1;
 }
 
-pub fn snap(source_location: SourceLocation, text: []const u8) Snapshot {
+pub inline fn snap(source_location: SourceLocation, text: []const u8) Snapshot {
     return .{
         .source_location = source_location,
         .text = text,
@@ -207,21 +213,12 @@ pub fn snap(source_location: SourceLocation, text: []const u8) Snapshot {
 }
 
 pub fn expectSnapshotMatch(received: anytype, expected: Snapshot) !void {
-    const gpa = std.testing.allocator;
-    const type_info = @typeInfo(@TypeOf(received));
-    const received_text = switch (type_info) {
-        .optional => try std.fmt.allocPrint(gpa, "{?}", .{received}),
-        .array => try std.fmt.allocPrint(gpa, "{s}", .{received}),
-        .pointer => |ptr| switch (ptr.size) {
-            .one => try std.fmt.allocPrint(gpa, "{s}", .{received}),
-            .slice => try std.fmt.allocPrint(gpa, "{s}", .{received}),
-            else => try std.fmt.allocPrint(gpa, "{}", .{received}),
-        },
-        else => try std.fmt.allocPrint(gpa, "{}", .{received}),
-    };
-    defer gpa.free(received_text);
+    var received_text = std.ArrayList(u8).init(std.testing.allocator);
+    defer received_text.deinit();
 
-    expected.diff(received_text) catch |err| {
+    try formatValue(received_text.writer(), received, 0);
+
+    expected.diff(received_text.items) catch |err| {
         if (err == error.SnapshotMismatch) {
             std.debug.print(
                 \\SnapshotMismatch
@@ -231,14 +228,166 @@ pub fn expectSnapshotMatch(received: anytype, expected: Snapshot) !void {
                 \\got:
                 \\{s}
                 \\
-            , .{ expected.text, received_text });
+            , .{ expected.text, received_text.items });
         }
 
         return err;
     };
 }
 
-fn testSnap(text: []const u8) ![]const u8 {
+pub fn formatValue(writer: anytype, value: anytype, depth: u32) !void {
+    const type_info = @typeInfo(@TypeOf(value));
+    switch (type_info) {
+        .@"enum" => {
+            inline for (std.meta.fields(@TypeOf(value))) |field| {
+                if (field.value == @intFromEnum(value)) {
+                    try writer.print("{s}.{s}", .{ @typeName(@TypeOf(value)), field.name });
+                    return;
+                }
+            } else {
+                try writer.print("{s}({d})", .{ @typeName(@TypeOf(value)), @intFromEnum(value) });
+            }
+        },
+        .@"union" => {
+            try writer.print("{s}{{\n", .{@typeName(@TypeOf(value))});
+            inline for (std.meta.fields(@TypeOf(value))) |field| {
+                if (std.mem.eql(u8, field.name, @tagName(std.meta.activeTag(value)))) {
+                    try writeIndent(writer, depth + 1);
+                    try writer.print(".{s} = ", .{field.name});
+                    try formatValue(writer, @field(value, field.name), depth + 1);
+                    try writer.writeAll(",\n");
+                }
+            }
+            try writeIndent(writer, depth);
+            try writer.writeAll("}");
+        },
+        .@"struct" => {
+            try writer.print("{s}{{\n", .{@typeName(@TypeOf(value))});
+            inline for (std.meta.fields(@TypeOf(value))) |field| {
+                try writeIndent(writer, depth + 1);
+                try writer.print(".{s} = ", .{field.name});
+                try formatValue(writer, @field(value, field.name), depth + 1);
+                try writer.writeAll(",\n");
+            }
+            try writeIndent(writer, depth);
+            try writer.writeAll("}");
+        },
+        .array => |arr| {
+            if (arr.child == u8) {
+                try writer.print("{s}", .{value});
+                return;
+            }
+
+            try writer.print("{s}{{\n", .{@typeName(@TypeOf(value))});
+            inline for (value, 0..) |item, i| {
+                if (i == 0) {
+                    try writer.writeAll(" ");
+                } else {
+                    try writer.writeAll(", ");
+                }
+                try formatValue(writer, item, depth + 1);
+            }
+            try writeIndent(writer, depth);
+            try writer.writeAll("}");
+        },
+        .int => try writer.print("{d}", .{value}),
+        .bool, .void => try writer.print("{}", .{value}),
+        .pointer => |ptr| {
+            switch (ptr.size) {
+                .one => switch (@typeInfo(ptr.child)) {
+                    .array, .@"enum", .@"union", .@"struct" => try formatValue(writer, value.*, depth),
+                    else => try writer.print("{s}@{x}", .{ @typeName(ptr.child), @intFromPtr(value) }),
+                },
+                .slice => try writer.print("{s}", .{value}),
+                else => @compileError("unexpected ptr type: " ++ @tagName(ptr.size) ++ ", " ++ @typeName(ptr.child)),
+            }
+        },
+        .optional => {
+            if (value) |val| {
+                try formatValue(writer, val, depth);
+            } else {
+                try writer.writeAll("null");
+            }
+        },
+        else => @compileError("unexpected type: " ++ @typeName(@TypeOf(value))),
+    }
+}
+
+fn writeIndent(writer: anytype, indent: u32) !void {
+    for (0..indent) |_| {
+        try writer.writeAll("    ");
+    }
+}
+
+const TestEnum = enum(u32) {
+    a,
+    _,
+};
+
+const TestUnion = union(enum) {
+    a: u32,
+    b: TestStruct,
+};
+
+const TestStruct = struct {
+    a: u32,
+    b: ?TestEnum,
+};
+
+test "formatValue" {
+    var text = std.ArrayList(u8).init(std.testing.allocator);
+    defer text.deinit();
+
+    try formatValue(text.writer(), TestEnum.a, 0);
+    try expectEqualStrings("TestEnum.a", text.items);
+    text.clearRetainingCapacity();
+
+    const val: TestEnum = @enumFromInt(55);
+    try formatValue(text.writer(), val, 0);
+    try expectEqualStrings("TestEnum(55)", text.items);
+    text.clearRetainingCapacity();
+
+    const union_val: TestUnion = .{ .a = 55 };
+    try formatValue(text.writer(), union_val, 0);
+    try expectEqualStrings(
+        \\TestUnion{
+        \\    .a = 55,
+        \\}
+    , text.items);
+    text.clearRetainingCapacity();
+
+    const union_val2: TestUnion = .{
+        .b = .{
+            .a = 16,
+            .b = .a,
+        },
+    };
+    try formatValue(text.writer(), union_val2, 0);
+    try expectEqualStrings(
+        \\TestUnion{
+        \\    .b = TestStruct{
+        \\        .a = 16,
+        \\        .b = TestEnum.a,
+        \\    },
+        \\}
+    , text.items);
+    text.clearRetainingCapacity();
+
+    const struct_val: TestStruct = .{
+        .a = 22,
+        .b = null,
+    };
+    try formatValue(text.writer(), struct_val, 0);
+    try expectEqualStrings(
+        \\TestStruct{
+        \\    .a = 22,
+        \\    .b = null,
+        \\}
+    , text.items);
+    text.clearRetainingCapacity();
+}
+
+fn testSnapshotText(text: []const u8) ![]const u8 {
     var result = std.ArrayList(u8).init(std.testing.allocator);
     const writer = result.writer();
 
@@ -295,7 +444,7 @@ fn testDeleteFile(path: []const u8) !void {
 }
 
 fn testSnapshots(snapshot_text: []const u8, Expect: anytype) !void {
-    const text = try testSnap(snapshot_text);
+    const text = try testSnapshotText(snapshot_text);
     defer std.testing.allocator.free(text);
 
     try testSnapshotsExtra(snapshot_text, text, Expect);
@@ -312,6 +461,7 @@ fn testSnapshotsExtra(snapshot_text: []const u8, file_content: []const u8, Expec
 fn testMultipleSnapshots(snapshots_texts: []const []const u8, Expect: anytype) !void {
     var dir = try std.fs.cwd().openDir("src/", .{});
     defer dir.close();
+    defer testDeleteFile(test_file_path) catch @panic("couldnt delete file");
 
     const file = try dir.createFile(test_file_path, .{});
     defer file.close();
@@ -321,7 +471,7 @@ fn testMultipleSnapshots(snapshots_texts: []const []const u8, Expect: anytype) !
 
     var line_num: u32 = 1;
     for (snapshots_texts) |snapshot_text| {
-        const file_content = try testSnap(snapshot_text);
+        const file_content = try testSnapshotText(snapshot_text);
         defer std.testing.allocator.free(file_content);
 
         try file.writeAll(file_content);
