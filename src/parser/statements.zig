@@ -6,6 +6,7 @@ const Token = @import("../consts.zig").Token;
 const TokenType = @import("../consts.zig").TokenType;
 const StringId = @import("../string_interner.zig").StringId;
 const diagnostics = @import("../diagnostics.zig");
+const snap = @import("../tests/snapshots.zig").snap;
 const expectEqual = std.testing.expectEqual;
 
 const needsSemicolon = Parser.needsSemicolon;
@@ -174,68 +175,106 @@ test "should parse statements" {
             \\ {}
             \\>^
             ,
-            AST.Node{ .block = &.{} },
+            snap(@src(),
+                \\ast.Node{
+                \\    .block = [_]ast.Node.Index{},
+                \\}
+            ),
         },
         .{
             \\ class A {}
             \\>^
             ,
-            AST.Node{ .class = .{
-                .abstract = false,
-                .name = StringId.at(1),
-                .super_class = AST.Node.Empty,
-                .implements = &.{},
-                .body = &.{},
-            } },
+            snap(@src(),
+                \\ast.Node{
+                \\    .class = ast.Node.ClassDeclaration{
+                \\        .abstract = false,
+                \\        .name = string_interner.StringId(1),
+                \\        .super_class = ast.Node.Index.empty,
+                \\        .implements = [_]string_interner.StringId{},
+                \\        .body = [_]ast.Node.Index{},
+                \\    },
+                \\}
+            ),
         },
         .{
             \\ import 'a';
             \\>^
             ,
-            AST.Node{ .import = .{ .simple = StringId.at(1) } },
+            snap(@src(),
+                \\ast.Node{
+                \\    .import = ast.Node.Import{
+                \\        .simple = string_interner.StringId(1),
+                \\    },
+                \\}
+            ),
         },
         .{
             \\ export default a;
             \\>^
             ,
-            AST.Node{ .@"export" = AST.Node.Export{ .default = AST.Node.at(1) } },
+            snap(@src(),
+                \\ast.Node{
+                \\    .export = ast.Node.Export{
+                \\        .default = ast.Node.Index(0),
+                \\    },
+                \\}
+            ),
         },
         .{
             \\ if (a) {}
             \\>^
             ,
-            AST.Node{ .@"if" = AST.Node.If{ .expr = AST.Node.at(1), .body = AST.Node.at(2), .@"else" = AST.Node.Empty } },
+            snap(@src(),
+                \\ast.Node{
+                \\    .if = ast.Node.If{
+                \\        .expr = ast.Node.Index(0),
+                \\        .body = ast.Node.Index(1),
+                \\        .else = ast.Node.Index.empty,
+                \\    },
+                \\}
+            ),
         },
         .{
             \\ while (a) {}
             \\>^
             ,
-            AST.Node{ .@"while" = AST.Node.While{ .cond = AST.Node.at(1), .body = AST.Node.at(2) } },
+            snap(@src(),
+                \\ast.Node{
+                \\    .while = ast.Node.While{
+                \\        .cond = ast.Node.Index(0),
+                \\        .body = ast.Node.Index(1),
+                \\    },
+                \\}
+            ),
         },
         .{
             \\ return;
             \\>^
             ,
-            AST.Node{ .@"return" = AST.Node.Empty },
+            snap(@src(),
+                \\ast.Node{
+                \\    .return = ast.Node.Index.empty,
+                \\}
+            ),
         },
         .{
             \\ a;
             \\>^
             ,
-            AST.Node{ .simple_value = .{ .kind = .identifier, .id = StringId.at(1) } },
+            snap(@src(),
+                \\ast.Node{
+                \\    .simple_value = ast.Node.SimpleValue{
+                \\        .kind = ast.SimpleValueKind.identifier,
+                \\        .id = string_interner.StringId(1),
+                \\    },
+                \\}
+            ),
         },
     };
 
     inline for (tests) |test_case| {
-        try TestParser.run(test_case[0], parseStatement, struct {
-            pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(test_case[0])) !void {
-                try t.expectAST(node, test_case[1]);
-
-                if (markers.len > 0) {
-                    try t.expectTokenAt(markers[0], node.?);
-                }
-            }
-        });
+        try TestParser.runSnapshot(test_case[0], parseStatement, test_case[1]);
     }
 }
 
@@ -254,7 +293,15 @@ test "should parse block" {
 
     try TestParser.run(text, parseBlock, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .block = @constCast(&[_]AST.Node.Index{ AST.Node.at(1), AST.Node.at(2), AST.Node.at(3) }) });
+            try t.expectASTSnapshot(node, snap(@src(),
+                \\ast.Node{
+                \\    .block = [_]ast.Node.Index{
+                \\        ast.Node.Index(0), 
+                \\        ast.Node.Index(1), 
+                \\        ast.Node.Index(2)
+                \\    },
+                \\}
+            ));
         }
     });
 }
@@ -276,60 +323,87 @@ test "should parse declarations" {
     const tests = .{
         .{
             "var a;",
-            &[_]AST.Raw{
-                AST.Raw{ .tag = .decl_binding, .main_token = Token.at(1), .data = .{ .lhs = 1, .rhs = 0 } },
-                AST.Raw{ .tag = .var_decl, .main_token = Token.at(0), .data = .{ .lhs = 2, .rhs = 3 } },
-            },
+            snap(@src(),
+                \\ast.Node{
+                \\    .declaration = ast.Node.Declaration{
+                \\        .kind = ast.Node.DeclarationKind.var,
+                \\        .list = [_]ast.Node.Index{
+                \\            ast.Node.Index(0)
+                \\        },
+                \\    },
+                \\}
+            ),
         },
         .{
             "let a;",
-            &[_]AST.Raw{
-                AST.Raw{ .tag = .decl_binding, .main_token = Token.at(1), .data = .{ .lhs = 1, .rhs = 0 } },
-                AST.Raw{ .tag = .let_decl, .main_token = Token.at(0), .data = .{ .lhs = 2, .rhs = 3 } },
-            },
+            snap(@src(),
+                \\ast.Node{
+                \\    .declaration = ast.Node.Declaration{
+                \\        .kind = ast.Node.DeclarationKind.let,
+                \\        .list = [_]ast.Node.Index{
+                \\            ast.Node.Index(0)
+                \\        },
+                \\    },
+                \\}
+            ),
         },
         .{
             "const a;",
-            &[_]AST.Raw{
-                AST.Raw{ .tag = .decl_binding, .main_token = Token.at(1), .data = .{ .lhs = 1, .rhs = 0 } },
-                AST.Raw{ .tag = .const_decl, .main_token = Token.at(0), .data = .{ .lhs = 2, .rhs = 3 } },
-            },
+            snap(@src(),
+                \\ast.Node{
+                \\    .declaration = ast.Node.Declaration{
+                \\        .kind = ast.Node.DeclarationKind.const,
+                \\        .list = [_]ast.Node.Index{
+                \\            ast.Node.Index(0)
+                \\        },
+                \\    },
+                \\}
+            ),
         },
         .{
             "const a = 1;",
-            &[_]AST.Raw{
-                AST.Raw{ .tag = .simple_value, .main_token = Token.at(3), .data = .{ .lhs = 3, .rhs = 1 } },
-                AST.Raw{ .tag = .decl_binding, .main_token = Token.at(1), .data = .{ .lhs = 2, .rhs = 0 } },
-                AST.Raw{ .tag = .const_decl, .main_token = Token.at(0), .data = .{ .lhs = 2, .rhs = 3 } },
-            },
+            snap(@src(),
+                \\ast.Node{
+                \\    .declaration = ast.Node.Declaration{
+                \\        .kind = ast.Node.DeclarationKind.const,
+                \\        .list = [_]ast.Node.Index{
+                \\            ast.Node.Index(1)
+                \\        },
+                \\    },
+                \\}
+            ),
         },
         .{
             "const a = 1, b = 2;",
-            &[_]AST.Raw{
-                AST.Raw{ .tag = .simple_value, .main_token = Token.at(3), .data = .{ .lhs = 3, .rhs = 1 } },
-                AST.Raw{ .tag = .decl_binding, .main_token = Token.at(1), .data = .{ .lhs = 2, .rhs = 0 } },
-                AST.Raw{ .tag = .simple_value, .main_token = Token.at(7), .data = .{ .lhs = 3, .rhs = 3 } },
-                AST.Raw{ .tag = .decl_binding, .main_token = Token.at(5), .data = .{ .lhs = 4, .rhs = 2 } },
-                AST.Raw{ .tag = .const_decl, .main_token = Token.at(0), .data = .{ .lhs = 4, .rhs = 6 } },
-            },
+            snap(@src(),
+                \\ast.Node{
+                \\    .declaration = ast.Node.Declaration{
+                \\        .kind = ast.Node.DeclarationKind.const,
+                \\        .list = [_]ast.Node.Index{
+                \\            ast.Node.Index(1), 
+                \\            ast.Node.Index(3)
+                \\        },
+                \\    },
+                \\}
+            ),
         },
         .{
             "const a: number = 1;",
-            &[_]AST.Raw{
-                AST.Raw{ .tag = .simple_type, .main_token = Token.at(3), .data = .{ .lhs = 3, .rhs = 1 } },
-                AST.Raw{ .tag = .simple_value, .main_token = Token.at(5), .data = .{ .lhs = 3, .rhs = 2 } },
-                AST.Raw{ .tag = .decl_binding, .main_token = Token.at(1), .data = .{ .lhs = 3, .rhs = 0 } },
-                AST.Raw{ .tag = .const_decl, .main_token = Token.at(0), .data = .{ .lhs = 2, .rhs = 3 } },
-            },
+            snap(@src(),
+                \\ast.Node{
+                \\    .declaration = ast.Node.Declaration{
+                \\        .kind = ast.Node.DeclarationKind.const,
+                \\        .list = [_]ast.Node.Index{
+                \\            ast.Node.Index(2)
+                \\        },
+                \\    },
+                \\}
+            ),
         },
     };
 
     inline for (tests) |test_case| {
-        try TestParser.run(test_case[0], parseDeclaration, struct {
-            pub fn expect(t: TestParser, _: ?AST.Node.Index, _: MarkerList(test_case[0])) !void {
-                try t.expectNodesToEqual(test_case[1]);
-            }
-        });
+        try TestParser.runSnapshot(test_case[0], parseDeclaration, test_case[1]);
     }
 }
 
@@ -341,7 +415,11 @@ test "should parse empty return statement" {
 
     try TestParser.run(text, parseReturnStatement, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .@"return" = AST.Node.Empty });
+            try t.expectASTSnapshot(node, snap(@src(),
+                \\ast.Node{
+                \\    .return = ast.Node.Index.empty,
+                \\}
+            ));
             try t.expectTokenAt(markers[0], node.?);
         }
     });
@@ -355,7 +433,11 @@ test "should parse return statement" {
 
     try TestParser.run(text, parseReturnStatement, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .@"return" = AST.Node.at(1) });
+            try t.expectASTSnapshot(node, snap(@src(),
+                \\ast.Node{
+                \\    .return = ast.Node.Index(0),
+                \\}
+            ));
             try t.expectTokenAt(markers[0], node.?);
         }
     });
@@ -369,11 +451,15 @@ test "should parse if statement" {
 
     try TestParser.run(text, parseIfStatement, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .@"if" = AST.Node.If{
-                .expr = AST.Node.at(1),
-                .body = AST.Node.at(2),
-                .@"else" = AST.Node.Empty,
-            } });
+            try t.expectASTSnapshot(node, snap(@src(),
+                \\ast.Node{
+                \\    .if = ast.Node.If{
+                \\        .expr = ast.Node.Index(0),
+                \\        .body = ast.Node.Index(1),
+                \\        .else = ast.Node.Index.empty,
+                \\    },
+                \\}
+            ));
             try t.expectTokenAt(markers[0], node.?);
         }
     });
@@ -387,11 +473,15 @@ test "should parse if statement with else" {
 
     try TestParser.run(text, parseIfStatement, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .@"if" = AST.Node.If{
-                .expr = AST.Node.at(1),
-                .body = AST.Node.at(2),
-                .@"else" = AST.Node.at(3),
-            } });
+            try t.expectASTSnapshot(node, snap(@src(),
+                \\ast.Node{
+                \\    .if = ast.Node.If{
+                \\        .expr = ast.Node.Index(0),
+                \\        .body = ast.Node.Index(1),
+                \\        .else = ast.Node.Index(2),
+                \\    },
+                \\}
+            ));
             try t.expectTokenAt(markers[0], node.?);
         }
     });

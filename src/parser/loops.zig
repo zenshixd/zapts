@@ -5,6 +5,7 @@ const ParserError = @import("../parser.zig").ParserError;
 const AST = @import("../ast.zig");
 const TokenType = @import("../consts.zig").TokenType;
 const diagnostics = @import("../diagnostics.zig");
+const snap = @import("../tests/snapshots.zig").snap;
 
 const parseStatement = @import("statements.zig").parseStatement;
 const expectStatement = @import("statements.zig").expectStatement;
@@ -146,40 +147,49 @@ test "should parse breakable statement" {
             \\ for(;;) {}
             \\>^
             ,
-            AST.Node{ .@"for" = .{ .classic = .{
-                .init = AST.Node.Empty,
-                .cond = AST.Node.Empty,
-                .post = AST.Node.Empty,
-                .body = AST.Node.at(1),
-            } } },
+            snap(@src(),
+                \\ast.Node{
+                \\    .for = ast.Node.For{
+                \\        .classic = ast.Node.For__struct_1157{
+                \\            .init = ast.Node.Index.empty,
+                \\            .cond = ast.Node.Index.empty,
+                \\            .post = ast.Node.Index.empty,
+                \\            .body = ast.Node.Index(0),
+                \\        },
+                \\    },
+                \\}
+            ),
         },
         .{
             \\ while(true) {}
             \\>^
             ,
-            AST.Node{ .@"while" = .{
-                .cond = AST.Node.at(1),
-                .body = AST.Node.at(2),
-            } },
+            snap(@src(),
+                \\ast.Node{
+                \\    .while = ast.Node.While{
+                \\        .cond = ast.Node.Index(0),
+                \\        .body = ast.Node.Index(1),
+                \\    },
+                \\}
+            ),
         },
         .{
             \\ do {} while(true);
             \\>^
             ,
-            AST.Node{ .do_while = .{
-                .body = AST.Node.at(1),
-                .cond = AST.Node.at(2),
-            } },
+            snap(@src(),
+                \\ast.Node{
+                \\    .do_while = ast.Node.While{
+                \\        .cond = ast.Node.Index(1),
+                \\        .body = ast.Node.Index(0),
+                \\    },
+                \\}
+            ),
         },
     };
 
     inline for (test_cases) |test_case| {
-        try TestParser.run(test_case[0], parseBreakableStatement, struct {
-            pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(test_case[0])) !void {
-                try t.expectAST(node, test_case[1]);
-                try t.expectTokenAt(markers[0], node.?);
-            }
-        });
+        try TestParser.runSnapshot(test_case[0], parseBreakableStatement, test_case[1]);
     }
 }
 
@@ -198,10 +208,14 @@ test "should parse while loop" {
 
     try TestParser.run(text, parseWhileStatement, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .@"while" = .{
-                .cond = AST.Node.at(1),
-                .body = AST.Node.at(2),
-            } });
+            try t.expectASTSnapshot(node, snap(@src(),
+                \\ast.Node{
+                \\    .while = ast.Node.While{
+                \\        .cond = ast.Node.Index(0),
+                \\        .body = ast.Node.Index(1),
+                \\    },
+                \\}
+            ));
         }
     });
 }
@@ -273,10 +287,14 @@ test "should parse do while loop" {
 
     try TestParser.run(text, parseDoWhileStatement, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .do_while = .{
-                .cond = AST.Node.at(2),
-                .body = AST.Node.at(1),
-            } });
+            try t.expectASTSnapshot(node, snap(@src(),
+                \\ast.Node{
+                \\    .do_while = ast.Node.While{
+                \\        .cond = ast.Node.Index(1),
+                \\        .body = ast.Node.Index(0),
+                \\    },
+                \\}
+            ));
         }
     });
 }
@@ -364,14 +382,18 @@ test "should parse classic for loops" {
 
     try TestParser.run(text, parseForStatement, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .@"for" = .{
-                .classic = .{
-                    .init = AST.Node.at(3),
-                    .cond = AST.Node.at(6),
-                    .post = AST.Node.at(8),
-                    .body = AST.Node.at(9),
-                },
-            } });
+            try t.expectASTSnapshot(node, snap(@src(),
+                \\ast.Node{
+                \\    .for = ast.Node.For{
+                \\        .classic = ast.Node.For__struct_1157{
+                \\            .init = ast.Node.Index(2),
+                \\            .cond = ast.Node.Index(5),
+                \\            .post = ast.Node.Index(7),
+                \\            .body = ast.Node.Index(8),
+                \\        },
+                \\    },
+                \\}
+            ));
         }
     });
 }
@@ -394,14 +416,18 @@ test "should parse empty for loops" {
 
     try TestParser.run(text, parseForStatement, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .@"for" = .{
-                .classic = .{
-                    .init = AST.Node.Empty,
-                    .cond = AST.Node.Empty,
-                    .post = AST.Node.Empty,
-                    .body = AST.Node.at(1),
-                },
-            } });
+            try t.expectASTSnapshot(node, snap(@src(),
+                \\ast.Node{
+                \\    .for = ast.Node.For{
+                \\        .classic = ast.Node.For__struct_1157{
+                \\            .init = ast.Node.Index.empty,
+                \\            .cond = ast.Node.Index.empty,
+                \\            .post = ast.Node.Index.empty,
+                \\            .body = ast.Node.Index(0),
+                \\        },
+                \\    },
+                \\}
+            ));
         }
     });
 }
@@ -414,13 +440,17 @@ test "should parse in for loops" {
 
     try TestParser.run(text, parseForStatement, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .@"for" = .{
-                .in = .{
-                    .left = AST.Node.at(2),
-                    .right = AST.Node.at(6),
-                    .body = AST.Node.at(7),
-                },
-            } });
+            try t.expectASTSnapshot(node, snap(@src(),
+                \\ast.Node{
+                \\    .for = ast.Node.For{
+                \\        .in = ast.Node.For__struct_1158{
+                \\            .left = ast.Node.Index(1),
+                \\            .right = ast.Node.Index(5),
+                \\            .body = ast.Node.Index(6),
+                \\        },
+                \\    },
+                \\}
+            ));
         }
     });
 }
@@ -433,13 +463,17 @@ test "should parse of for loops" {
 
     try TestParser.run(text, parseForStatement, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .@"for" = .{
-                .of = .{
-                    .left = AST.Node.at(2),
-                    .right = AST.Node.at(6),
-                    .body = AST.Node.at(7),
-                },
-            } });
+            try t.expectASTSnapshot(node, snap(@src(),
+                \\ast.Node{
+                \\    .for = ast.Node.For{
+                \\        .of = ast.Node.For__struct_1159{
+                \\            .left = ast.Node.Index(1),
+                \\            .right = ast.Node.Index(5),
+                \\            .body = ast.Node.Index(6),
+                \\        },
+                \\    },
+                \\}
+            ));
         }
     });
 }

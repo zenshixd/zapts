@@ -6,6 +6,7 @@ const Token = @import("../consts.zig").Token;
 const TokenType = @import("../consts.zig").TokenType;
 const StringId = @import("../string_interner.zig").StringId;
 const diagnostics = @import("../diagnostics.zig");
+const snap = @import("../tests/snapshots.zig").snap;
 
 const parseIdentifier = @import("primary.zig").parseIdentifier;
 const parseKeywordAsIdentifier = @import("primary.zig").parseKeywordAsIdentifier;
@@ -408,7 +409,14 @@ test "should parse optional data type" {
 
     try TestParser.run(text, parseOptionalDataType, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .simple_type = .{ .kind = .number, .id = StringId.at(1) } });
+            try t.expectASTSnapshot(node, snap(@src(),
+                \\ast.Node{
+                \\    .simple_type = ast.Node.SimpleValue{
+                \\        .kind = ast.SimpleValueKind.number,
+                \\        .id = string_interner.StringId(1),
+                \\    },
+                \\}
+            ));
             try t.expectTokenAt(markers[0], node.?);
         }
     });
@@ -430,65 +438,123 @@ test "should parse primary symbol type" {
             \\ number
             \\>^
             ,
-            AST.Node{ .simple_type = .{ .kind = .number, .id = StringId.at(1) } },
+            snap(@src(),
+                \\ast.Node{
+                \\    .simple_type = ast.Node.SimpleValue{
+                \\        .kind = ast.SimpleValueKind.number,
+                \\        .id = string_interner.StringId(1),
+                \\    },
+                \\}
+            ),
         },
         .{
             \\ bigint
             \\>^
             ,
-            AST.Node{ .simple_type = .{ .kind = .bigint, .id = StringId.at(1) } },
+            snap(@src(),
+                \\ast.Node{
+                \\    .simple_type = ast.Node.SimpleValue{
+                \\        .kind = ast.SimpleValueKind.bigint,
+                \\        .id = string_interner.StringId(1),
+                \\    },
+                \\}
+            ),
         },
         .{
             \\ string
             \\>^
             ,
-            AST.Node{ .simple_type = .{ .kind = .string, .id = StringId.at(1) } },
+            snap(@src(),
+                \\ast.Node{
+                \\    .simple_type = ast.Node.SimpleValue{
+                \\        .kind = ast.SimpleValueKind.string,
+                \\        .id = string_interner.StringId(1),
+                \\    },
+                \\}
+            ),
         },
         .{
             \\ boolean
             \\>^
             ,
-            AST.Node{ .simple_type = .{ .kind = .boolean, .id = StringId.at(1) } },
+            snap(@src(),
+                \\ast.Node{
+                \\    .simple_type = ast.Node.SimpleValue{
+                \\        .kind = ast.SimpleValueKind.boolean,
+                \\        .id = string_interner.StringId(1),
+                \\    },
+                \\}
+            ),
         },
         .{
             \\ null
             \\>^
             ,
-            AST.Node{ .simple_type = .{ .kind = .null, .id = StringId.at(1) } },
+            snap(@src(),
+                \\ast.Node{
+                \\    .simple_type = ast.Node.SimpleValue{
+                \\        .kind = ast.SimpleValueKind.null,
+                \\        .id = string_interner.StringId(1),
+                \\    },
+                \\}
+            ),
         },
         .{
             \\ undefined
             \\>^
             ,
-            AST.Node{ .simple_type = .{ .kind = .undefined, .id = StringId.at(1) } },
+            snap(@src(),
+                \\ast.Node{
+                \\    .simple_type = ast.Node.SimpleValue{
+                \\        .kind = ast.SimpleValueKind.undefined,
+                \\        .id = string_interner.StringId(1),
+                \\    },
+                \\}
+            ),
         },
         .{
             \\ void
             \\>^
             ,
-            AST.Node{ .simple_type = .{ .kind = .void, .id = StringId.at(1) } },
+            snap(@src(),
+                \\ast.Node{
+                \\    .simple_type = ast.Node.SimpleValue{
+                \\        .kind = ast.SimpleValueKind.void,
+                \\        .id = string_interner.StringId(1),
+                \\    },
+                \\}
+            ),
         },
         .{
             \\ any
             \\>^
             ,
-            AST.Node{ .simple_type = .{ .kind = .any, .id = StringId.at(1) } },
+            snap(@src(),
+                \\ast.Node{
+                \\    .simple_type = ast.Node.SimpleValue{
+                \\        .kind = ast.SimpleValueKind.any,
+                \\        .id = string_interner.StringId(1),
+                \\    },
+                \\}
+            ),
         },
         .{
             \\ unknown
             \\>^
             ,
-            AST.Node{ .simple_type = .{ .kind = .unknown, .id = StringId.at(1) } },
+            snap(@src(),
+                \\ast.Node{
+                \\    .simple_type = ast.Node.SimpleValue{
+                \\        .kind = ast.SimpleValueKind.unknown,
+                \\        .id = string_interner.StringId(1),
+                \\    },
+                \\}
+            ),
         },
     };
 
     inline for (tests) |test_case| {
-        try TestParser.run(test_case[0], parseType, struct {
-            pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(test_case[0])) !void {
-                try t.expectAST(node, test_case[1]);
-                try t.expectTokenAt(markers[0], node.?);
-            }
-        });
+        try TestParser.runSnapshot(test_case[0], parseType, test_case[1]);
     }
 }
 
@@ -508,23 +574,26 @@ test "should parse unary type operators" {
             \\ keyof Array
             \\>^
             ,
-            AST.Node{ .keyof = AST.Node.at(1) },
+            snap(@src(),
+                \\ast.Node{
+                \\    .keyof = ast.Node.Index(0),
+                \\}
+            ),
         },
         .{
             \\ typeof Array
             \\>^
             ,
-            AST.Node{ .typeof = AST.Node.at(1) },
+            snap(@src(),
+                \\ast.Node{
+                \\    .typeof = ast.Node.Index(0),
+                \\}
+            ),
         },
     };
 
     inline for (tests) |test_case| {
-        try TestParser.run(test_case[0], parseType, struct {
-            pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(test_case[0])) !void {
-                try t.expectAST(node, test_case[1]);
-                try t.expectTokenAt(markers[0], node.?);
-            }
-        });
+        try TestParser.runSnapshot(test_case[0], parseType, test_case[1]);
     }
 }
 
@@ -549,17 +618,27 @@ test "should parse generic type" {
 
     try TestParser.run(text, parseType, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            const generic = AST.Node{ .generic_type = .{
-                .name = StringId.at(2),
-                .params = @constCast(&[_]AST.Node.Index{AST.Node.at(1)}),
-            } };
-            try t.expectAST(node, generic);
+            try t.expectASTSnapshot(node, snap(@src(),
+                \\ast.Node{
+                \\    .generic_type = ast.Node.GenericType{
+                \\        .name = string_interner.StringId(2),
+                \\        .params = [_]ast.Node.Index{
+                \\            ast.Node.Index(0)
+                \\        },
+                \\    },
+                \\}
+            ));
             try t.expectTokenAt(markers[0], node.?);
 
-            try t.expectAST(generic.generic_type.params[0], AST.Node{
-                .simple_type = .{ .kind = .number, .id = StringId.at(1) },
-            });
-            try t.expectTokenAt(markers[1], generic.generic_type.params[0]);
+            try t.expectASTSnapshot(t.parser.getNode(node.?).generic_type.params[0], snap(@src(),
+                \\ast.Node{
+                \\    .simple_type = ast.Node.SimpleValue{
+                \\        .kind = ast.SimpleValueKind.number,
+                \\        .id = string_interner.StringId(1),
+                \\    },
+                \\}
+            ));
+            try t.expectTokenAt(markers[1], t.parser.getNode(node.?).generic_type.params[0]);
         }
     });
 }
@@ -572,12 +651,17 @@ test "should parse generic type with multiple params" {
 
     try TestParser.run(text, parseType, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{
-                .generic_type = .{
-                    .name = StringId.at(3),
-                    .params = @constCast(&[_]AST.Node.Index{ AST.Node.at(1), AST.Node.at(2) }),
-                },
-            });
+            try t.expectASTSnapshot(node, snap(@src(),
+                \\ast.Node{
+                \\    .generic_type = ast.Node.GenericType{
+                \\        .name = string_interner.StringId(3),
+                \\        .params = [_]ast.Node.Index{
+                \\            ast.Node.Index(0), 
+                \\            ast.Node.Index(1)
+                \\        },
+                \\    },
+                \\}
+            ));
             try t.expectTokenAt(markers[0], node.?);
         }
     });
@@ -591,22 +675,29 @@ test "should parse nested generic type" {
 
     try TestParser.run(text, parseType, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            const generic_type = AST.Node{
-                .generic_type = .{
-                    .name = StringId.at(2),
-                    .params = @constCast(&[_]AST.Node.Index{AST.Node.at(2)}),
-                },
-            };
-            try t.expectAST(node, generic_type);
+            try t.expectASTSnapshot(node, snap(@src(),
+                \\ast.Node{
+                \\    .generic_type = ast.Node.GenericType{
+                \\        .name = string_interner.StringId(2),
+                \\        .params = [_]ast.Node.Index{
+                \\            ast.Node.Index(1)
+                \\        },
+                \\    },
+                \\}
+            ));
             try t.expectTokenAt(markers[0], node.?);
 
-            try t.expectAST(generic_type.generic_type.params[0], AST.Node{
-                .generic_type = .{
-                    .name = StringId.at(2),
-                    .params = @constCast(&[_]AST.Node.Index{AST.Node.at(1)}),
-                },
-            });
-            try t.expectTokenAt(markers[1], generic_type.generic_type.params[0]);
+            try t.expectASTSnapshot(t.parser.getNode(node.?).generic_type.params[0], snap(@src(),
+                \\ast.Node{
+                \\    .generic_type = ast.Node.GenericType{
+                \\        .name = string_interner.StringId(2),
+                \\        .params = [_]ast.Node.Index{
+                \\            ast.Node.Index(0)
+                \\        },
+                \\    },
+                \\}
+            ));
+            try t.expectTokenAt(markers[1], t.parser.getNode(node.?).generic_type.params[0]);
         }
     });
 }
@@ -619,9 +710,11 @@ test "should parse array type" {
 
     try TestParser.run(text, parseType, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{
-                .array_type = AST.Node.at(1),
-            });
+            try t.expectASTSnapshot(node, snap(@src(),
+                \\ast.Node{
+                \\    .array_type = ast.Node.Index(0),
+                \\}
+            ));
             try t.expectTokenAt(markers[0], node.?);
         }
     });
@@ -648,9 +741,12 @@ test "should parse index type" {
 
     try TestParser.run(text, parseType, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{
-                .index_type = AST.Node.at(2),
-            });
+            try t.expectASTSnapshot(node, snap(@src(),
+                \\ast.Node{
+                \\    .index_type = ast.Node.Index(1),
+                \\}
+            ));
+
             try t.expectTokenAt(markers[0], node.?);
         }
     });
@@ -664,9 +760,15 @@ test "should parse tuple type" {
 
     try TestParser.run(text, parseType, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{
-                .tuple_type = @constCast(&[_]AST.Node.Index{ AST.Node.at(1), AST.Node.at(2) }),
-            });
+            try t.expectASTSnapshot(node, snap(@src(),
+                \\ast.Node{
+                \\    .tuple_type = [_]ast.Node.Index{
+                \\        ast.Node.Index(0), 
+                \\        ast.Node.Index(1)
+                \\    },
+                \\}
+            ));
+
             try t.expectTokenAt(markers[0], node.?);
         }
     });
@@ -685,15 +787,14 @@ test "should parse object type" {
     inline for (texts) |text| {
         try TestParser.run(text, parseObjectType, struct {
             pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-                try t.expectNodesToEqual(&[_]AST.Raw{
-                    .{ .tag = .simple_value, .main_token = Token.at(1), .data = .{ .lhs = 1, .rhs = 1 } },
-                    .{ .tag = .simple_type, .main_token = Token.at(3), .data = .{ .lhs = 3, .rhs = 2 } },
-                    .{ .tag = .object_type_field, .main_token = t.getTokenAt(markers[1]), .data = .{ .lhs = 1, .rhs = 2 } },
-                    .{ .tag = .simple_value, .main_token = Token.at(5), .data = .{ .lhs = 1, .rhs = 3 } },
-                    .{ .tag = .simple_type, .main_token = Token.at(7), .data = .{ .lhs = 5, .rhs = 4 } },
-                    .{ .tag = .object_type_field, .main_token = t.getTokenAt(markers[2]), .data = .{ .lhs = 4, .rhs = 5 } },
-                    .{ .tag = .object_type, .main_token = t.getTokenAt(markers[0]), .data = .{ .lhs = 0, .rhs = 2 } },
-                });
+                try t.expectASTSnapshot(node, snap(@src(),
+                    \\ast.Node{
+                    \\    .object_type = [_]ast.Node.Index{
+                    \\        ast.Node.Index(2), 
+                    \\        ast.Node.Index(5)
+                    \\    },
+                    \\}
+                ));
                 try t.expectTokenAt(markers[0], node.?);
             }
         });
@@ -710,19 +811,35 @@ test "should parse method type" {
         ,
     };
 
-    inline for (texts, 0..) |text, i| {
+    inline for (texts) |text| {
         try TestParser.run(text, parseObjectMethodType, struct {
-            pub fn expect(t: TestParser, _: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-                try t.expectNodesToEqual(&[_]AST.Raw{
-                    .{ .tag = .simple_value, .main_token = Token.at(0), .data = .{ .lhs = 1, .rhs = 1 } },
-                    .{ .tag = .simple_type, .main_token = Token.at(4), .data = .{ .lhs = 3, .rhs = 2 } },
-                    .{ .tag = .function_param, .main_token = t.getTokenAt(markers[2]), .data = .{ .lhs = 3, .rhs = 2 } },
-                    .{ .tag = .simple_type, .main_token = Token.at(8), .data = .{ .lhs = 5, .rhs = 4 } },
-                    .{ .tag = .function_param, .main_token = t.getTokenAt(markers[3]), .data = .{ .lhs = 5, .rhs = 4 } },
-                    .{ .tag = .simple_type, .main_token = Token.at(11).inc(i), .data = .{ .lhs = 6, .rhs = 6 } },
-                    .{ .tag = .function_type, .main_token = t.getTokenAt(markers[1]), .data = .{ .lhs = 2, .rhs = 6 } },
-                    .{ .tag = .object_type_field, .main_token = t.getTokenAt(markers[0]), .data = .{ .lhs = 1, .rhs = 7 } },
-                });
+            pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
+                try t.expectASTSnapshot(node, snap(@src(),
+                    \\ast.Node{
+                    \\    .object_type_field = ast.Node.ObjectTypeField{
+                    \\        .name = ast.Node.Index(0),
+                    \\        .type = ast.Node.Index(6),
+                    \\    },
+                    \\}
+                ));
+                try t.expectTokenAt(markers[0], node.?);
+
+                const fn_type = t.parser.getNode(node.?).object_type_field.type;
+                try t.expectASTSnapshot(fn_type, snap(@src(),
+                    \\ast.Node{
+                    \\    .function_type = ast.Node.FunctionType{
+                    \\        .generic_params = [_]ast.Node.Index{},
+                    \\        .params = [_]ast.Node.Index{
+                    \\            ast.Node.Index(2), 
+                    \\            ast.Node.Index(4)
+                    \\        },
+                    \\        .return_type = ast.Node.Index(5),
+                    \\    },
+                    \\}
+                ));
+                try t.expectTokenAt(markers[1], fn_type);
+                try t.expectTokenAt(markers[2], t.parser.getNode(fn_type).function_type.params[0]);
+                try t.expectTokenAt(markers[3], t.parser.getNode(fn_type).function_type.params[1]);
             }
         });
     }
@@ -734,20 +851,31 @@ test "should parse method with generics" {
         "fn<T,>(a: T, b: T): boolean",
     };
 
-    inline for (texts, 0..) |text, i| {
+    inline for (texts) |text| {
         try TestParser.run(text, parseObjectMethodType, struct {
-            pub fn expect(t: TestParser, _: ?AST.Node.Index, _: MarkerList(text)) !void {
-                try t.expectNodesToEqual(&[_]AST.Raw{
-                    .{ .tag = .simple_value, .main_token = Token.at(0), .data = .{ .lhs = 1, .rhs = 1 } },
-                    .{ .tag = .simple_type, .main_token = Token.at(2), .data = .{ .lhs = 1, .rhs = 2 } },
-                    .{ .tag = .simple_type, .main_token = Token.at(7).inc(i), .data = .{ .lhs = 1, .rhs = 2 } },
-                    .{ .tag = .function_param, .main_token = Token.at(5).inc(i), .data = .{ .lhs = 3, .rhs = 3 } },
-                    .{ .tag = .simple_type, .main_token = Token.at(11).inc(i), .data = .{ .lhs = 1, .rhs = 2 } },
-                    .{ .tag = .function_param, .main_token = Token.at(9).inc(i), .data = .{ .lhs = 4, .rhs = 5 } },
-                    .{ .tag = .simple_type, .main_token = Token.at(14).inc(i), .data = .{ .lhs = 6, .rhs = 5 } },
-                    .{ .tag = .function_type, .main_token = Token.at(4).inc(i), .data = .{ .lhs = 3, .rhs = 7 } },
-                    .{ .tag = .object_type_field, .main_token = Token.at(0), .data = .{ .lhs = 1, .rhs = 8 } },
-                });
+            pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+                try t.expectASTSnapshot(node, snap(@src(),
+                    \\ast.Node{
+                    \\    .object_type_field = ast.Node.ObjectTypeField{
+                    \\        .name = ast.Node.Index(0),
+                    \\        .type = ast.Node.Index(7),
+                    \\    },
+                    \\}
+                ));
+                try t.expectASTSnapshot(t.parser.getNode(node.?).object_type_field.type, snap(@src(),
+                    \\ast.Node{
+                    \\    .function_type = ast.Node.FunctionType{
+                    \\        .generic_params = [_]ast.Node.Index{
+                    \\            ast.Node.Index(1)
+                    \\        },
+                    \\        .params = [_]ast.Node.Index{
+                    \\            ast.Node.Index(3), 
+                    \\            ast.Node.Index(5)
+                    \\        },
+                    \\        .return_type = ast.Node.Index(6),
+                    \\    },
+                    \\}
+                ));
             }
         });
     }
@@ -770,14 +898,28 @@ test "should parse method type without types" {
     const text = "fn(a, b)";
 
     try TestParser.run(text, parseObjectMethodType, struct {
-        pub fn expect(t: TestParser, _: ?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectNodesToEqual(&[_]AST.Raw{
-                .{ .tag = .simple_value, .main_token = Token.at(0), .data = .{ .lhs = 1, .rhs = 1 } },
-                .{ .tag = .function_param, .main_token = Token.at(2), .data = .{ .lhs = 2, .rhs = AST.Node.Index.empty.int() } },
-                .{ .tag = .function_param, .main_token = Token.at(4), .data = .{ .lhs = 3, .rhs = AST.Node.Index.empty.int() } },
-                .{ .tag = .function_type, .main_token = Token.at(1), .data = .{ .lhs = 2, .rhs = AST.Node.Index.empty.int() } },
-                .{ .tag = .object_type_field, .main_token = Token.at(0), .data = .{ .lhs = 1, .rhs = 4 } },
-            });
+        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
+            try t.expectASTSnapshot(node, snap(@src(),
+                \\ast.Node{
+                \\    .object_type_field = ast.Node.ObjectTypeField{
+                \\        .name = ast.Node.Index(0),
+                \\        .type = ast.Node.Index(3),
+                \\    },
+                \\}
+            ));
+
+            try t.expectASTSnapshot(t.parser.getNode(node.?).object_type_field.type, snap(@src(),
+                \\ast.Node{
+                \\    .function_type = ast.Node.FunctionType{
+                \\        .generic_params = [_]ast.Node.Index{},
+                \\        .params = [_]ast.Node.Index{
+                \\            ast.Node.Index(1), 
+                \\            ast.Node.Index(2)
+                \\        },
+                \\        .return_type = ast.Node.Index.empty,
+                \\    },
+                \\}
+            ));
         }
     });
 }
@@ -826,7 +968,14 @@ test "should parse type identifier" {
 
     try TestParser.run(text, parseType, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .simple_type = .{ .kind = .identifier, .id = StringId.at(1) } });
+            try t.expectASTSnapshot(node, snap(@src(),
+                \\ast.Node{
+                \\    .simple_type = ast.Node.SimpleValue{
+                \\        .kind = ast.SimpleValueKind.identifier,
+                \\        .id = string_interner.StringId(1),
+                \\    },
+                \\}
+            ));
             try t.expectTokenAt(markers[0], node.?);
         }
     });
@@ -840,10 +989,14 @@ test "should parse type union" {
 
     try TestParser.run(text, parseType, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .type_union = .{
-                .left = AST.Node.at(1),
-                .right = AST.Node.at(2),
-            } });
+            try t.expectASTSnapshot(node, snap(@src(),
+                \\ast.Node{
+                \\    .type_union = ast.Node.Binary{
+                \\        .left = ast.Node.Index(0),
+                \\        .right = ast.Node.Index(1),
+                \\    },
+                \\}
+            ));
             try t.expectTokenAt(markers[0], node.?);
         }
     });
@@ -870,10 +1023,14 @@ test "should parse type intersection" {
 
     try TestParser.run(text, parseType, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .type_intersection = .{
-                .left = AST.Node.at(1),
-                .right = AST.Node.at(2),
-            } });
+            try t.expectASTSnapshot(node, snap(@src(),
+                \\ast.Node{
+                \\    .type_intersection = ast.Node.Binary{
+                \\        .left = ast.Node.Index(0),
+                \\        .right = ast.Node.Index(1),
+                \\    },
+                \\}
+            ));
             try t.expectTokenAt(markers[0], node.?);
         }
     });

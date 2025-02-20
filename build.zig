@@ -43,7 +43,10 @@ pub fn build(b: *std.Build) void {
         .name = test_name,
         .target = target,
         .optimize = optimize,
-        .test_runner = b.path("src/tests/unit_tests_runner.zig"),
+        .test_runner = .{
+            .path = b.path("src/tests/unit_tests_runner.zig"),
+            .mode = .simple,
+        },
         .filter = maybe_filter,
     });
 
@@ -74,7 +77,10 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("tests/e2e_tests_runner.zig"),
         .target = target,
         .optimize = optimize,
-        .test_runner = b.path("tests/e2e_tests_runner.zig"),
+        .test_runner = .{
+            .path = b.path("tests/e2e_tests_runner.zig"),
+            .mode = .simple,
+        },
     });
     compile_tests.root_module.addImport("zapts", zapts_module);
 

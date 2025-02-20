@@ -184,8 +184,8 @@ test "should parse binary expression" {
         try TestParser.run(test_case, parseBinaryExpression, struct {
             pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(test_case)) !void {
                 try t.expectAST(node, @unionInit(AST.Node, binary_operators[i][1], .{
-                    .left = AST.Node.at(1),
-                    .right = AST.Node.at(2),
+                    .left = AST.Node.at(0),
+                    .right = AST.Node.at(1),
                 }));
                 try t.expectTokenAt(comptime Marker.fromText(marker), node.?);
             }
@@ -226,8 +226,8 @@ test "should parse assignment expression" {
         try TestParser.run(test_case, parseAssignment, struct {
             pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(test_case)) !void {
                 try t.expectAST(node, @unionInit(AST.Node, assignment_map[i][1], .{
-                    .left = AST.Node.at(1),
-                    .right = AST.Node.at(2),
+                    .left = AST.Node.at(0),
+                    .right = AST.Node.at(1),
                 }));
                 try t.expectTokenAt(comptime Marker.fromText(marker), node.?);
             }

@@ -6,6 +6,7 @@ const Token = @import("../consts.zig").Token;
 const TokenType = @import("../consts.zig").TokenType;
 const StringId = @import("../string_interner.zig").StringId;
 const diagnostics = @import("../diagnostics.zig");
+const snap = @import("../tests/snapshots.zig").snap;
 
 const parseAbstractClassStatement = @import("classes.zig").parseAbstractClassStatement;
 const parseClassStatement = @import("classes.zig").parseClassStatement;
@@ -247,7 +248,13 @@ test "should parse simple import statement" {
 
     try TestParser.run(text, parseImportStatement, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .import = .{ .simple = StringId.at(1) } });
+            try t.expectASTSnapshot(node, snap(@src(),
+                \\ast.Node{
+                \\    .import = ast.Node.Import{
+                \\        .simple = string_interner.StringId(1),
+                \\    },
+                \\}
+            ));
             try t.expectTokenAt(markers[0], node.?);
         }
     });
@@ -261,20 +268,28 @@ test "should parse default import statement" {
 
     try TestParser.run(text, parseImportStatement, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            const full_import = AST.Node.ImportFull{
-                .bindings = @constCast(&[_]AST.Node.Index{AST.Node.at(1)}),
-                .path = StringId.at(2),
-            };
-            try t.expectAST(node, AST.Node{
-                .import = AST.Node.Import{ .full = full_import },
-            });
+            try t.expectASTSnapshot(node, snap(@src(),
+                \\ast.Node{
+                \\    .import = ast.Node.Import{
+                \\        .full = ast.Node.ImportFull{
+                \\            .bindings = [_]ast.Node.Index{
+                \\                ast.Node.Index(0)
+                \\            },
+                \\            .path = string_interner.StringId(2),
+                \\        },
+                \\    },
+                \\}
+            ));
             try t.expectTokenAt(markers[0], node.?);
 
-            try t.expectAST(full_import.bindings[0], AST.Node{
-                .import_binding = AST.Node.ImportBinding{
-                    .default = StringId.at(1),
-                },
-            });
+            const full_import = t.parser.getNode(node.?).import.full;
+            try t.expectASTSnapshot(full_import.bindings[0], snap(@src(),
+                \\ast.Node{
+                \\    .import_binding = ast.Node.ImportBinding{
+                \\        .default = string_interner.StringId(1),
+                \\    },
+                \\}
+            ));
             try t.expectTokenAt(markers[1], full_import.bindings[0]);
         }
     });
@@ -288,20 +303,28 @@ test "should parse namespace import statement" {
 
     try TestParser.run(text, parseImportStatement, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            const full_import = AST.Node.ImportFull{
-                .bindings = @constCast(&[_]AST.Node.Index{AST.Node.at(1)}),
-                .path = StringId.at(2),
-            };
-            try t.expectAST(node, AST.Node{
-                .import = AST.Node.Import{ .full = full_import },
-            });
+            try t.expectASTSnapshot(node, snap(@src(),
+                \\ast.Node{
+                \\    .import = ast.Node.Import{
+                \\        .full = ast.Node.ImportFull{
+                \\            .bindings = [_]ast.Node.Index{
+                \\                ast.Node.Index(0)
+                \\            },
+                \\            .path = string_interner.StringId(2),
+                \\        },
+                \\    },
+                \\}
+            ));
             try t.expectTokenAt(markers[0], node.?);
 
-            try t.expectAST(full_import.bindings[0], AST.Node{
-                .import_binding = AST.Node.ImportBinding{
-                    .namespace = StringId.at(1),
-                },
-            });
+            const full_import = t.parser.getNode(node.?).import.full;
+            try t.expectASTSnapshot(full_import.bindings[0], snap(@src(),
+                \\ast.Node{
+                \\    .import_binding = ast.Node.ImportBinding{
+                \\        .namespace = string_interner.StringId(1),
+                \\    },
+                \\}
+            ));
             try t.expectTokenAt(markers[1], full_import.bindings[0]);
         }
     });
@@ -328,38 +351,53 @@ test "should parse named import statement" {
 
     try TestParser.run(text, parseImportStatement, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            const full_import = AST.Node.ImportFull{
-                .bindings = @constCast(&[_]AST.Node.Index{AST.Node.at(3)}),
-                .path = StringId.at(3),
-            };
-            try t.expectAST(node, AST.Node{
-                .import = AST.Node.Import{
-                    .full = full_import,
-                },
-            });
+            try t.expectASTSnapshot(node, snap(@src(),
+                \\ast.Node{
+                \\    .import = ast.Node.Import{
+                \\        .full = ast.Node.ImportFull{
+                \\            .bindings = [_]ast.Node.Index{
+                \\                ast.Node.Index(2)
+                \\            },
+                \\            .path = string_interner.StringId(3),
+                \\        },
+                \\    },
+                \\}
+            ));
             try t.expectTokenAt(markers[0], node.?);
 
-            const binding = AST.Node.ImportBinding{
-                .named = @constCast(&[_]AST.Node.Index{ AST.Node.at(1), AST.Node.at(2) }),
-            };
-            try t.expectAST(full_import.bindings[0], AST.Node{ .import_binding = binding });
+            const full_import = t.parser.getNode(node.?).import.full;
+            try t.expectASTSnapshot(full_import.bindings[0], snap(@src(),
+                \\ast.Node{
+                \\    .import_binding = ast.Node.ImportBinding{
+                \\        .named = [_]ast.Node.Index{
+                \\            ast.Node.Index(0), 
+                \\            ast.Node.Index(1)
+                \\        },
+                \\    },
+                \\}
+            ));
             try t.expectTokenAt(markers[1], full_import.bindings[0]);
 
-            try t.expectAST(binding.named[0], AST.Node{
-                .binding_decl = AST.Node.BindingDecl{
-                    .alias = StringId.none,
-                    .name = StringId.at(1),
-                },
-            });
-            try t.expectTokenAt(markers[2], binding.named[0]);
+            const named_bindings = t.parser.getNode(full_import.bindings[0]).import_binding.named;
+            try t.expectASTSnapshot(named_bindings[0], snap(@src(),
+                \\ast.Node{
+                \\    .binding_decl = ast.Node.BindingDecl{
+                \\        .name = string_interner.StringId(1),
+                \\        .alias = string_interner.StringId.none,
+                \\    },
+                \\}
+            ));
+            try t.expectTokenAt(markers[2], named_bindings[0]);
 
-            try t.expectAST(binding.named[1], AST.Node{
-                .binding_decl = AST.Node.BindingDecl{
-                    .alias = StringId.none,
-                    .name = StringId.at(2),
-                },
-            });
-            try t.expectTokenAt(markers[3], binding.named[1]);
+            try t.expectASTSnapshot(named_bindings[1], snap(@src(),
+                \\ast.Node{
+                \\    .binding_decl = ast.Node.BindingDecl{
+                \\        .name = string_interner.StringId(2),
+                \\        .alias = string_interner.StringId.none,
+                \\    },
+                \\}
+            ));
+            try t.expectTokenAt(markers[3], named_bindings[1]);
         }
     });
 }
@@ -372,38 +410,53 @@ test "should parse named bindings with aliases in import statement" {
 
     try TestParser.run(text, parseImportStatement, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            const full_import = AST.Node.ImportFull{
-                .bindings = @constCast(&[_]AST.Node.Index{AST.Node.at(3)}),
-                .path = StringId.at(5),
-            };
-            try t.expectAST(node, AST.Node{
-                .import = AST.Node.Import{
-                    .full = full_import,
-                },
-            });
+            try t.expectASTSnapshot(node, snap(@src(),
+                \\ast.Node{
+                \\    .import = ast.Node.Import{
+                \\        .full = ast.Node.ImportFull{
+                \\            .bindings = [_]ast.Node.Index{
+                \\                ast.Node.Index(2)
+                \\            },
+                \\            .path = string_interner.StringId(5),
+                \\        },
+                \\    },
+                \\}
+            ));
             try t.expectTokenAt(markers[0], node.?);
 
-            const binding = AST.Node.ImportBinding{
-                .named = @constCast(&[_]AST.Node.Index{ AST.Node.at(1), AST.Node.at(2) }),
-            };
-            try t.expectAST(full_import.bindings[0], AST.Node{ .import_binding = binding });
+            const full_import = t.parser.getNode(node.?).import.full;
+            try t.expectASTSnapshot(full_import.bindings[0], snap(@src(),
+                \\ast.Node{
+                \\    .import_binding = ast.Node.ImportBinding{
+                \\        .named = [_]ast.Node.Index{
+                \\            ast.Node.Index(0), 
+                \\            ast.Node.Index(1)
+                \\        },
+                \\    },
+                \\}
+            ));
             try t.expectTokenAt(markers[1], full_import.bindings[0]);
 
-            try t.expectAST(binding.named[0], AST.Node{
-                .binding_decl = AST.Node.BindingDecl{
-                    .name = StringId.at(1),
-                    .alias = StringId.at(2),
-                },
-            });
-            try t.expectTokenAt(markers[2], binding.named[0]);
+            const named_bindings = t.parser.getNode(full_import.bindings[0]).import_binding.named;
+            try t.expectASTSnapshot(named_bindings[0], snap(@src(),
+                \\ast.Node{
+                \\    .binding_decl = ast.Node.BindingDecl{
+                \\        .name = string_interner.StringId(1),
+                \\        .alias = string_interner.StringId(2),
+                \\    },
+                \\}
+            ));
+            try t.expectTokenAt(markers[2], named_bindings[0]);
 
-            try t.expectAST(binding.named[1], AST.Node{
-                .binding_decl = AST.Node.BindingDecl{
-                    .name = StringId.at(3),
-                    .alias = StringId.at(4),
-                },
-            });
-            try t.expectTokenAt(markers[3], binding.named[1]);
+            try t.expectASTSnapshot(named_bindings[1], snap(@src(),
+                \\ast.Node{
+                \\    .binding_decl = ast.Node.BindingDecl{
+                \\        .name = string_interner.StringId(3),
+                \\        .alias = string_interner.StringId(4),
+                \\    },
+                \\}
+            ));
+            try t.expectTokenAt(markers[3], named_bindings[1]);
         }
     });
 }
@@ -455,29 +508,38 @@ test "should parse default import and namespace binding" {
 
     try TestParser.run(text, parseImportStatement, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            const full_import = AST.Node.ImportFull{
-                .bindings = @constCast(&[_]AST.Node.Index{ AST.Node.at(1), AST.Node.at(2) }),
-                .path = StringId.at(3),
-            };
-            try t.expectAST(node, AST.Node{
-                .import = AST.Node.Import{
-                    .full = full_import,
-                },
-            });
+            try t.expectASTSnapshot(node, snap(@src(),
+                \\ast.Node{
+                \\    .import = ast.Node.Import{
+                \\        .full = ast.Node.ImportFull{
+                \\            .bindings = [_]ast.Node.Index{
+                \\                ast.Node.Index(0), 
+                \\                ast.Node.Index(1)
+                \\            },
+                \\            .path = string_interner.StringId(3),
+                \\        },
+                \\    },
+                \\}
+            ));
             try t.expectTokenAt(markers[0], node.?);
 
-            try t.expectAST(full_import.bindings[0], AST.Node{
-                .import_binding = AST.Node.ImportBinding{
-                    .default = StringId.at(1),
-                },
-            });
+            const full_import = t.parser.getNode(node.?).import.full;
+            try t.expectASTSnapshot(full_import.bindings[0], snap(@src(),
+                \\ast.Node{
+                \\    .import_binding = ast.Node.ImportBinding{
+                \\        .default = string_interner.StringId(1),
+                \\    },
+                \\}
+            ));
             try t.expectTokenAt(markers[1], full_import.bindings[0]);
 
-            try t.expectAST(full_import.bindings[1], AST.Node{
-                .import_binding = AST.Node.ImportBinding{
-                    .namespace = StringId.at(2),
-                },
-            });
+            try t.expectASTSnapshot(full_import.bindings[1], snap(@src(),
+                \\ast.Node{
+                \\    .import_binding = ast.Node.ImportBinding{
+                \\        .namespace = string_interner.StringId(2),
+                \\    },
+                \\}
+            ));
             try t.expectTokenAt(markers[2], full_import.bindings[1]);
         }
     });
@@ -491,29 +553,49 @@ test "should parse default import and named binding" {
 
     try TestParser.run(text, parseImportStatement, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            const full_import = AST.Node.ImportFull{
-                .bindings = @constCast(&[_]AST.Node.Index{ AST.Node.at(1), AST.Node.at(3) }),
-                .path = StringId.at(3),
-            };
-            try t.expectAST(node, AST.Node{
-                .import = AST.Node.Import{
-                    .full = full_import,
-                },
-            });
+            try t.expectASTSnapshot(node, snap(@src(),
+                \\ast.Node{
+                \\    .import = ast.Node.Import{
+                \\        .full = ast.Node.ImportFull{
+                \\            .bindings = [_]ast.Node.Index{
+                \\                ast.Node.Index(0), 
+                \\                ast.Node.Index(2)
+                \\            },
+                \\            .path = string_interner.StringId(3),
+                \\        },
+                \\    },
+                \\}
+            ));
             try t.expectTokenAt(markers[0], node.?);
 
-            try t.expectAST(full_import.bindings[0], AST.Node{
-                .import_binding = AST.Node.ImportBinding{
-                    .default = StringId.at(1),
-                },
-            });
+            const full_import = t.parser.getNode(node.?).import.full;
+            try t.expectASTSnapshot(full_import.bindings[0], snap(@src(),
+                \\ast.Node{
+                \\    .import_binding = ast.Node.ImportBinding{
+                \\        .default = string_interner.StringId(1),
+                \\    },
+                \\}
+            ));
             try t.expectTokenAt(markers[1], full_import.bindings[0]);
 
-            try t.expectAST(full_import.bindings[1], AST.Node{
-                .import_binding = AST.Node.ImportBinding{
-                    .named = @constCast(&[_]AST.Node.Index{AST.Node.at(2)}),
-                },
-            });
+            try t.expectASTSnapshot(full_import.bindings[0], snap(@src(),
+                \\ast.Node{
+                \\    .import_binding = ast.Node.ImportBinding{
+                \\        .default = string_interner.StringId(1),
+                \\    },
+                \\}
+            ));
+            try t.expectTokenAt(markers[1], full_import.bindings[0]);
+
+            try t.expectASTSnapshot(full_import.bindings[1], snap(@src(),
+                \\ast.Node{
+                \\    .import_binding = ast.Node.ImportBinding{
+                \\        .named = [_]ast.Node.Index{
+                \\            ast.Node.Index(1)
+                \\        },
+                \\    },
+                \\}
+            ));
             try t.expectTokenAt(markers[2], full_import.bindings[1]);
         }
     });
@@ -576,29 +658,40 @@ test "should parse export statement with named bindings" {
 
     try TestParser.run(text, parseExportStatement, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            const export_from = AST.Node.Export{
-                .from = .{
-                    .bindings = @constCast(&[_]AST.Node.Index{ AST.Node.at(1), AST.Node.at(2) }),
-                    .path = StringId.at(3),
-                },
-            };
-            try t.expectAST(node, AST.Node{ .@"export" = export_from });
+            try t.expectASTSnapshot(node, snap(@src(),
+                \\ast.Node{
+                \\    .export = ast.Node.Export{
+                \\        .from = ast.Node.Export__struct_1198{
+                \\            .bindings = [_]ast.Node.Index{
+                \\                ast.Node.Index(0), 
+                \\                ast.Node.Index(1)
+                \\            },
+                \\            .path = string_interner.StringId(3),
+                \\        },
+                \\    },
+                \\}
+            ));
             try t.expectTokenAt(markers[0], node.?);
 
-            try t.expectAST(export_from.from.bindings[0], AST.Node{
-                .binding_decl = AST.Node.BindingDecl{
-                    .name = StringId.at(1),
-                    .alias = StringId.none,
-                },
-            });
+            const export_from = t.parser.getNode(node.?).@"export";
+            try t.expectASTSnapshot(export_from.from.bindings[0], snap(@src(),
+                \\ast.Node{
+                \\    .binding_decl = ast.Node.BindingDecl{
+                \\        .name = string_interner.StringId(1),
+                \\        .alias = string_interner.StringId.none,
+                \\    },
+                \\}
+            ));
             try t.expectTokenAt(markers[1], export_from.from.bindings[0]);
 
-            try t.expectAST(export_from.from.bindings[1], AST.Node{
-                .binding_decl = AST.Node.BindingDecl{
-                    .name = StringId.at(2),
-                    .alias = StringId.none,
-                },
-            });
+            try t.expectASTSnapshot(export_from.from.bindings[1], snap(@src(),
+                \\ast.Node{
+                \\    .binding_decl = ast.Node.BindingDecl{
+                \\        .name = string_interner.StringId(2),
+                \\        .alias = string_interner.StringId.none,
+                \\    },
+                \\}
+            ));
             try t.expectTokenAt(markers[2], export_from.from.bindings[1]);
         }
     });
@@ -612,29 +705,40 @@ test "should parse export statement with aliased bindings" {
 
     try TestParser.run(text, parseExportStatement, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            const export_from = AST.Node.Export{
-                .from = .{
-                    .bindings = @constCast(&[_]AST.Node.Index{ AST.Node.at(1), AST.Node.at(2) }),
-                    .path = StringId.at(5),
-                },
-            };
-            try t.expectAST(node, AST.Node{ .@"export" = export_from });
+            try t.expectASTSnapshot(node, snap(@src(),
+                \\ast.Node{
+                \\    .export = ast.Node.Export{
+                \\        .from = ast.Node.Export__struct_1198{
+                \\            .bindings = [_]ast.Node.Index{
+                \\                ast.Node.Index(0), 
+                \\                ast.Node.Index(1)
+                \\            },
+                \\            .path = string_interner.StringId(5),
+                \\        },
+                \\    },
+                \\}
+            ));
             try t.expectTokenAt(markers[0], node.?);
 
-            try t.expectAST(export_from.from.bindings[0], AST.Node{
-                .binding_decl = AST.Node.BindingDecl{
-                    .name = StringId.at(1),
-                    .alias = StringId.at(2),
-                },
-            });
+            const export_from = t.parser.getNode(node.?).@"export";
+            try t.expectASTSnapshot(export_from.from.bindings[0], snap(@src(),
+                \\ast.Node{
+                \\    .binding_decl = ast.Node.BindingDecl{
+                \\        .name = string_interner.StringId(1),
+                \\        .alias = string_interner.StringId(2),
+                \\    },
+                \\}
+            ));
             try t.expectTokenAt(markers[1], export_from.from.bindings[0]);
 
-            try t.expectAST(export_from.from.bindings[1], AST.Node{
-                .binding_decl = AST.Node.BindingDecl{
-                    .name = StringId.at(3),
-                    .alias = StringId.at(4),
-                },
-            });
+            try t.expectASTSnapshot(export_from.from.bindings[1], snap(@src(),
+                \\ast.Node{
+                \\    .binding_decl = ast.Node.BindingDecl{
+                \\        .name = string_interner.StringId(3),
+                \\        .alias = string_interner.StringId(4),
+                \\    },
+                \\}
+            ));
             try t.expectTokenAt(markers[2], export_from.from.bindings[1]);
         }
     });
@@ -654,39 +758,35 @@ test "should return syntax error if path is not a string" {
 }
 
 test "should parse export statement without path" {
-    const tests = .{
-        .{
-            \\ export { foo, bar };
-            \\>^        ^    ^
-            ,
-            AST.Node{ .@"export" = .{
-                .from = .{
-                    .bindings = @constCast(&[_]AST.Node.Index{ AST.Node.at(1), AST.Node.at(2) }),
-                    .path = StringId.none,
-                },
-            } },
-        },
-        .{
-            \\ export { foo, bar, }
-            \\>^        ^    ^
-            ,
-            AST.Node{ .@"export" = .{
-                .from = .{
-                    .bindings = @constCast(&[_]AST.Node.Index{ AST.Node.at(1), AST.Node.at(2) }),
-                    .path = StringId.none,
-                },
-            } },
-        },
+    const tests = [_][]const u8{
+        \\ export { foo, bar };
+        \\>^        ^    ^
+        ,
+        \\ export { foo, bar, }
+        \\>^        ^    ^
     };
 
     inline for (tests) |test_case| {
-        try TestParser.run(test_case[0], parseExportStatement, struct {
-            pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(test_case[0])) !void {
-                try t.expectAST(node, test_case[1]);
+        try TestParser.run(test_case, parseExportStatement, struct {
+            pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(test_case)) !void {
+                try t.expectASTSnapshot(node, snap(@src(),
+                    \\ast.Node{
+                    \\    .export = ast.Node.Export{
+                    \\        .from = ast.Node.Export__struct_1198{
+                    \\            .bindings = [_]ast.Node.Index{
+                    \\                ast.Node.Index(0), 
+                    \\                ast.Node.Index(1)
+                    \\            },
+                    \\            .path = string_interner.StringId.none,
+                    \\        },
+                    \\    },
+                    \\}
+                ));
                 try t.expectTokenAt(markers[0], node.?);
 
-                inline for (test_case[1].@"export".from.bindings, 0..) |binding, i| {
-                    try t.expectTokenAt(markers[i + 1], binding);
+                const bindings = t.parser.getNode(node.?).@"export".from.bindings;
+                inline for (markers[1..], 1..) |marker, i| {
+                    try t.expectTokenAt(marker, bindings[i - 1]);
                 }
             }
         });
@@ -727,12 +827,16 @@ test "should parse from all export statement" {
 
     try TestParser.run(text, parseExportStatement, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .@"export" = AST.Node.Export{
-                .from_all = AST.Node.ExportAll{
-                    .alias = StringId.none,
-                    .path = StringId.at(1),
-                },
-            } });
+            try t.expectASTSnapshot(node, snap(@src(),
+                \\ast.Node{
+                \\    .export = ast.Node.Export{
+                \\        .from_all = ast.Node.ExportAll{
+                \\            .alias = string_interner.StringId.none,
+                \\            .path = string_interner.StringId(1),
+                \\        },
+                \\    },
+                \\}
+            ));
             try t.expectTokenAt(markers[0], node.?);
         }
     });
@@ -772,12 +876,16 @@ test "should parse from all export statement with alias" {
 
     try TestParser.run(text, parseExportStatement, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .@"export" = .{
-                .from_all = AST.Node.ExportAll{
-                    .alias = StringId.at(1),
-                    .path = StringId.at(2),
-                },
-            } });
+            try t.expectASTSnapshot(node, snap(@src(),
+                \\ast.Node{
+                \\    .export = ast.Node.Export{
+                \\        .from_all = ast.Node.ExportAll{
+                \\            .alias = string_interner.StringId(1),
+                \\            .path = string_interner.StringId(2),
+                \\        },
+                \\    },
+                \\}
+            ));
             try t.expectTokenAt(markers[0], node.?);
         }
     });
@@ -804,11 +912,13 @@ test "should parse export statement with default bindings" {
 
     try TestParser.run(text, parseExportStatement, struct {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{
-                .@"export" = AST.Node.Export{
-                    .default = AST.Node.at(1),
-                },
-            });
+            try t.expectASTSnapshot(node, snap(@src(),
+                \\ast.Node{
+                \\    .export = ast.Node.Export{
+                \\        .default = ast.Node.Index(0),
+                \\    },
+                \\}
+            ));
             try t.expectTokenAt(markers[0], node.?);
         }
     });
@@ -818,33 +928,58 @@ test "should parse export node statement" {
     const tests = .{
         .{
             "export class Foo {}",
-            AST.Node{ .@"export" = AST.Node.Export{ .node = AST.Node.at(1) } },
+            snap(@src(),
+                \\ast.Node{
+                \\    .export = ast.Node.Export{
+                \\        .node = ast.Node.Index(0),
+                \\    },
+                \\}
+            ),
         },
         .{
             "export abstract class Foo {}",
-            AST.Node{ .@"export" = AST.Node.Export{ .node = AST.Node.at(1) } },
+            snap(@src(),
+                \\ast.Node{
+                \\    .export = ast.Node.Export{
+                \\        .node = ast.Node.Index(0),
+                \\    },
+                \\}
+            ),
         },
         .{
             "export const foo = 1;",
-            AST.Node{ .@"export" = AST.Node.Export{ .node = AST.Node.at(3) } },
+            snap(@src(),
+                \\ast.Node{
+                \\    .export = ast.Node.Export{
+                \\        .node = ast.Node.Index(2),
+                \\    },
+                \\}
+            ),
         },
         .{
             "export function foo() {}",
-            AST.Node{ .@"export" = AST.Node.Export{ .node = AST.Node.at(2) } },
+            snap(@src(),
+                \\ast.Node{
+                \\    .export = ast.Node.Export{
+                \\        .node = ast.Node.Index(1),
+                \\    },
+                \\}
+            ),
         },
         .{
             "export async function foo() {}",
-            AST.Node{ .@"export" = AST.Node.Export{ .node = AST.Node.at(2) } },
+            snap(@src(),
+                \\ast.Node{
+                \\    .export = ast.Node.Export{
+                \\        .node = ast.Node.Index(1),
+                \\    },
+                \\}
+            ),
         },
     };
 
     inline for (tests) |test_case| {
-        try TestParser.run(test_case[0], parseExportStatement, struct {
-            pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(test_case[0])) !void {
-                try t.expectAST(node, test_case[1]);
-                try t.expectTokenAt(comptime Marker.fromText("^"), node.?);
-            }
-        });
+        try TestParser.runSnapshot(test_case[0], parseExportStatement, test_case[1]);
     }
 }
 
