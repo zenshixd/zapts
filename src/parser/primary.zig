@@ -305,7 +305,9 @@ test "should parse primary expression" {
             ,
             snap(@src(),
                 \\ast.Node{
-                \\    .object_literal = { Node.Index(2) },
+                \\    .object_literal = [_]ast.Node.Index{
+                \\        ast.Node.Index(2)
+                \\    },
                 \\}
             ),
         },
@@ -315,7 +317,10 @@ test "should parse primary expression" {
             ,
             snap(@src(),
                 \\ast.Node{
-                \\    .array_literal = { Node.Index(0), Node.Index(1) },
+                \\    .array_literal = [_]ast.Node.Index{
+                \\        ast.Node.Index(0), 
+                \\        ast.Node.Index(1)
+                \\    },
                 \\}
             ),
         },
@@ -328,7 +333,7 @@ test "should parse primary expression" {
                 \\    .function_decl = ast.Node.FunctionDeclaration{
                 \\        .flags = 0,
                 \\        .name = string_interner.StringId.none,
-                \\        .params = {  },
+                \\        .params = [_]ast.Node.Index{},
                 \\        .body = ast.Node.Index(0),
                 \\        .return_type = ast.Node.Index.empty,
                 \\    },
@@ -344,7 +349,7 @@ test "should parse primary expression" {
                 \\    .function_decl = ast.Node.FunctionDeclaration{
                 \\        .flags = 2,
                 \\        .name = string_interner.StringId.none,
-                \\        .params = {  },
+                \\        .params = [_]ast.Node.Index{},
                 \\        .body = ast.Node.Index(0),
                 \\        .return_type = ast.Node.Index.empty,
                 \\    },
@@ -360,7 +365,7 @@ test "should parse primary expression" {
                 \\    .function_decl = ast.Node.FunctionDeclaration{
                 \\        .flags = 1,
                 \\        .name = string_interner.StringId.none,
-                \\        .params = {  },
+                \\        .params = [_]ast.Node.Index{},
                 \\        .body = ast.Node.Index(0),
                 \\        .return_type = ast.Node.Index.empty,
                 \\    },
@@ -376,7 +381,7 @@ test "should parse primary expression" {
                 \\    .function_decl = ast.Node.FunctionDeclaration{
                 \\        .flags = 3,
                 \\        .name = string_interner.StringId.none,
-                \\        .params = {  },
+                \\        .params = [_]ast.Node.Index{},
                 \\        .body = ast.Node.Index(0),
                 \\        .return_type = ast.Node.Index.empty,
                 \\    },
@@ -403,8 +408,8 @@ test "should parse primary expression" {
                 \\        .abstract = false,
                 \\        .name = string_interner.StringId.none,
                 \\        .super_class = ast.Node.Index.empty,
-                \\        .implements = {  },
-                \\        .body = {  },
+                \\        .implements = [_]string_interner.StringId{},
+                \\        .body = [_]ast.Node.Index{},
                 \\    },
                 \\}
             ),
@@ -428,7 +433,9 @@ test "should parse primary expression" {
             ,
             snap(@src(),
                 \\ast.Node{
-                \\    .template_literal = { Node.Index(0) },
+                \\    .template_literal = [_]ast.Node.Index{
+                \\        ast.Node.Index(0)
+                \\    },
                 \\}
             ),
         },
@@ -627,7 +634,9 @@ test "should parse array literal" {
             "[,]",
             snap(@src(),
                 \\ast.Node{
-                \\    .array_literal = { Node.Index.empty },
+                \\    .array_literal = [_]ast.Node.Index{
+                \\        ast.Node.Index.empty
+                \\    },
                 \\}
             ),
         },
@@ -635,7 +644,10 @@ test "should parse array literal" {
             "[, 1 + 2]",
             snap(@src(),
                 \\ast.Node{
-                \\    .array_literal = { Node.Index.empty, Node.Index(2) },
+                \\    .array_literal = [_]ast.Node.Index{
+                \\        ast.Node.Index.empty, 
+                \\        ast.Node.Index(2)
+                \\    },
                 \\}
             ),
         },
@@ -643,7 +655,11 @@ test "should parse array literal" {
             "[1, 2, 3]",
             snap(@src(),
                 \\ast.Node{
-                \\    .array_literal = { Node.Index(0), Node.Index(1), Node.Index(2) },
+                \\    .array_literal = [_]ast.Node.Index{
+                \\        ast.Node.Index(0), 
+                \\        ast.Node.Index(1), 
+                \\        ast.Node.Index(2)
+                \\    },
                 \\}
             ),
         },
@@ -651,7 +667,11 @@ test "should parse array literal" {
             "[1, 2, 3,]",
             snap(@src(),
                 \\ast.Node{
-                \\    .array_literal = { Node.Index(0), Node.Index(1), Node.Index(2) },
+                \\    .array_literal = [_]ast.Node.Index{
+                \\        ast.Node.Index(0), 
+                \\        ast.Node.Index(1), 
+                \\        ast.Node.Index(2)
+                \\    },
                 \\}
             ),
         },
@@ -659,7 +679,12 @@ test "should parse array literal" {
             "[1, 2, 3, 4,]",
             snap(@src(),
                 \\ast.Node{
-                \\    .array_literal = { Node.Index(0), Node.Index(1), Node.Index(2), Node.Index(3) },
+                \\    .array_literal = [_]ast.Node.Index{
+                \\        ast.Node.Index(0), 
+                \\        ast.Node.Index(1), 
+                \\        ast.Node.Index(2), 
+                \\        ast.Node.Index(3)
+                \\    },
                 \\}
             ),
         },
@@ -667,7 +692,11 @@ test "should parse array literal" {
             "[1,,,]",
             snap(@src(),
                 \\ast.Node{
-                \\    .array_literal = { Node.Index(0), Node.Index.empty, Node.Index.empty },
+                \\    .array_literal = [_]ast.Node.Index{
+                \\        ast.Node.Index(0), 
+                \\        ast.Node.Index.empty, 
+                \\        ast.Node.Index.empty
+                \\    },
                 \\}
             ),
         },
@@ -675,7 +704,9 @@ test "should parse array literal" {
             "[...a]",
             snap(@src(),
                 \\ast.Node{
-                \\    .array_literal = { Node.Index(1) },
+                \\    .array_literal = [_]ast.Node.Index{
+                \\        ast.Node.Index(1)
+                \\    },
                 \\}
             ),
         },
@@ -683,7 +714,10 @@ test "should parse array literal" {
             "[1, ...a]",
             snap(@src(),
                 \\ast.Node{
-                \\    .array_literal = { Node.Index(0), Node.Index(2) },
+                \\    .array_literal = [_]ast.Node.Index{
+                \\        ast.Node.Index(0), 
+                \\        ast.Node.Index(2)
+                \\    },
                 \\}
             ),
         },
@@ -721,7 +755,13 @@ test "should parse object literal" {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
             try t.expectASTSnapshot(node, snap(@src(),
                 \\ast.Node{
-                \\    .object_literal = { Node.Index(2), Node.Index(5), Node.Index(7), Node.Index(9), Node.Index(15) },
+                \\    .object_literal = [_]ast.Node.Index{
+                \\        ast.Node.Index(2), 
+                \\        ast.Node.Index(5), 
+                \\        ast.Node.Index(7), 
+                \\        ast.Node.Index(9), 
+                \\        ast.Node.Index(15)
+                \\    },
                 \\}
             ));
         }
@@ -829,7 +869,9 @@ test "should parse template literal with no substitution" {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
             try t.expectASTSnapshot(node, snap(@src(),
                 \\ast.Node{
-                \\    .template_literal = { Node.Index(0) },
+                \\    .template_literal = [_]ast.Node.Index{
+                \\        ast.Node.Index(0)
+                \\    },
                 \\}
             ));
             try t.expectTokenAt(markers[0], node.?);
@@ -847,7 +889,11 @@ test "should parse template literal" {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
             try t.expectASTSnapshot(node, snap(@src(),
                 \\ast.Node{
-                \\    .template_literal = { Node.Index(0), Node.Index(1), Node.Index(2) },
+                \\    .template_literal = [_]ast.Node.Index{
+                \\        ast.Node.Index(0), 
+                \\        ast.Node.Index(1), 
+                \\        ast.Node.Index(2)
+                \\    },
                 \\}
             ));
             try t.expectTokenAt(markers[0], node.?);
@@ -884,7 +930,13 @@ test "should parse template literal with multiple substitutions" {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
             try t.expectASTSnapshot(node, snap(@src(),
                 \\ast.Node{
-                \\    .template_literal = { Node.Index(0), Node.Index(1), Node.Index(2), Node.Index(3), Node.Index(4) },
+                \\    .template_literal = [_]ast.Node.Index{
+                \\        ast.Node.Index(0), 
+                \\        ast.Node.Index(1), 
+                \\        ast.Node.Index(2), 
+                \\        ast.Node.Index(3), 
+                \\        ast.Node.Index(4)
+                \\    },
                 \\}
             ));
             try t.expectTokenAt(markers[0], node.?);
@@ -902,7 +954,11 @@ test "should parse template literal with object as substitution" {
         pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
             try t.expectASTSnapshot(node, snap(@src(),
                 \\ast.Node{
-                \\    .template_literal = { Node.Index(0), Node.Index(4), Node.Index(5) },
+                \\    .template_literal = [_]ast.Node.Index{
+                \\        ast.Node.Index(0), 
+                \\        ast.Node.Index(4), 
+                \\        ast.Node.Index(5)
+                \\    },
                 \\}
             ));
             try t.expectTokenAt(markers[0], node.?);
@@ -914,7 +970,9 @@ test "should parse template literal with object as substitution" {
             ));
             try t.expectASTSnapshot(t.parser.getNode(node.?).template_literal[1], snap(@src(),
                 \\ast.Node{
-                \\    .object_literal = { Node.Index(3) },
+                \\    .object_literal = [_]ast.Node.Index{
+                \\        ast.Node.Index(3)
+                \\    },
                 \\}
             ));
             try t.expectASTSnapshot(t.parser.getNode(node.?).template_literal[2], snap(@src(),

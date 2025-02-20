@@ -298,7 +298,28 @@ pub fn formatValue(writer: anytype, value: anytype, depth: u32) !void {
                     .array, .@"enum", .@"union", .@"struct" => try formatValue(writer, value.*, depth),
                     else => try writer.print("{s}@{x}", .{ @typeName(ptr.child), @intFromPtr(value) }),
                 },
-                .slice => try writer.print("{s}", .{value}),
+                .slice => {
+                    if (ptr.child == u8) {
+                        try writer.writeAll(value);
+                        return;
+                    }
+
+                    try writer.writeAll("[_]");
+                    try writer.writeAll(@typeName(ptr.child));
+                    try writer.writeAll("{");
+                    for (value, 0..) |elem, i| {
+                        try writer.writeAll("\n");
+                        try writeIndent(writer, depth + 1);
+                        try formatValue(writer, elem, depth + 1);
+                        if (i != value.len - 1) {
+                            try writer.writeAll(", ");
+                        } else {
+                            try writer.writeAll("\n");
+                            try writeIndent(writer, depth);
+                        }
+                    }
+                    try writer.writeAll("}");
+                },
                 else => @compileError("unexpected ptr type: " ++ @tagName(ptr.size) ++ ", " ++ @typeName(ptr.child)),
             }
         },
