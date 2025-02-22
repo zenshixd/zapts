@@ -496,10 +496,7 @@ pub const Node = union(enum) {
 
     pub const Export = union(enum) {
         from_all: ExportAll,
-        from: struct {
-            bindings: []Node.Index,
-            path: StringId,
-        },
+        from: ExportFromPath,
         named: []Node.Index,
         default: Node.Index,
         node: Node.Index,
@@ -507,6 +504,11 @@ pub const Node = union(enum) {
 
     pub const ExportAll = struct {
         alias: StringId,
+        path: StringId,
+    };
+
+    pub const ExportFromPath = struct {
+        bindings: []Node.Index,
         path: StringId,
     };
 
@@ -573,23 +575,23 @@ pub const Node = union(enum) {
         },
     };
 
+    pub const ForClassic = struct {
+        init: Node.Index,
+        cond: Node.Index,
+        post: Node.Index,
+        body: Node.Index,
+    };
+
+    pub const ForItems = struct {
+        left: Node.Index,
+        right: Node.Index,
+        body: Node.Index,
+    };
+
     pub const For = union(enum) {
-        classic: struct {
-            init: Node.Index,
-            cond: Node.Index,
-            post: Node.Index,
-            body: Node.Index,
-        },
-        in: struct {
-            left: Node.Index,
-            right: Node.Index,
-            body: Node.Index,
-        },
-        of: struct {
-            left: Node.Index,
-            right: Node.Index,
-            body: Node.Index,
-        },
+        classic: ForClassic,
+        in: ForItems,
+        of: ForItems,
     };
 
     pub const While = struct {
@@ -629,11 +631,13 @@ pub const Node = union(enum) {
         return_type: Node.Index,
     };
 
+    pub const ArrowFunctionType = enum {
+        arrow,
+        async_arrow,
+    };
+
     pub const ArrowFunction = struct {
-        type: enum {
-            arrow,
-            async_arrow,
-        },
+        type: ArrowFunctionType,
         params: []Node.Index,
         body: Node.Index,
         return_type: Node.Index,

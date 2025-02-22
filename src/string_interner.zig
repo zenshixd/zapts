@@ -75,15 +75,18 @@ test "should intern string" {
     const id1 = str_interner.intern(gpa, "abc1");
     const id2 = str_interner.intern(gpa, "abc2");
     const id3 = str_interner.intern(gpa, "abc3");
+    const id4 = str_interner.intern(gpa, "");
 
     try expectEqual(1, id1.int());
     try expectEqual(2, id2.int());
     try expectEqual(3, id3.int());
+    try expectEqual(StringId.empty.int(), id4.int());
 
     try expectEqualStrings("", str_interner.lookup(StringId.empty) orelse return error.TestExpectedEqual);
     try expectEqualStrings("abc1", str_interner.lookup(id1) orelse return error.TestExpectedEqual);
     try expectEqualStrings("abc2", str_interner.lookup(id2) orelse return error.TestExpectedEqual);
     try expectEqualStrings("abc3", str_interner.lookup(id3) orelse return error.TestExpectedEqual);
+    try expectEqual(null, str_interner.lookup(StringId.at(99999)));
 
     const id1_copy = str_interner.intern(gpa, "abc1");
     const id2_copy = str_interner.intern(gpa, "abc2");

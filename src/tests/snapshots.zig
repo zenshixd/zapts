@@ -172,11 +172,13 @@ pub fn diff(expected: Snapshot, got: []const u8) !void {
         }
 
         return expected.update(got) catch |err| {
+            // LCOV_EXCL_START
             if (err == error.SnapshotNotFound) {
                 std.debug.print("Snapshot not found ! Expected snapshot at {s}:{}", .{ expected.source_location.file, getSnapshotBeginLine(expected) });
             }
 
             return err;
+            // LCOV_EXCL_STOP
         };
     }
 }
@@ -219,6 +221,7 @@ pub fn expectSnapshotMatch(received: anytype, expected: Snapshot) !void {
     try formatValue(received_text.writer(), received, 0);
 
     expected.diff(received_text.items) catch |err| {
+        // LCOV_EXCL_START
         if (err == error.SnapshotMismatch) {
             std.debug.print(
                 \\SnapshotMismatch
@@ -232,6 +235,7 @@ pub fn expectSnapshotMatch(received: anytype, expected: Snapshot) !void {
         }
 
         return err;
+        // LCOV_EXCL_STOP
     };
 }
 
@@ -360,18 +364,18 @@ test "formatValue" {
     defer text.deinit();
 
     try formatValue(text.writer(), TestEnum.a, 0);
-    try expectEqualStrings("TestEnum.a", text.items);
+    try expectEqualStrings("tests.snapshots.TestEnum.a", text.items);
     text.clearRetainingCapacity();
 
     const val: TestEnum = @enumFromInt(55);
     try formatValue(text.writer(), val, 0);
-    try expectEqualStrings("TestEnum(55)", text.items);
+    try expectEqualStrings("tests.snapshots.TestEnum(55)", text.items);
     text.clearRetainingCapacity();
 
     const union_val: TestUnion = .{ .a = 55 };
     try formatValue(text.writer(), union_val, 0);
     try expectEqualStrings(
-        \\TestUnion{
+        \\tests.snapshots.TestUnion{
         \\    .a = 55,
         \\}
     , text.items);
@@ -385,10 +389,10 @@ test "formatValue" {
     };
     try formatValue(text.writer(), union_val2, 0);
     try expectEqualStrings(
-        \\TestUnion{
-        \\    .b = TestStruct{
+        \\tests.snapshots.TestUnion{
+        \\    .b = tests.snapshots.TestStruct{
         \\        .a = 16,
-        \\        .b = TestEnum.a,
+        \\        .b = tests.snapshots.TestEnum.a,
         \\    },
         \\}
     , text.items);
@@ -400,7 +404,7 @@ test "formatValue" {
     };
     try formatValue(text.writer(), struct_val, 0);
     try expectEqualStrings(
-        \\TestStruct{
+        \\tests.snapshots.TestStruct{
         \\    .a = 22,
         \\    .b = null,
         \\}

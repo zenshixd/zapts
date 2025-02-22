@@ -26,7 +26,6 @@ const parseOptionalDataType = @import("types.zig").parseOptionalDataType;
 
 const TestParser = @import("../tests/test_parser.zig");
 const Marker = TestParser.Marker;
-const MarkerList = TestParser.MarkerList;
 
 pub fn parseStatement(self: *Parser) ParserError!?AST.Node.Index {
     const node = try parseBlock(self) orelse
@@ -274,36 +273,38 @@ test "should parse statements" {
     };
 
     inline for (tests) |test_case| {
-        try TestParser.runSnapshot(test_case[0], parseStatement, test_case[1]);
+        const t, const node, const markers = try TestParser.run(test_case[0], parseStatement);
+        defer t.deinit();
+
+        try t.expectASTSnapshot(node, test_case[1]);
+        try t.expectTokenAt(markers[0], node.?);
     }
 }
 
 test "should parse empty statement" {
     const text = ";";
 
-    try TestParser.run(text, parseEmptyStatement, struct {
-        pub fn expect(_: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
-            try expectEqual(AST.Node.Empty, node);
-        }
-    });
+    const t, const node, _ = try TestParser.run(text, parseEmptyStatement);
+    defer t.deinit();
+
+    try expectEqual(node, AST.Node.Empty);
 }
 
 test "should parse block" {
     const text = "{ a; b; c; }";
 
-    try TestParser.run(text, parseBlock, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectASTSnapshot(node, snap(@src(),
-                \\ast.Node{
-                \\    .block = [_]ast.Node.Index{
-                \\        ast.Node.Index(0), 
-                \\        ast.Node.Index(1), 
-                \\        ast.Node.Index(2)
-                \\    },
-                \\}
-            ));
-        }
-    });
+    const t, const node, _ = try TestParser.run(text, parseBlock);
+    defer t.deinit();
+
+    try t.expectASTSnapshot(node, snap(@src(),
+        \\ast.Node{
+        \\    .block = [_]ast.Node.Index{
+        \\        ast.Node.Index(0), 
+        \\        ast.Node.Index(1), 
+        \\        ast.Node.Index(2)
+        \\    },
+        \\}
+    ));
 }
 
 test "should return syntax error if closing bracket for block is missing" {
@@ -312,11 +313,10 @@ test "should return syntax error if closing bracket for block is missing" {
         \\>  ^
     ;
 
-    try TestParser.runAny(text, parseBlock, struct {
-        pub fn expect(t: TestParser, nodeOrError: ParserError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{"}"}, markers[0]);
-        }
-    });
+    const t, const nodeOrError, const markers = try TestParser.runCatch(text, parseBlock);
+    defer t.deinit();
+
+    try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{"}"}, markers[0]);
 }
 
 test "should parse declarations" {
@@ -403,7 +403,10 @@ test "should parse declarations" {
     };
 
     inline for (tests) |test_case| {
-        try TestParser.runSnapshot(test_case[0], parseDeclaration, test_case[1]);
+        const t, const node, _ = try TestParser.run(test_case[0], parseDeclaration);
+        defer t.deinit();
+
+        try t.expectASTSnapshot(node, test_case[1]);
     }
 }
 
@@ -413,16 +416,15 @@ test "should parse empty return statement" {
         \\>^
     ;
 
-    try TestParser.run(text, parseReturnStatement, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectASTSnapshot(node, snap(@src(),
-                \\ast.Node{
-                \\    .return = ast.Node.Index.empty,
-                \\}
-            ));
-            try t.expectTokenAt(markers[0], node.?);
-        }
-    });
+    const t, const node, const markers = try TestParser.run(text, parseReturnStatement);
+    defer t.deinit();
+
+    try t.expectASTSnapshot(node, snap(@src(),
+        \\ast.Node{
+        \\    .return = ast.Node.Index.empty,
+        \\}
+    ));
+    try t.expectTokenAt(markers[0], node.?);
 }
 
 test "should parse return statement" {
@@ -431,16 +433,15 @@ test "should parse return statement" {
         \\>^
     ;
 
-    try TestParser.run(text, parseReturnStatement, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectASTSnapshot(node, snap(@src(),
-                \\ast.Node{
-                \\    .return = ast.Node.Index(0),
-                \\}
-            ));
-            try t.expectTokenAt(markers[0], node.?);
-        }
-    });
+    const t, const node, const markers = try TestParser.run(text, parseReturnStatement);
+    defer t.deinit();
+
+    try t.expectASTSnapshot(node, snap(@src(),
+        \\ast.Node{
+        \\    .return = ast.Node.Index(0),
+        \\}
+    ));
+    try t.expectTokenAt(markers[0], node.?);
 }
 
 test "should parse if statement" {
@@ -449,20 +450,19 @@ test "should parse if statement" {
         \\>^
     ;
 
-    try TestParser.run(text, parseIfStatement, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectASTSnapshot(node, snap(@src(),
-                \\ast.Node{
-                \\    .if = ast.Node.If{
-                \\        .expr = ast.Node.Index(0),
-                \\        .body = ast.Node.Index(1),
-                \\        .else = ast.Node.Index.empty,
-                \\    },
-                \\}
-            ));
-            try t.expectTokenAt(markers[0], node.?);
-        }
-    });
+    const t, const node, const markers = try TestParser.run(text, parseIfStatement);
+    defer t.deinit();
+
+    try t.expectASTSnapshot(node, snap(@src(),
+        \\ast.Node{
+        \\    .if = ast.Node.If{
+        \\        .expr = ast.Node.Index(0),
+        \\        .body = ast.Node.Index(1),
+        \\        .else = ast.Node.Index.empty,
+        \\    },
+        \\}
+    ));
+    try t.expectTokenAt(markers[0], node.?);
 }
 
 test "should parse if statement with else" {
@@ -471,20 +471,19 @@ test "should parse if statement with else" {
         \\>^
     ;
 
-    try TestParser.run(text, parseIfStatement, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectASTSnapshot(node, snap(@src(),
-                \\ast.Node{
-                \\    .if = ast.Node.If{
-                \\        .expr = ast.Node.Index(0),
-                \\        .body = ast.Node.Index(1),
-                \\        .else = ast.Node.Index(2),
-                \\    },
-                \\}
-            ));
-            try t.expectTokenAt(markers[0], node.?);
-        }
-    });
+    const t, const node, const markers = try TestParser.run(text, parseIfStatement);
+    defer t.deinit();
+
+    try t.expectASTSnapshot(node, snap(@src(),
+        \\ast.Node{
+        \\    .if = ast.Node.If{
+        \\        .expr = ast.Node.Index(0),
+        \\        .body = ast.Node.Index(1),
+        \\        .else = ast.Node.Index(2),
+        \\    },
+        \\}
+    ));
+    try t.expectTokenAt(markers[0], node.?);
 }
 
 test "should return syntax error if open paren is missing" {
@@ -493,11 +492,10 @@ test "should return syntax error if open paren is missing" {
         \\>  ^
     ;
 
-    try TestParser.runAny(text, parseIfStatement, struct {
-        pub fn expect(t: TestParser, nodeOrError: ParserError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{"("}, markers[0]);
-        }
-    });
+    const t, const nodeOrError, const markers = try TestParser.runCatch(text, parseIfStatement);
+    defer t.deinit();
+
+    try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{"("}, markers[0]);
 }
 
 test "should return syntax error if close paren is missing" {
@@ -506,11 +504,10 @@ test "should return syntax error if close paren is missing" {
         \\>     ^
     ;
 
-    try TestParser.runAny(text, parseIfStatement, struct {
-        pub fn expect(t: TestParser, nodeOrError: ParserError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{")"}, markers[0]);
-        }
-    });
+    const t, const nodeOrError, const markers = try TestParser.runCatch(text, parseIfStatement);
+    defer t.deinit();
+
+    try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{")"}, markers[0]);
 }
 
 test "should return syntax error if body is missing" {
@@ -519,9 +516,8 @@ test "should return syntax error if body is missing" {
         \\>     ^
     ;
 
-    try TestParser.runAny(text, parseIfStatement, struct {
-        pub fn expect(t: TestParser, nodeOrError: ParserError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.statement_expected, .{}, markers[0]);
-        }
-    });
+    const t, const nodeOrError, const markers = try TestParser.runCatch(text, parseIfStatement);
+    defer t.deinit();
+
+    try t.expectSyntaxErrorAt(nodeOrError, diagnostics.statement_expected, .{}, markers[0]);
 }

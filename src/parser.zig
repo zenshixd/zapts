@@ -18,13 +18,14 @@ const expectEqualSlices = std.testing.expectEqualSlices;
 const expectEqualDeep = std.testing.expectEqualDeep;
 const expectStringStartsWith = std.testing.expectStringStartsWith;
 const expectError = std.testing.expectError;
+const snap = @import("tests/snapshots.zig").snap;
 
 const Lexer = @import("lexer.zig");
 const Context = @import("lexer.zig").Context;
 const AST = @import("ast.zig");
 const diagnostics = @import("diagnostics.zig");
 const TestParser = @import("tests/test_parser.zig");
-const MarkerList = TestParser.MarkerList;
+const Marker = TestParser.Marker;
 
 const parseStatement = @import("parser/statements.zig").parseStatement;
 
@@ -273,17 +274,6 @@ pub fn needsSemicolon(self: Parser, node: AST.Node.Index) bool {
     };
 }
 
-var test_reporter: Reporter = undefined;
-pub fn testInstance(text: [:0]const u8) Parser {
-    test_reporter = Reporter.init(std.testing.allocator);
-    return Parser.init(std.testing.allocator, text, &test_reporter);
-}
-
-pub fn testDeinit(self: *Parser) void {
-    self.reporter.deinit();
-    self.deinit();
-}
-
 test "should parse statements" {
     const text =
         \\a;
@@ -291,14 +281,18 @@ test "should parse statements" {
         \\c;
     ;
 
-    try TestParser.run(text, parse, struct {
-        pub fn expect(t: TestParser, node_idx: AST.Node.Index, _: MarkerList(text)) !void {
-            const node = t.parser.getNode(node_idx);
-            try std.testing.expectEqualDeep(AST.Node{
-                .root = @constCast(&[_]AST.Node.Index{ AST.Node.at(1), AST.Node.at(2), AST.Node.at(3) }),
-            }, node);
-        }
-    });
+    const t, const node, _ = try TestParser.run(text, parse);
+    defer t.deinit();
+
+    try t.expectASTSnapshot(node, snap(@src(),
+        \\ast.Node{
+        \\    .root = [_]ast.Node.Index{
+        \\        ast.Node.Index(1), 
+        \\        ast.Node.Index(2), 
+        \\        ast.Node.Index(3)
+        \\    },
+        \\}
+    ));
 }
 
 test {

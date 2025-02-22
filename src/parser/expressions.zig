@@ -14,9 +14,9 @@ const parsePrimaryExpression = @import("primary.zig").parsePrimaryExpression;
 const parseIdentifier = @import("primary.zig").parseIdentifier;
 const expectIdentifier = @import("primary.zig").expectIdentifier;
 
+const snap = @import("../tests/snapshots.zig").snap;
 const TestParser = @import("../tests/test_parser.zig");
 const Marker = TestParser.Marker;
-const MarkerList = TestParser.MarkerList;
 
 pub fn parseExpression(self: *Parser) ParserError!?AST.Node.Index {
     var node = try parseAssignment(self) orelse return null;
@@ -217,15 +217,18 @@ test "should parse comma expression" {
         \\>    ^
     ;
 
-    try TestParser.run(text, parseExpression, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .comma = .{
-                .left = AST.Node.at(3),
-                .right = AST.Node.at(4),
-            } });
-            try t.expectTokenAt(markers[0], node.?);
-        }
-    });
+    const t, const node, const markers = try TestParser.run(text, parseExpression);
+    defer t.deinit();
+
+    try t.expectASTSnapshot(node, snap(@src(),
+        \\ast.Node{
+        \\    .comma = ast.Node.Binary{
+        \\        .left = ast.Node.Index(2),
+        \\        .right = ast.Node.Index(3),
+        \\    },
+        \\}
+    ));
+    try t.expectTokenAt(markers[0], node.?);
 }
 
 test "should parse conditional expression" {
@@ -234,16 +237,19 @@ test "should parse conditional expression" {
         \\> ^
     ;
 
-    try TestParser.run(text, parseExpression, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .ternary_expr = .{
-                .expr = AST.Node.at(1),
-                .body = AST.Node.at(2),
-                .@"else" = AST.Node.at(3),
-            } });
-            try t.expectTokenAt(markers[0], node.?);
-        }
-    });
+    const t, const node, const markers = try TestParser.run(text, parseExpression);
+    defer t.deinit();
+
+    try t.expectASTSnapshot(node, snap(@src(),
+        \\ast.Node{
+        \\    .ternary_expr = ast.Node.If{
+        \\        .expr = ast.Node.Index(0),
+        \\        .body = ast.Node.Index(1),
+        \\        .else = ast.Node.Index(2),
+        \\    },
+        \\}
+    ));
+    try t.expectTokenAt(markers[0], node.?);
 }
 
 test "should return syntax error if short circuit expression is missing" {
@@ -252,11 +258,10 @@ test "should return syntax error if short circuit expression is missing" {
         \\>    ^
     ;
 
-    try TestParser.runAny(text, parseExpression, struct {
-        pub fn expect(t: TestParser, nodeOrError: ParserError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{":"}, markers[0]);
-        }
-    });
+    const t, const nodeOrError, const markers = try TestParser.runCatch(text, parseExpression);
+    defer t.deinit();
+
+    try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{":"}, markers[0]);
 }
 
 test "should parse short circuit expression" {
@@ -265,35 +270,86 @@ test "should parse short circuit expression" {
         \\> ^
     ;
 
-    try TestParser.run(text, parseExpression, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .coalesce = .{
-                .left = AST.Node.at(1),
-                .right = AST.Node.at(2),
-            } });
-            try t.expectTokenAt(markers[0], node.?);
-        }
-    });
+    const t, const node, const markers = try TestParser.run(text, parseExpression);
+    defer t.deinit();
+
+    try t.expectASTSnapshot(node, snap(@src(),
+        \\ast.Node{
+        \\    .coalesce = ast.Node.Binary{
+        \\        .left = ast.Node.Index(0),
+        \\        .right = ast.Node.Index(1),
+        \\    },
+        \\}
+    ));
+    try t.expectTokenAt(markers[0], node.?);
 }
 
 test "should parse unary expression" {
     const tests = .{
-        .{ "+a", AST.Node{ .plus = AST.Node.at(1) } },
-        .{ "-a", AST.Node{ .minus = AST.Node.at(1) } },
-        .{ "!a", AST.Node{ .not = AST.Node.at(1) } },
-        .{ "~a", AST.Node{ .bitwise_negate = AST.Node.at(1) } },
-        .{ "typeof a", AST.Node{ .typeof = AST.Node.at(1) } },
-        .{ "void a", AST.Node{ .void = AST.Node.at(1) } },
-        .{ "delete a", AST.Node{ .delete = AST.Node.at(1) } },
+        .{
+            "+a",
+            snap(@src(),
+                \\ast.Node{
+                \\    .plus = ast.Node.Index(0),
+                \\}
+            ),
+        },
+        .{
+            "-a",
+            snap(@src(),
+                \\ast.Node{
+                \\    .minus = ast.Node.Index(0),
+                \\}
+            ),
+        },
+        .{
+            "!a",
+            snap(@src(),
+                \\ast.Node{
+                \\    .not = ast.Node.Index(0),
+                \\}
+            ),
+        },
+        .{
+            "~a",
+            snap(@src(),
+                \\ast.Node{
+                \\    .bitwise_negate = ast.Node.Index(0),
+                \\}
+            ),
+        },
+        .{
+            "typeof a",
+            snap(@src(),
+                \\ast.Node{
+                \\    .typeof = ast.Node.Index(0),
+                \\}
+            ),
+        },
+        .{
+            "void a",
+            snap(@src(),
+                \\ast.Node{
+                \\    .void = ast.Node.Index(0),
+                \\}
+            ),
+        },
+        .{
+            "delete a",
+            snap(@src(),
+                \\ast.Node{
+                \\    .delete = ast.Node.Index(0),
+                \\}
+            ),
+        },
     };
 
     inline for (tests) |test_case| {
-        try TestParser.run(test_case[0], parseUnary, struct {
-            pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(test_case[0])) !void {
-                try t.expectAST(node, test_case[1]);
-                try t.expectTokenAt(comptime Marker.fromText("^"), node.?);
-            }
-        });
+        const t, const node, _ = try TestParser.run(test_case[0], parseUnary);
+        defer t.deinit();
+
+        try t.expectASTSnapshot(node, test_case[1]);
+        try t.expectTokenAt(Marker.fromText("^"), node.?);
     }
 }
 
@@ -303,46 +359,67 @@ test "should parse update expression" {
             \\ ++a
             \\>^
             ,
-            AST.Node{ .plusplus_pre = AST.Node.at(1) },
+            snap(@src(),
+                \\ast.Node{
+                \\    .plusplus_pre = ast.Node.Index(0),
+                \\}
+            ),
         },
         .{
             \\ --a
             \\>^
             ,
-            AST.Node{ .minusminus_pre = AST.Node.at(1) },
+            snap(@src(),
+                \\ast.Node{
+                \\    .minusminus_pre = ast.Node.Index(0),
+                \\}
+            ),
         },
         .{
             \\a++
             \\>^
             ,
-            AST.Node{ .plusplus_post = AST.Node.at(1) },
+            snap(@src(),
+                \\ast.Node{
+                \\    .plusplus_post = ast.Node.Index(0),
+                \\}
+            ),
         },
         .{
             \\a--
             \\>^
             ,
-            AST.Node{ .minusminus_post = AST.Node.at(1) },
+            snap(@src(),
+                \\ast.Node{
+                \\    .minusminus_post = ast.Node.Index(0),
+                \\}
+            ),
         },
     };
 
     inline for (tests) |test_case| {
-        try TestParser.run(test_case[0], parseUnary, struct {
-            pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(test_case[0])) !void {
-                try t.expectAST(node, test_case[1]);
-                try t.expectTokenAt(markers[0], node.?);
-            }
-        });
+        const t, const node, const markers = try TestParser.run(test_case[0], parseUnary);
+        defer t.deinit();
+
+        try t.expectASTSnapshot(node, test_case[1]);
+        try t.expectTokenAt(markers[0], node.?);
     }
 }
 
 test "should parse left hand side expression" {
     const text = "a()";
 
-    try TestParser.run(text, parseLeftHandSideExpression, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .call_expr = .{ .node = AST.Node.at(1), .params = &.{} } });
-        }
-    });
+    const t, const node, _ = try TestParser.run(text, parseLeftHandSideExpression);
+    defer t.deinit();
+
+    try t.expectASTSnapshot(node, snap(@src(),
+        \\ast.Node{
+        \\    .call_expr = ast.Node.CallExpression{
+        \\        .node = ast.Node.Index(0),
+        \\        .params = [_]ast.Node.Index{},
+        \\    },
+        \\}
+    ));
 }
 
 test "should return syntax error if left hand side expression is missing" {
@@ -351,31 +428,30 @@ test "should return syntax error if left hand side expression is missing" {
         \\>^
     ;
 
-    try TestParser.runAny(text, parseLeftHandSideExpression, struct {
-        pub fn expect(t: TestParser, nodeOrError: ParserError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.expression_expected, .{}, markers[0]);
-        }
-    });
+    const t, const nodeOrError, const markers = try TestParser.runCatch(text, parseLeftHandSideExpression);
+    defer t.deinit();
+
+    try t.expectSyntaxErrorAt(nodeOrError, diagnostics.expression_expected, .{}, markers[0]);
 }
 
 test "should parse new expression" {
     const text = "new a";
 
-    try TestParser.run(text, parseNewExpression, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .new_expr = AST.Node.at(1) });
-        }
-    });
+    const t, const node, _ = try TestParser.run(text, parseNewExpression);
+    defer t.deinit();
+
+    try t.expectASTSnapshot(node, snap(@src(),
+        \\ast.Node{
+        \\    .new_expr = ast.Node.Index(0),
+        \\}
+    ));
 }
 
 test "should return null if new expression is missing" {
-    const text = "a";
+    const t, const node, _ = try TestParser.run("a", parseNewExpression);
+    defer t.deinit();
 
-    try TestParser.run(text, parseNewExpression, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectAST(node, null);
-        }
-    });
+    try t.expectAST(node, null);
 }
 
 test "should parse member expression" {
@@ -384,35 +460,59 @@ test "should parse member expression" {
             \\ new a()
             \\>^
             ,
-            AST.Node{ .new_expr = AST.Node.at(2) },
+            snap(@src(),
+                \\ast.Node{
+                \\    .new_expr = ast.Node.Index(1),
+                \\}
+            ),
         },
         .{
             \\ a
             \\>^
             ,
-            AST.Node{ .simple_value = .{ .kind = .identifier, .id = StringId.at(1) } },
+            snap(@src(),
+                \\ast.Node{
+                \\    .simple_value = ast.Node.SimpleValue{
+                \\        .kind = ast.SimpleValueKind.identifier,
+                \\        .id = string_interner.StringId(1),
+                \\    },
+                \\}
+            ),
         },
         .{
             \\a.b
             \\>^
             ,
-            AST.Node{ .property_access = .{ .left = AST.Node.at(1), .right = AST.Node.at(2) } },
+            snap(@src(),
+                \\ast.Node{
+                \\    .property_access = ast.Node.Binary{
+                \\        .left = ast.Node.Index(0),
+                \\        .right = ast.Node.Index(1),
+                \\    },
+                \\}
+            ),
         },
         .{
             \\a[0]
             \\>^
             ,
-            AST.Node{ .index_access = .{ .left = AST.Node.at(1), .right = AST.Node.at(2) } },
+            snap(@src(),
+                \\ast.Node{
+                \\    .index_access = ast.Node.Binary{
+                \\        .left = ast.Node.Index(0),
+                \\        .right = ast.Node.Index(1),
+                \\    },
+                \\}
+            ),
         },
     };
 
     inline for (tests) |test_case| {
-        try TestParser.run(test_case[0], parseMemberExpression, struct {
-            pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(test_case[0])) !void {
-                try t.expectAST(node, test_case[1]);
-                try t.expectTokenAt(markers[0], node.?);
-            }
-        });
+        const t, const node, const markers = try TestParser.run(test_case[0], parseMemberExpression);
+        defer t.deinit();
+
+        try t.expectASTSnapshot(node, test_case[1]);
+        try t.expectTokenAt(markers[0], node.?);
     }
 }
 
@@ -422,11 +522,10 @@ test "should return syntax error if property access key is not identifier" {
         \\> ^
     ;
 
-    try TestParser.runAny(text, parseMemberExpression, struct {
-        pub fn expect(t: TestParser, nodeOrError: ParserError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.identifier_expected, .{}, markers[0]);
-        }
-    });
+    const t, const nodeOrError, const markers = try TestParser.runCatch(text, parseMemberExpression);
+    defer t.deinit();
+
+    try t.expectSyntaxErrorAt(nodeOrError, diagnostics.identifier_expected, .{}, markers[0]);
 }
 
 test "should parse chained member expression" {
@@ -435,68 +534,114 @@ test "should parse chained member expression" {
             \\new a().b
             \\>      ^
             ,
-            &[_]AST.Raw{
-                .{ .tag = .simple_value, .main_token = Token.at(1), .data = .{ .lhs = 1, .rhs = 1 } },
-                .{ .tag = .call_expr, .main_token = Token.at(1), .data = .{ .lhs = 1, .rhs = 0 } },
-                .{ .tag = .new_expr, .main_token = Token.at(0), .data = .{ .lhs = 2, .rhs = AST.Node.Index.empty.int() } },
-                .{ .tag = .simple_value, .main_token = Token.at(5), .data = .{ .lhs = 1, .rhs = 2 } },
-                .{ .tag = .property_access, .main_token = Token.at(4), .data = .{ .lhs = 3, .rhs = 4 } },
-            },
+            snap(@src(),
+                \\ast.Node{
+                \\    .property_access = ast.Node.Binary{
+                \\        .left = ast.Node.Index(2),
+                \\        .right = ast.Node.Index(3),
+                \\    },
+                \\}
+            ),
         },
         .{
             \\a.b
             \\>^
             ,
-            &[_]AST.Raw{
-                .{ .tag = .simple_value, .main_token = Token.at(0), .data = .{ .lhs = 1, .rhs = 1 } },
-                .{ .tag = .simple_value, .main_token = Token.at(2), .data = .{ .lhs = 1, .rhs = 2 } },
-                .{ .tag = .property_access, .main_token = Token.at(1), .data = .{ .lhs = 1, .rhs = 2 } },
-            },
+            snap(@src(),
+                \\ast.Node{
+                \\    .property_access = ast.Node.Binary{
+                \\        .left = ast.Node.Index(0),
+                \\        .right = ast.Node.Index(1),
+                \\    },
+                \\}
+            ),
         },
     };
 
     inline for (tests) |test_case| {
-        try TestParser.run(test_case[0], parseMemberExpression, struct {
-            pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(test_case[0])) !void {
-                try t.expectNodesToEqual(test_case[1]);
-                try t.expectTokenAt(markers[0], node.?);
-            }
-        });
+        const t, const node, const markers = try TestParser.run(test_case[0], parseMemberExpression);
+        defer t.deinit();
+
+        try t.expectASTSnapshot(node, test_case[1]);
+        try t.expectTokenAt(markers[0], node.?);
     }
 }
 
 test "should parse callable expression" {
     const tests = .{
-        .{ "a()", AST.Node{ .call_expr = .{
-            .node = AST.Node.at(1),
-            .params = &.{},
-        } } },
-        .{ "a(b)", AST.Node{ .call_expr = .{
-            .node = AST.Node.at(1),
-            .params = @constCast(&[_]AST.Node.Index{AST.Node.at(2)}),
-        } } },
-        .{ "a(b, c)", AST.Node{ .call_expr = .{
-            .node = AST.Node.at(1),
-            .params = @constCast(&[_]AST.Node.Index{ AST.Node.at(2), AST.Node.at(3) }),
-        } } },
-        .{ "a(b + c)", AST.Node{ .call_expr = .{
-            .node = AST.Node.at(1),
-            .params = @constCast(&[_]AST.Node.Index{AST.Node.at(4)}),
-        } } },
-        .{ "a(b,)", AST.Node{ .call_expr = .{
-            .node = AST.Node.at(1),
-            .params = @constCast(&[_]AST.Node.Index{AST.Node.at(2)}),
-        } } },
+        .{
+            "a()",
+            snap(@src(),
+                \\ast.Node{
+                \\    .call_expr = ast.Node.CallExpression{
+                \\        .node = ast.Node.Index(0),
+                \\        .params = [_]ast.Node.Index{},
+                \\    },
+                \\}
+            ),
+        },
+        .{
+            "a(b)",
+            snap(@src(),
+                \\ast.Node{
+                \\    .call_expr = ast.Node.CallExpression{
+                \\        .node = ast.Node.Index(0),
+                \\        .params = [_]ast.Node.Index{
+                \\            ast.Node.Index(1)
+                \\        },
+                \\    },
+                \\}
+            ),
+        },
+        .{
+            "a(b, c)",
+            snap(@src(),
+                \\ast.Node{
+                \\    .call_expr = ast.Node.CallExpression{
+                \\        .node = ast.Node.Index(0),
+                \\        .params = [_]ast.Node.Index{
+                \\            ast.Node.Index(1), 
+                \\            ast.Node.Index(2)
+                \\        },
+                \\    },
+                \\}
+            ),
+        },
+        .{
+            "a(b + c)",
+            snap(@src(),
+                \\ast.Node{
+                \\    .call_expr = ast.Node.CallExpression{
+                \\        .node = ast.Node.Index(0),
+                \\        .params = [_]ast.Node.Index{
+                \\            ast.Node.Index(3)
+                \\        },
+                \\    },
+                \\}
+            ),
+        },
+        .{
+            "a(b,)",
+            snap(@src(),
+                \\ast.Node{
+                \\    .call_expr = ast.Node.CallExpression{
+                \\        .node = ast.Node.Index(0),
+                \\        .params = [_]ast.Node.Index{
+                \\            ast.Node.Index(1)
+                \\        },
+                \\    },
+                \\}
+            ),
+        },
     };
     const marker = "^";
 
     inline for (tests) |test_case| {
-        try TestParser.run(test_case[0], parseCallableExpression, struct {
-            pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(test_case[0])) !void {
-                try t.expectAST(node, test_case[1]);
-                try t.expectTokenAt(comptime Marker.fromText(marker), node.?);
-            }
-        });
+        const t, const node, _ = try TestParser.run(test_case[0], parseCallableExpression);
+        defer t.deinit();
+
+        try t.expectASTSnapshot(node, test_case[1]);
+        try t.expectTokenAt(comptime Marker.fromText(marker), node.?);
     }
 }
 
@@ -506,30 +651,46 @@ test "should parse chained callable expression" {
         \\>^   ^  ^
     ;
 
-    try TestParser.run(text, parseCallableExpression, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            const call_expr1 = AST.Node{ .call_expr = .{
-                .node = AST.Node.at(5),
-                .params = @constCast(&[_]AST.Node.Index{AST.Node.at(6)}),
-            } };
-            try t.expectAST(node, call_expr1);
-            try t.expectTokenAt(markers[2], node.?);
+    const t, const node, const markers = try TestParser.run(text, parseCallableExpression);
+    defer t.deinit();
 
-            const call_expr2 = AST.Node{ .call_expr = .{
-                .node = AST.Node.at(3),
-                .params = @constCast(&[_]AST.Node.Index{AST.Node.at(4)}),
-            } };
-            try t.expectAST(call_expr1.call_expr.node, call_expr2);
-            try t.expectTokenAt(markers[1], call_expr1.call_expr.node);
+    try t.expectASTSnapshot(node, snap(@src(),
+        \\ast.Node{
+        \\    .call_expr = ast.Node.CallExpression{
+        \\        .node = ast.Node.Index(4),
+        \\        .params = [_]ast.Node.Index{
+        \\            ast.Node.Index(5)
+        \\        },
+        \\    },
+        \\}
+    ));
+    try t.expectTokenAt(markers[2], node.?);
 
-            const call_expr3 = AST.Node{ .call_expr = .{
-                .node = AST.Node.at(1),
-                .params = @constCast(&[_]AST.Node.Index{AST.Node.at(2)}),
-            } };
-            try t.expectAST(call_expr2.call_expr.node, call_expr3);
-            try t.expectTokenAt(markers[0], call_expr2.call_expr.node);
-        }
-    });
+    const call_expr1 = t.parser.getNode(node.?);
+    try t.expectASTSnapshot(call_expr1.call_expr.node, snap(@src(),
+        \\ast.Node{
+        \\    .call_expr = ast.Node.CallExpression{
+        \\        .node = ast.Node.Index(2),
+        \\        .params = [_]ast.Node.Index{
+        \\            ast.Node.Index(3)
+        \\        },
+        \\    },
+        \\}
+    ));
+    try t.expectTokenAt(markers[1], call_expr1.call_expr.node);
+
+    const call_expr2 = t.parser.getNode(call_expr1.call_expr.node);
+    try t.expectASTSnapshot(call_expr2.call_expr.node, snap(@src(),
+        \\ast.Node{
+        \\    .call_expr = ast.Node.CallExpression{
+        \\        .node = ast.Node.Index(0),
+        \\        .params = [_]ast.Node.Index{
+        \\            ast.Node.Index(1)
+        \\        },
+        \\    },
+        \\}
+    ));
+    try t.expectTokenAt(markers[0], call_expr2.call_expr.node);
 }
 
 test "should return syntax error if comma is missing between params" {
@@ -538,9 +699,8 @@ test "should return syntax error if comma is missing between params" {
         \\>   ^
     ;
 
-    try TestParser.runAny(text, parseCallableExpression, struct {
-        pub fn expect(t: TestParser, nodeOrError: ParserError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{","}, markers[0]);
-        }
-    });
+    const t, const nodeOrError, const markers = try TestParser.runCatch(text, parseCallableExpression);
+    defer t.deinit();
+
+    try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{","}, markers[0]);
 }

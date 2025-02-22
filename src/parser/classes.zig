@@ -19,9 +19,9 @@ const parseKeywordAsIdentifier = @import("primary.zig").parseKeywordAsIdentifier
 const parseOptionalDataType = @import("types.zig").parseOptionalDataType;
 const parseCallableExpression = @import("expressions.zig").parseCallableExpression;
 
+const snap = @import("../tests/snapshots.zig").snap;
 const TestParser = @import("../tests/test_parser.zig");
 const Marker = TestParser.Marker;
-const MarkerList = TestParser.MarkerList;
 
 const expectEqualDeep = std.testing.expectEqualDeep;
 
@@ -186,18 +186,21 @@ test "shoud parse class declaration" {
         \\>^
     ;
 
-    try TestParser.run(text, parseClassStatement, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .class = .{
-                .abstract = false,
-                .name = StringId.at(1),
-                .super_class = AST.Node.Empty,
-                .implements = &[_]StringId{},
-                .body = &.{},
-            } });
-            try t.expectTokenAt(markers[0], node.?);
-        }
-    });
+    const t, const node, const markers = try TestParser.run(text, parseClassStatement);
+    defer t.deinit();
+
+    try t.expectASTSnapshot(node, snap(@src(),
+        \\ast.Node{
+        \\    .class = ast.Node.ClassDeclaration{
+        \\        .abstract = false,
+        \\        .name = string_interner.StringId(1),
+        \\        .super_class = ast.Node.Index.empty,
+        \\        .implements = [_]string_interner.StringId{},
+        \\        .body = [_]ast.Node.Index{},
+        \\    },
+        \\}
+    ));
+    try t.expectTokenAt(markers[0], node.?);
 }
 
 test "should return syntax error if class name is not an identifier" {
@@ -206,11 +209,10 @@ test "should return syntax error if class name is not an identifier" {
         \\>      ^
     ;
 
-    try TestParser.runAny(text, parseClassStatement, struct {
-        pub fn expect(t: TestParser, nodeOrError: ParserError!?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{"{"});
-        }
-    });
+    const t, const nodeOrError, _ = try TestParser.runCatch(text, parseClassStatement);
+    defer t.deinit();
+
+    try t.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{"{"});
 }
 
 test "should return syntax error if open curly brace is missing" {
@@ -219,11 +221,10 @@ test "should return syntax error if open curly brace is missing" {
         \\>        ^
     ;
 
-    try TestParser.runAny(text, parseClassStatement, struct {
-        pub fn expect(t: TestParser, nodeOrError: ParserError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{"{"}, markers[0]);
-        }
-    });
+    const t, const nodeOrError, const markers = try TestParser.runCatch(text, parseClassStatement);
+    defer t.deinit();
+
+    try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{"{"}, markers[0]);
 }
 
 test "should parse abstract class declaration" {
@@ -232,18 +233,21 @@ test "should parse abstract class declaration" {
         \\>^
     ;
 
-    try TestParser.run(text, parseAbstractClassStatement, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .class = .{
-                .abstract = true,
-                .name = StringId.at(1),
-                .super_class = AST.Node.Empty,
-                .implements = &[_]StringId{},
-                .body = &.{},
-            } });
-            try t.expectTokenAt(markers[0], node.?);
-        }
-    });
+    const t, const node, const markers = try TestParser.run(text, parseAbstractClassStatement);
+    defer t.deinit();
+
+    try t.expectASTSnapshot(node, snap(@src(),
+        \\ast.Node{
+        \\    .class = ast.Node.ClassDeclaration{
+        \\        .abstract = true,
+        \\        .name = string_interner.StringId(1),
+        \\        .super_class = ast.Node.Index.empty,
+        \\        .implements = [_]string_interner.StringId{},
+        \\        .body = [_]ast.Node.Index{},
+        \\    },
+        \\}
+    ));
+    try t.expectTokenAt(markers[0], node.?);
 }
 
 test "should return syntax error if abstract keyword is not followed by class" {
@@ -252,43 +256,51 @@ test "should return syntax error if abstract keyword is not followed by class" {
         \\>         ^
     ;
 
-    try TestParser.runAny(text, parseAbstractClassStatement, struct {
-        pub fn expect(t: TestParser, node: ParserError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectSyntaxErrorAt(node, diagnostics.declaration_or_statement_expected, .{}, markers[0]);
-        }
-    });
+    const t, const nodeOrError, const markers = try TestParser.runCatch(text, parseAbstractClassStatement);
+    defer t.deinit();
+
+    try t.expectSyntaxErrorAt(nodeOrError, diagnostics.declaration_or_statement_expected, .{}, markers[0]);
 }
 
 test "should parse class declaration with extends" {
     const text = "class Foo extends Bar {}";
 
-    try TestParser.run(text, parseClassStatement, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .class = .{
-                .abstract = false,
-                .name = StringId.at(1),
-                .super_class = AST.Node.at(1),
-                .implements = &[_]StringId{},
-                .body = &.{},
-            } });
-        }
-    });
+    const t, const node, _ = try TestParser.run(text, parseClassStatement);
+    defer t.deinit();
+
+    try t.expectASTSnapshot(node, snap(@src(),
+        \\ast.Node{
+        \\    .class = ast.Node.ClassDeclaration{
+        \\        .abstract = false,
+        \\        .name = string_interner.StringId(1),
+        \\        .super_class = ast.Node.Index(0),
+        \\        .implements = [_]string_interner.StringId{},
+        \\        .body = [_]ast.Node.Index{},
+        \\    },
+        \\}
+    ));
 }
 
 test "should parse class declaration with implements" {
     const text = "class Foo implements Bar, Baz {}";
 
-    try TestParser.run(text, parseClassStatement, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .class = .{
-                .abstract = false,
-                .name = StringId.at(1),
-                .super_class = AST.Node.Empty,
-                .implements = @constCast(&[_]StringId{ StringId.at(2), StringId.at(3) }),
-                .body = &.{},
-            } });
-        }
-    });
+    const t, const node, _ = try TestParser.run(text, parseClassStatement);
+    defer t.deinit();
+
+    try t.expectASTSnapshot(node, snap(@src(),
+        \\ast.Node{
+        \\    .class = ast.Node.ClassDeclaration{
+        \\        .abstract = false,
+        \\        .name = string_interner.StringId(1),
+        \\        .super_class = ast.Node.Index.empty,
+        \\        .implements = [_]string_interner.StringId{
+        \\            string_interner.StringId(2), 
+        \\            string_interner.StringId(3)
+        \\        },
+        \\        .body = [_]ast.Node.Index{},
+        \\    },
+        \\}
+    ));
 }
 
 test "should return syntax error if interface name is not an identifier" {
@@ -297,27 +309,31 @@ test "should return syntax error if interface name is not an identifier" {
         \\>                    ^
     ;
 
-    try TestParser.runAny(text, parseClassStatement, struct {
-        pub fn expect(t: TestParser, node: ParserError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectSyntaxErrorAt(node, diagnostics.identifier_expected, .{}, markers[0]);
-        }
-    });
+    const t, const nodeOrError, const markers = try TestParser.runCatch(text, parseClassStatement);
+    defer t.deinit();
+
+    try t.expectSyntaxErrorAt(nodeOrError, diagnostics.identifier_expected, .{}, markers[0]);
 }
 
 test "should parse class declaration without name" {
     const text = "class extends Bar implements Baz {}";
 
-    try TestParser.run(text, parseClassStatement, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .class = .{
-                .abstract = false,
-                .name = StringId.none,
-                .super_class = AST.Node.at(1),
-                .implements = @constCast(&[_]StringId{StringId.at(2)}),
-                .body = &.{},
-            } });
-        }
-    });
+    const t, const node, _ = try TestParser.run(text, parseClassStatement);
+    defer t.deinit();
+
+    try t.expectASTSnapshot(node, snap(@src(),
+        \\ast.Node{
+        \\    .class = ast.Node.ClassDeclaration{
+        \\        .abstract = false,
+        \\        .name = string_interner.StringId.none,
+        \\        .super_class = ast.Node.Index(0),
+        \\        .implements = [_]string_interner.StringId{
+        \\            string_interner.StringId(2)
+        \\        },
+        \\        .body = [_]ast.Node.Index{},
+        \\    },
+        \\}
+    ));
 }
 
 test "should parse class members" {
@@ -328,33 +344,45 @@ test "should parse class members" {
         \\}
     ;
 
-    try TestParser.run(text, parseClassStatement, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            const class_decl = AST.Node{ .class = AST.Node.ClassDeclaration{
-                .name = StringId.at(1),
-                .abstract = false,
-                .implements = &.{},
-                .super_class = AST.Node.Empty,
-                .body = @constCast(&[_]AST.Node.Index{AST.Node.at(5)}),
-            } };
-            try t.expectAST(node, class_decl);
+    const t, const node, const markers = try TestParser.run(text, parseClassStatement);
+    defer t.deinit();
 
-            const class_member = AST.Node{ .class_member = AST.Node.ClassMember{
-                .flags = 0,
-                .node = AST.Node.at(4),
-            } };
-            try t.expectAST(class_decl.class.body[0], class_member);
-            try t.expectTokenAt(markers[0], class_decl.class.body[0]);
+    try t.expectASTSnapshot(node, snap(@src(),
+        \\ast.Node{
+        \\    .class = ast.Node.ClassDeclaration{
+        \\        .abstract = false,
+        \\        .name = string_interner.StringId(1),
+        \\        .super_class = ast.Node.Index.empty,
+        \\        .implements = [_]string_interner.StringId{},
+        \\        .body = [_]ast.Node.Index{
+        \\            ast.Node.Index(4)
+        \\        },
+        \\    },
+        \\}
+    ));
 
-            const class_field = AST.Node{ .class_field = AST.Node.ClassFieldBinding{
-                .name = AST.Node.at(1),
-                .decl_type = AST.Node.at(2),
-                .value = AST.Node.at(3),
-            } };
-            try t.expectAST(class_member.class_member.node, class_field);
-            try t.expectTokenAt(markers[0], class_member.class_member.node);
-        }
-    });
+    const class_decl = t.parser.getNode(node.?);
+    try t.expectASTSnapshot(class_decl.class.body[0], snap(@src(),
+        \\ast.Node{
+        \\    .class_member = ast.Node.ClassMember{
+        \\        .flags = 0,
+        \\        .node = ast.Node.Index(3),
+        \\    },
+        \\}
+    ));
+    try t.expectTokenAt(markers[0], class_decl.class.body[0]);
+
+    const class_member = t.parser.getNode(class_decl.class.body[0]);
+    try t.expectASTSnapshot(class_member.class_member.node, snap(@src(),
+        \\ast.Node{
+        \\    .class_field = ast.Node.ClassFieldBinding{
+        \\        .name = ast.Node.Index(0),
+        \\        .decl_type = ast.Node.Index(1),
+        \\        .value = ast.Node.Index(2),
+        \\    },
+        \\}
+    ));
+    try t.expectTokenAt(markers[0], class_member.class_member.node);
 }
 
 test "should skip semicolons when parsing class members" {
@@ -365,17 +393,22 @@ test "should skip semicolons when parsing class members" {
         \\}
     ;
 
-    try TestParser.run(text, parseClassStatement, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .class = AST.Node.ClassDeclaration{
-                .name = StringId.at(1),
-                .abstract = false,
-                .implements = &.{},
-                .super_class = AST.Node.Empty,
-                .body = @constCast(&[_]AST.Node.Index{AST.Node.at(5)}),
-            } });
-        }
-    });
+    const t, const node, _ = try TestParser.run(text, parseClassStatement);
+    defer t.deinit();
+
+    try t.expectASTSnapshot(node, snap(@src(),
+        \\ast.Node{
+        \\    .class = ast.Node.ClassDeclaration{
+        \\        .abstract = false,
+        \\        .name = string_interner.StringId(1),
+        \\        .super_class = ast.Node.Index.empty,
+        \\        .implements = [_]string_interner.StringId{},
+        \\        .body = [_]ast.Node.Index{
+        \\            ast.Node.Index(4)
+        \\        },
+        \\    },
+        \\}
+    ));
 }
 
 test "should parse static block" {
@@ -387,14 +420,18 @@ test "should parse static block" {
         \\}
     ;
 
-    try TestParser.run(text, parseClassStaticMember, struct {
-        pub fn expect(t: TestParser, node: AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{
-                .class_static_block = @constCast(&[_]AST.Node.Index{ AST.Node.at(5), AST.Node.at(10) }),
-            });
-            try t.expectTokenAt(markers[0], node);
-        }
-    });
+    const t, const node, const markers = try TestParser.run(text, parseClassStaticMember);
+    defer t.deinit();
+
+    try t.expectASTSnapshot(node, snap(@src(),
+        \\ast.Node{
+        \\    .class_static_block = [_]ast.Node.Index{
+        \\        ast.Node.Index(4), 
+        \\        ast.Node.Index(9)
+        \\    },
+        \\}
+    ));
+    try t.expectTokenAt(markers[0], node.?);
 }
 
 test "should parse static field" {
@@ -403,38 +440,86 @@ test "should parse static field" {
         \\>^
     ;
 
-    try TestParser.run(text, parseClassStaticMember, struct {
-        pub fn expect(t: TestParser, node: AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{
-                .class_member = .{
-                    .flags = AST.ClassMemberFlags.static,
-                    .node = AST.Node.at(5),
-                },
-            });
-            try t.expectTokenAt(markers[0], node);
-        }
-    });
+    const t, const node, const markers = try TestParser.run(text, parseClassStaticMember);
+    defer t.deinit();
+
+    try t.expectASTSnapshot(node, snap(@src(),
+        \\ast.Node{
+        \\    .class_member = ast.Node.ClassMember{
+        \\        .flags = 1,
+        \\        .node = ast.Node.Index(4),
+        \\    },
+        \\}
+    ));
+    try t.expectTokenAt(markers[0], node.?);
 }
 
 test "should parse class member with modifiers" {
     const tests = .{
-        .{ "abstract a;", AST.ClassMemberFlags.abstract },
-        .{ "readonly b;", AST.ClassMemberFlags.readonly },
-        .{ "public c;", AST.ClassMemberFlags.public },
-        .{ "protected d;", AST.ClassMemberFlags.protected },
-        .{ "private e;", AST.ClassMemberFlags.private },
+        .{
+            "abstract a;",
+            snap(@src(),
+                \\ast.Node{
+                \\    .class_member = ast.Node.ClassMember{
+                \\        .flags = 4,
+                \\        .node = ast.Node.Index(1),
+                \\    },
+                \\}
+            ),
+        },
+        .{
+            "readonly b;",
+            snap(@src(),
+                \\ast.Node{
+                \\    .class_member = ast.Node.ClassMember{
+                \\        .flags = 2,
+                \\        .node = ast.Node.Index(1),
+                \\    },
+                \\}
+            ),
+        },
+        .{
+            "public c;",
+            snap(@src(),
+                \\ast.Node{
+                \\    .class_member = ast.Node.ClassMember{
+                \\        .flags = 8,
+                \\        .node = ast.Node.Index(1),
+                \\    },
+                \\}
+            ),
+        },
+        .{
+            "protected d;",
+            snap(@src(),
+                \\ast.Node{
+                \\    .class_member = ast.Node.ClassMember{
+                \\        .flags = 16,
+                \\        .node = ast.Node.Index(1),
+                \\    },
+                \\}
+            ),
+        },
+        .{
+            "private e;",
+            snap(@src(),
+                \\ast.Node{
+                \\    .class_member = ast.Node.ClassMember{
+                \\        .flags = 32,
+                \\        .node = ast.Node.Index(1),
+                \\    },
+                \\}
+            ),
+        },
     };
     const marker = "^";
 
     inline for (tests) |test_case| {
-        try TestParser.run(test_case[0], parseClassMember, struct {
-            pub fn expect(t: TestParser, node: AST.Node.Index, _: MarkerList(test_case[0])) !void {
-                try t.expectAST(node, AST.Node{
-                    .class_member = .{ .flags = test_case[1], .node = AST.Node.at(2) },
-                });
-                try t.expectTokenAt(comptime Marker.fromText(marker), node);
-            }
-        });
+        const t, const node, _ = try TestParser.run(test_case[0], parseClassMember);
+        defer t.deinit();
+
+        try t.expectASTSnapshot(node, test_case[1]);
+        try t.expectTokenAt(comptime Marker.fromText(marker), node.?);
     }
 }
 
@@ -444,29 +529,87 @@ test "should return syntax error if class field is not closed with semicolon" {
         \\>    ^
     ;
 
-    try TestParser.runAny(text, parseClassField, struct {
-        pub fn expect(t: TestParser, nodeOrError: ParserError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{";"}, markers[0]);
-        }
-    });
+    const t, const nodeOrError, const markers = try TestParser.runCatch(text, parseClassField);
+    defer t.deinit();
+
+    try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{";"}, markers[0]);
 }
 
 test "should parse class methods" {
     const tests = .{
-        .{ "get a() {}", AST.Node{ .class_member = .{ .flags = 0, .node = AST.Node.at(3) } } },
-        .{ "set b() {}", AST.Node{ .class_member = .{ .flags = 0, .node = AST.Node.at(3) } } },
-        .{ "c() {}", AST.Node{ .class_member = .{ .flags = 0, .node = AST.Node.at(3) } } },
-        .{ "async d() {}", AST.Node{ .class_member = .{ .flags = 0, .node = AST.Node.at(3) } } },
-        .{ "*e() {}", AST.Node{ .class_member = .{ .flags = 0, .node = AST.Node.at(3) } } },
-        .{ "async *f() {}", AST.Node{ .class_member = .{ .flags = 0, .node = AST.Node.at(3) } } },
+        .{
+            "get a() {}",
+            snap(@src(),
+                \\ast.Node{
+                \\    .class_member = ast.Node.ClassMember{
+                \\        .flags = 0,
+                \\        .node = ast.Node.Index(2),
+                \\    },
+                \\}
+            ),
+        },
+        .{
+            "set b() {}",
+            snap(@src(),
+                \\ast.Node{
+                \\    .class_member = ast.Node.ClassMember{
+                \\        .flags = 0,
+                \\        .node = ast.Node.Index(2),
+                \\    },
+                \\}
+            ),
+        },
+        .{
+            "c() {}",
+            snap(@src(),
+                \\ast.Node{
+                \\    .class_member = ast.Node.ClassMember{
+                \\        .flags = 0,
+                \\        .node = ast.Node.Index(2),
+                \\    },
+                \\}
+            ),
+        },
+        .{
+            "async d() {}",
+            snap(@src(),
+                \\ast.Node{
+                \\    .class_member = ast.Node.ClassMember{
+                \\        .flags = 0,
+                \\        .node = ast.Node.Index(2),
+                \\    },
+                \\}
+            ),
+        },
+        .{
+            "*e() {}",
+            snap(@src(),
+                \\ast.Node{
+                \\    .class_member = ast.Node.ClassMember{
+                \\        .flags = 0,
+                \\        .node = ast.Node.Index(2),
+                \\    },
+                \\}
+            ),
+        },
+        .{
+            "async *f() {}",
+            snap(@src(),
+                \\ast.Node{
+                \\    .class_member = ast.Node.ClassMember{
+                \\        .flags = 0,
+                \\        .node = ast.Node.Index(2),
+                \\    },
+                \\}
+            ),
+        },
     };
 
     inline for (tests) |test_case| {
-        try TestParser.run(test_case[0], parseClassMember, struct {
-            pub fn expect(t: TestParser, node: AST.Node.Index, _: anytype) !void {
-                try t.expectAST(node, test_case[1]);
-            }
-        });
+        const t, const node, _ = try TestParser.run(test_case[0], parseClassMember);
+        defer t.deinit();
+
+        try t.expectASTSnapshot(node, test_case[1]);
     }
 }
 
@@ -476,9 +619,8 @@ test "should return syntax error if there is no identifier" {
         \\>^
     ;
 
-    try TestParser.runAny(text, parseClassMember, struct {
-        pub fn expect(t: TestParser, node: ParserError!AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectSyntaxErrorAt(node, diagnostics.identifier_expected, .{}, markers[0]);
-        }
-    });
+    const t, const nodeOrError, const markers = try TestParser.runCatch(text, parseClassMember);
+    defer t.deinit();
+
+    try t.expectSyntaxErrorAt(nodeOrError, diagnostics.identifier_expected, .{}, markers[0]);
 }

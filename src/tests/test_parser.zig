@@ -24,59 +24,37 @@ const expectError = std.testing.expectError;
 
 const TestParser = @This();
 
-parser: *Parser,
+var arena: std.heap.ArenaAllocator = std.heap.ArenaAllocator.init(std.testing.allocator);
 
-pub fn run(comptime text: []const u8, comptime fn_ptr: anytype, Expects: type) !void {
-    const sourceText, const markers = comptime getMarkers(text);
-    var parser = Parser.testInstance(&sourceText);
-    defer parser.testDeinit();
+parser: Parser,
 
-    const node = fn_ptr(&parser) catch |err| {
-        std.debug.print("SyntaxError, text: {s}\n", .{sourceText});
-        parser.reporter.print(parser.tokens.items);
-        return err;
+pub fn run(text: [:0]const u8, fn_ptr: anytype) !struct { TestParser, ?AST.Node.Index, []Marker } {
+    const sourceText, const markers = try getMarkers(arena.allocator(), text);
+    const reporter = try arena.allocator().create(Reporter);
+    reporter.* = Reporter.init(arena.allocator());
+    var t = TestParser{
+        .parser = Parser.init(arena.allocator(), sourceText, reporter),
     };
+    const node = try fn_ptr(&t.parser);
 
-    const t = TestParser{ .parser = &parser };
-    Expects.expect(t, node, markers) catch |err| {
-        // LCOV_EXCL_START
-        std.debug.print("Parsing failed, text: {s}\n", .{sourceText});
-        return err;
-        // LCOV_EXCL_STOP
-    };
+    return .{ t, node, markers };
 }
 
-pub fn runAny(comptime text: []const u8, comptime fn_ptr: anytype, Expects: type) !void {
-    const sourceText, const markers = comptime getMarkers(text);
-    var parser = Parser.testInstance(&sourceText);
-    defer parser.testDeinit();
-
-    const nodeOrError = fn_ptr(&parser);
-    const t = TestParser{ .parser = &parser };
-    Expects.expect(t, nodeOrError, markers) catch |err| {
-        // LCOV_EXCL_START
-        std.debug.print("Parsing failed, text: {s}\n", .{sourceText});
-        return err;
-        // LCOV_EXCL_STOP
+pub fn runCatch(text: [:0]const u8, fn_ptr: anytype) !struct { TestParser, ErrorUnionOf(fn_ptr), []Marker } {
+    const sourceText, const markers = try getMarkers(arena.allocator(), text);
+    const reporter = try arena.allocator().create(Reporter);
+    reporter.* = Reporter.init(arena.allocator());
+    var t = TestParser{
+        .parser = Parser.init(arena.allocator(), sourceText, reporter),
     };
+
+    const nodeOrError = fn_ptr(&t.parser);
+
+    return .{ t, nodeOrError, markers };
 }
 
-pub fn runSnapshot(comptime text: []const u8, comptime fn_ptr: anytype, expected: Snapshot) !void {
-    const sourceText, const markers = comptime getMarkers(text);
-    var parser = Parser.testInstance(&sourceText);
-    defer parser.testDeinit();
-
-    const node = try fn_ptr(&parser);
-    const t = TestParser{ .parser = &parser };
-    t.expectASTSnapshot(node, expected) catch |err| {
-        // LCOV_EXCL_START
-        std.debug.print("\nParsing failed, text: {s}\n", .{sourceText});
-        return err;
-        // LCOV_EXCL_STOP
-    };
-    if (markers.len > 0) {
-        try t.expectTokenAt(markers[0], node.?);
-    }
+pub fn deinit(_: TestParser) void {
+    _ = arena.reset(.free_all);
 }
 
 pub const Marker = struct {
@@ -90,31 +68,23 @@ pub const Marker = struct {
     }
 
     // LCOV_EXCL_START
-    pub fn asText(comptime self: Marker) [self.col]u8 {
-        var buffer: [self.col]u8 = undefined;
-        for (0..self.col) |i| {
-            buffer[i] = ' ';
+    pub fn format(self: Marker, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        for (0..self.col) |_| {
+            try writer.writeByte(' ');
         }
-        buffer[self.col - 1] = '^';
-        return buffer;
+        try writer.writeByte('^');
     }
     // LCOV_EXCL_STOP
 };
 
-pub fn MarkerList(comptime text: []const u8) type {
-    return [std.mem.count(u8, text, "^")]Marker;
-}
+pub fn getMarkers(allocator: std.mem.Allocator, text: [:0]const u8) !struct { [:0]const u8, []Marker } {
+    var text_buffer = std.ArrayList(u8).init(allocator);
+    var marker_buffer = std.ArrayList(Marker).init(allocator);
 
-pub fn getMarkers(comptime text: []const u8) struct { [text.len:0]u8, MarkerList(text) } {
-    var text_pos: u32 = 0;
     var prev_line_len: u32 = 0;
-    var text_buffer: [text.len:0]u8 = undefined;
-
-    var marker_buffer: MarkerList(text) = undefined;
     var pos: u32 = 0;
     var line: u32 = 0;
     var col: u32 = 0;
-    var marker_count: u32 = 0;
     var marker_line: bool = false;
 
     for (0..text.len) |i| {
@@ -134,41 +104,37 @@ pub fn getMarkers(comptime text: []const u8) struct { [text.len:0]u8, MarkerList
         if (marker_line) {
             if (c == '^') {
                 assert(prev_line_len > 0);
-                marker_buffer[marker_count] = Marker{
+                try marker_buffer.append(Marker{
                     // col is 1 based so we need to subtract 1 from it
-                    .pos = text_pos - prev_line_len + col - 1,
+                    .pos = @intCast(text_buffer.items.len - prev_line_len + col - 1),
                     .line = line,
                     .col = col,
-                };
-                marker_count += 1;
+                });
             }
         } else {
-            text_buffer[text_pos] = c;
-        }
-
-        if (!marker_line) {
-            text_pos += 1;
+            try text_buffer.append(c);
         }
         pos += 1;
     }
 
-    text_buffer[text_pos] = 0;
+    try text_buffer.append(0);
 
     return .{
-        text_buffer,
-        marker_buffer,
+        text_buffer.items[0 .. text_buffer.items.len - 1 :0],
+        marker_buffer.items,
     };
 }
 
 test "should parse markers" {
-    const text, const markers = getMarkers(
+    const text, const markers = try getMarkers(arena.allocator(),
         \\1234567890
         \\>    ^
         \\ 345
         \\>^
     );
+    defer _ = arena.reset(.free_all);
 
-    try expectEqualStrings("1234567890\n 345", std.mem.sliceTo(&text, 0));
+    try expectEqualStrings("1234567890\n 345", text);
     try expectEqualDeep(Marker{
         .line = 0,
         .col = 6,
@@ -194,7 +160,7 @@ pub fn expectASTSnapshot(t: TestParser, maybe_node: ?AST.Node.Index, expected: S
     try expectSnapshotMatch(node, expected);
 }
 
-pub fn expectTokenAt(t: TestParser, comptime marker: Marker, node: AST.Node.Index) !void {
+pub fn expectTokenAt(t: TestParser, marker: Marker, node: AST.Node.Index) !void {
     const raw = t.parser.getRawNode(node);
     const tok = t.parser.tokens.items[raw.main_token.int()];
 
@@ -203,7 +169,7 @@ pub fn expectTokenAt(t: TestParser, comptime marker: Marker, node: AST.Node.Inde
     }
 }
 
-pub fn getTokenAt(t: TestParser, comptime marker: Marker) Token.Index {
+pub fn getTokenAt(t: TestParser, marker: Marker) Token.Index {
     var found_token_idx: ?Token.Index = null;
     for (t.parser.tokens.items, 0..) |tok, i| {
         if (tok.start == marker.pos) {
@@ -216,7 +182,7 @@ pub fn getTokenAt(t: TestParser, comptime marker: Marker) Token.Index {
 }
 
 // LCOV_EXCL_START
-pub fn tokenPosMismatch(t: TestParser, comptime expected: Marker, tok: Token) anyerror {
+pub fn tokenPosMismatch(t: TestParser, expected: Marker, tok: Token) anyerror {
     var cur_marker = std.testing.allocator.alloc(u8, t.parser.buffer.len + 1) catch unreachable;
     defer std.testing.allocator.free(cur_marker);
 
@@ -225,7 +191,7 @@ pub fn tokenPosMismatch(t: TestParser, comptime expected: Marker, tok: Token) an
     }
     cur_marker[tok.start] = '^';
 
-    std.debug.print("expected token at:\n{s}\n{s}\nfound at:\n{s}\n{s}\n", .{ t.parser.buffer, expected.asText(), t.parser.buffer, cur_marker });
+    std.debug.print("expected token at:\n{s}\n{}\nfound at:\n{s}\n{s}\n", .{ t.parser.buffer, expected, t.parser.buffer, cur_marker });
     return error.TestExpectedEqual;
 }
 // LCOV_EXCL_STOP
@@ -240,7 +206,7 @@ pub fn expectSyntaxError(
     const expected_string = try std.fmt.allocPrint(std.testing.allocator, expected_error.format(), args);
     defer std.testing.allocator.free(expected_string);
 
-    try expectEqualStrings(t.parser.reporter.errors.items(.message)[0], expected_string);
+    try expectEqualStrings(expected_string, t.parser.reporter.errors.items(.message)[0]);
 }
 
 pub fn expectSyntaxErrorAt(
@@ -248,7 +214,7 @@ pub fn expectSyntaxErrorAt(
     nodeOrError: anytype,
     comptime expected_error: diagnostics.DiagnosticMessage,
     args: anytype,
-    comptime expected_location: Marker,
+    expected_location: Marker,
 ) !void {
     try t.expectSyntaxError(nodeOrError, expected_error, args);
 

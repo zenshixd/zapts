@@ -27,7 +27,6 @@ const expectExpression = @import("expressions.zig").expectExpression;
 const snap = @import("../tests/snapshots.zig").snap;
 const TestParser = @import("../tests/test_parser.zig");
 const Marker = TestParser.Marker;
-const MarkerList = TestParser.MarkerList;
 
 const expectEqual = std.testing.expectEqual;
 const expectEqualDeep = std.testing.expectEqualDeep;
@@ -442,7 +441,11 @@ test "should parse primary expression" {
     };
 
     inline for (test_cases) |test_case| {
-        try TestParser.runSnapshot(test_case[0], parsePrimaryExpression, test_case[1]);
+        const t, const node, const markers = try TestParser.run(test_case[0], parsePrimaryExpression);
+        defer t.deinit();
+
+        try t.expectASTSnapshot(node, test_case[1]);
+        try t.expectTokenAt(markers[0], node.?);
     }
 }
 
@@ -476,13 +479,12 @@ test "should parse identifier" {
     };
 
     inline for (test_cases) |test_case| {
-        try TestParser.run(test_case[0], parseIdentifier, struct {
-            pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(test_case[0])) !void {
-                try t.expectAST(node, AST.Node{ .simple_value = .{ .kind = .identifier, .id = StringId.at(1) } });
-                try t.expectToken(TokenType.Identifier, std.mem.sliceTo(test_case[0][1..], '\n'), node.?);
-                try t.expectTokenAt(markers[0], node.?);
-            }
-        });
+        const t, const node, const markers = try TestParser.run(test_case[0], parseIdentifier);
+        defer t.deinit();
+
+        try t.expectAST(node, AST.Node{ .simple_value = .{ .kind = .identifier, .id = StringId.at(1) } });
+        try t.expectToken(TokenType.Identifier, std.mem.sliceTo(test_case[0][1..], '\n'), node.?);
+        try t.expectTokenAt(markers[0], node.?);
     }
 }
 
@@ -492,13 +494,19 @@ test "should parse allowed keyword as identifier" {
         \\>^
     ;
 
-    try TestParser.run(text, parseIdentifier, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectAST(node, AST.Node{ .simple_value = .{ .kind = .identifier, .id = StringId.at(1) } });
-            try t.expectToken(TokenType.Abstract, "abstract", node.?);
-            try t.expectTokenAt(markers[0], node.?);
-        }
-    });
+    const t, const node, const markers = try TestParser.run(text, parseIdentifier);
+    defer t.deinit();
+
+    try t.expectASTSnapshot(node, snap(@src(),
+        \\ast.Node{
+        \\    .simple_value = ast.Node.SimpleValue{
+        \\        .kind = ast.SimpleValueKind.identifier,
+        \\        .id = string_interner.StringId(1),
+        \\    },
+        \\}
+    ));
+    try t.expectToken(TokenType.Abstract, "abstract", node.?);
+    try t.expectTokenAt(markers[0], node.?);
 }
 
 test "should return null if no identifier" {
@@ -506,11 +514,10 @@ test "should return null if no identifier" {
         \\123
     ;
 
-    try TestParser.run(text, parseIdentifier, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectAST(node, null);
-        }
-    });
+    const t, const node, _ = try TestParser.run(text, parseIdentifier);
+    defer t.deinit();
+
+    try t.expectAST(node, null);
 }
 
 test "should return null if not allowed keyword" {
@@ -518,11 +525,10 @@ test "should return null if not allowed keyword" {
         \\break
     ;
 
-    try TestParser.run(text, parseIdentifier, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectAST(node, null);
-        }
-    });
+    const t, const node, _ = try TestParser.run(text, parseIdentifier);
+    defer t.deinit();
+
+    try t.expectAST(node, null);
 }
 
 test "should parse literal" {
@@ -594,13 +600,17 @@ test "should parse literal" {
     };
 
     inline for (test_cases) |test_case| {
-        try TestParser.run(test_case[0], parseLiteral, struct {
-            pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(test_case[0])) !void {
-                try t.expectAST(node, AST.Node{ .simple_value = .{ .kind = test_case[1], .id = StringId.at(1) } });
-                try t.expectToken(test_case[2], test_case[3], node.?);
-                try t.expectTokenAt(markers[0], node.?);
-            }
+        const t, const node, const markers = try TestParser.run(test_case[0], parseLiteral);
+        defer t.deinit();
+
+        try t.expectAST(node, AST.Node{
+            .simple_value = .{
+                .kind = test_case[1],
+                .id = StringId.at(1),
+            },
         });
+        try t.expectToken(test_case[2], test_case[3], node.?);
+        try t.expectTokenAt(markers[0], node.?);
     }
 }
 
@@ -609,11 +619,10 @@ test "should return null if no literal" {
         \\identifier
     ;
 
-    try TestParser.run(text, parseLiteral, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectAST(node, null);
-        }
-    });
+    const t, const node, _ = try TestParser.run(text, parseLiteral);
+    defer t.deinit();
+
+    try t.expectAST(node, null);
 }
 
 test "should return null if not array literal" {
@@ -621,11 +630,10 @@ test "should return null if not array literal" {
         \\1
     ;
 
-    try TestParser.run(text, parseArrayLiteral, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectAST(node, null);
-        }
-    });
+    const t, const node, _ = try TestParser.run(text, parseArrayLiteral);
+    defer t.deinit();
+
+    try t.expectAST(node, null);
 }
 
 test "should parse array literal" {
@@ -724,7 +732,10 @@ test "should parse array literal" {
     };
 
     inline for (expects_map) |expected_items| {
-        try TestParser.runSnapshot(expected_items[0], parseArrayLiteral, expected_items[1]);
+        const t, const node, _ = try TestParser.run(expected_items[0], parseArrayLiteral);
+        defer t.deinit();
+
+        try t.expectASTSnapshot(node, expected_items[1]);
     }
 }
 
@@ -733,11 +744,10 @@ test "should return null if not object literal" {
         \\1
     ;
 
-    try TestParser.run(text, parseObjectLiteral, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectAST(node, null);
-        }
-    });
+    const t, const node, _ = try TestParser.run(text, parseObjectLiteral);
+    defer t.deinit();
+
+    try t.expectAST(node, null);
 }
 
 test "should parse object literal" {
@@ -751,21 +761,20 @@ test "should parse object literal" {
         \\}
     ;
 
-    try TestParser.run(text, parseObjectLiteral, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectASTSnapshot(node, snap(@src(),
-                \\ast.Node{
-                \\    .object_literal = [_]ast.Node.Index{
-                \\        ast.Node.Index(2), 
-                \\        ast.Node.Index(5), 
-                \\        ast.Node.Index(7), 
-                \\        ast.Node.Index(9), 
-                \\        ast.Node.Index(15)
-                \\    },
-                \\}
-            ));
-        }
-    });
+    const t, const node, _ = try TestParser.run(text, parseObjectLiteral);
+    defer t.deinit();
+
+    try t.expectASTSnapshot(node, snap(@src(),
+        \\ast.Node{
+        \\    .object_literal = [_]ast.Node.Index{
+        \\        ast.Node.Index(2), 
+        \\        ast.Node.Index(5), 
+        \\        ast.Node.Index(7), 
+        \\        ast.Node.Index(9), 
+        \\        ast.Node.Index(15)
+        \\    },
+        \\}
+    ));
 }
 
 test "should parse methods on object literal" {
@@ -780,27 +789,26 @@ test "should parse methods on object literal" {
         \\}
     ;
 
-    try TestParser.run(text, parseObjectLiteral, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
-            var expected_fields = [_]AST.Node.Index{ AST.Node.at(2), AST.Node.at(5), AST.Node.at(8), AST.Node.at(11), AST.Node.at(14), AST.Node.at(18) };
-            try t.expectAST(node, AST.Node{ .object_literal = &expected_fields });
-            try expectEqualStrings("object_literal", @tagName(t.getNode(node.?)));
-            try expectEqual(6, t.getNode(node.?).object_literal.len);
+    const t, const node, _ = try TestParser.run(text, parseObjectLiteral);
+    defer t.deinit();
 
-            const expected_methods = .{
-                .{ AST.FunctionFlags.None, "a" },
-                .{ AST.FunctionFlags.Async, "b" },
-                .{ AST.FunctionFlags.Generator, "c" },
-                .{ AST.FunctionFlags.Async | AST.FunctionFlags.Generator, "d" },
-                .{ AST.FunctionFlags.Getter, "e" },
-                .{ AST.FunctionFlags.Setter, "e" },
-            };
+    var expected_fields = [_]AST.Node.Index{ AST.Node.at(2), AST.Node.at(5), AST.Node.at(8), AST.Node.at(11), AST.Node.at(14), AST.Node.at(18) };
+    try t.expectAST(node, AST.Node{ .object_literal = &expected_fields });
+    try expectEqualStrings("object_literal", @tagName(t.getNode(node.?)));
+    try expectEqual(6, t.getNode(node.?).object_literal.len);
 
-            inline for (expected_methods, 0..) |expected_method, i| {
-                try t.expectSimpleMethod(t.getNode(node.?).object_literal[i], expected_method[0], expected_method[1]);
-            }
-        }
-    });
+    const expected_methods = .{
+        .{ AST.FunctionFlags.None, "a" },
+        .{ AST.FunctionFlags.Async, "b" },
+        .{ AST.FunctionFlags.Generator, "c" },
+        .{ AST.FunctionFlags.Async | AST.FunctionFlags.Generator, "d" },
+        .{ AST.FunctionFlags.Getter, "e" },
+        .{ AST.FunctionFlags.Setter, "e" },
+    };
+
+    inline for (expected_methods, 0..) |expected_method, i| {
+        try t.expectSimpleMethod(t.getNode(node.?).object_literal[i], expected_method[0], expected_method[1]);
+    }
 }
 
 test "should fail parsing object literal if comma is missing between fields" {
@@ -812,22 +820,20 @@ test "should fail parsing object literal if comma is missing between fields" {
         \\}
     ;
 
-    try TestParser.runAny(text, parseObjectLiteral, struct {
-        pub fn expect(t: TestParser, nodeOrError: ParserError!?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{","});
-        }
-    });
+    const t, const nodeOrError, _ = try TestParser.runCatch(text, parseObjectLiteral);
+    defer t.deinit();
+
+    try t.expectSyntaxError(nodeOrError, diagnostics.ARG_expected, .{","});
 }
 
 test "should fail parsing object literal if field name is invalid" {
     const test_cases = .{ "{ - }", "{ a - b }" };
 
     inline for (test_cases) |test_case| {
-        try TestParser.runAny(test_case, parseObjectLiteral, struct {
-            pub fn expect(t: TestParser, nodeOrError: ParserError!?AST.Node.Index, _: MarkerList(test_case)) !void {
-                try t.expectSyntaxError(nodeOrError, diagnostics.property_assignment_expected, .{});
-            }
-        });
+        const t, const nodeOrError, _ = try TestParser.runCatch(test_case, parseObjectLiteral);
+        defer t.deinit();
+
+        try t.expectSyntaxError(nodeOrError, diagnostics.property_assignment_expected, .{});
     }
 }
 
@@ -838,25 +844,23 @@ test "should fail parsing object literal if there is multiple closing commas" {
         \\}
     ;
 
-    try TestParser.runAny(text, parseObjectLiteral, struct {
-        pub fn expect(t: TestParser, nodeOrError: ParserError!?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectSyntaxError(nodeOrError, diagnostics.property_assignment_expected, .{});
-        }
-    });
+    const t, const nodeOrError, _ = try TestParser.runCatch(text, parseObjectLiteral);
+    defer t.deinit();
+
+    try t.expectSyntaxError(nodeOrError, diagnostics.property_assignment_expected, .{});
 }
 
 test "should parse grouping expression" {
     const text = "(a, b)";
 
-    try TestParser.run(text, parseGroupingExpression, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectASTSnapshot(node, snap(@src(),
-                \\ast.Node{
-                \\    .grouping = ast.Node.Index(2),
-                \\}
-            ));
-        }
-    });
+    const t, const node, _ = try TestParser.run(text, parseGroupingExpression);
+    defer t.deinit();
+
+    try t.expectASTSnapshot(node, snap(@src(),
+        \\ast.Node{
+        \\    .grouping = ast.Node.Index(2),
+        \\}
+    ));
 }
 
 test "should parse template literal with no substitution" {
@@ -865,18 +869,17 @@ test "should parse template literal with no substitution" {
         \\>^
     ;
 
-    try TestParser.run(text, parseTemplateLiteral, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectASTSnapshot(node, snap(@src(),
-                \\ast.Node{
-                \\    .template_literal = [_]ast.Node.Index{
-                \\        ast.Node.Index(0)
-                \\    },
-                \\}
-            ));
-            try t.expectTokenAt(markers[0], node.?);
-        }
-    });
+    const t, const node, const markers = try TestParser.run(text, parseTemplateLiteral);
+    defer t.deinit();
+
+    try t.expectASTSnapshot(node, snap(@src(),
+        \\ast.Node{
+        \\    .template_literal = [_]ast.Node.Index{
+        \\        ast.Node.Index(0)
+        \\    },
+        \\}
+    ));
+    try t.expectTokenAt(markers[0], node.?);
 }
 
 test "should parse template literal" {
@@ -885,39 +888,38 @@ test "should parse template literal" {
         \\>^
     ;
 
-    try TestParser.run(text, parseTemplateLiteral, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectASTSnapshot(node, snap(@src(),
-                \\ast.Node{
-                \\    .template_literal = [_]ast.Node.Index{
-                \\        ast.Node.Index(0), 
-                \\        ast.Node.Index(1), 
-                \\        ast.Node.Index(2)
-                \\    },
-                \\}
-            ));
-            try t.expectTokenAt(markers[0], node.?);
+    const t, const node, const markers = try TestParser.run(text, parseTemplateLiteral);
+    defer t.deinit();
 
-            try t.expectASTSnapshot(t.parser.getNode(node.?).template_literal[0], snap(@src(),
-                \\ast.Node{
-                \\    .template_part = string_interner.StringId(1),
-                \\}
-            ));
-            try t.expectASTSnapshot(t.parser.getNode(node.?).template_literal[1], snap(@src(),
-                \\ast.Node{
-                \\    .simple_value = ast.Node.SimpleValue{
-                \\        .kind = ast.SimpleValueKind.identifier,
-                \\        .id = string_interner.StringId(2),
-                \\    },
-                \\}
-            ));
-            try t.expectASTSnapshot(t.parser.getNode(node.?).template_literal[2], snap(@src(),
-                \\ast.Node{
-                \\    .template_part = string_interner.StringId(3),
-                \\}
-            ));
-        }
-    });
+    try t.expectASTSnapshot(node, snap(@src(),
+        \\ast.Node{
+        \\    .template_literal = [_]ast.Node.Index{
+        \\        ast.Node.Index(0), 
+        \\        ast.Node.Index(1), 
+        \\        ast.Node.Index(2)
+        \\    },
+        \\}
+    ));
+    try t.expectTokenAt(markers[0], node.?);
+
+    try t.expectASTSnapshot(t.parser.getNode(node.?).template_literal[0], snap(@src(),
+        \\ast.Node{
+        \\    .template_part = string_interner.StringId(1),
+        \\}
+    ));
+    try t.expectASTSnapshot(t.parser.getNode(node.?).template_literal[1], snap(@src(),
+        \\ast.Node{
+        \\    .simple_value = ast.Node.SimpleValue{
+        \\        .kind = ast.SimpleValueKind.identifier,
+        \\        .id = string_interner.StringId(2),
+        \\    },
+        \\}
+    ));
+    try t.expectASTSnapshot(t.parser.getNode(node.?).template_literal[2], snap(@src(),
+        \\ast.Node{
+        \\    .template_part = string_interner.StringId(3),
+        \\}
+    ));
 }
 
 test "should parse template literal with multiple substitutions" {
@@ -926,22 +928,21 @@ test "should parse template literal with multiple substitutions" {
         \\>^
     ;
 
-    try TestParser.run(text, parseTemplateLiteral, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectASTSnapshot(node, snap(@src(),
-                \\ast.Node{
-                \\    .template_literal = [_]ast.Node.Index{
-                \\        ast.Node.Index(0), 
-                \\        ast.Node.Index(1), 
-                \\        ast.Node.Index(2), 
-                \\        ast.Node.Index(3), 
-                \\        ast.Node.Index(4)
-                \\    },
-                \\}
-            ));
-            try t.expectTokenAt(markers[0], node.?);
-        }
-    });
+    const t, const node, const markers = try TestParser.run(text, parseTemplateLiteral);
+    defer t.deinit();
+
+    try t.expectASTSnapshot(node, snap(@src(),
+        \\ast.Node{
+        \\    .template_literal = [_]ast.Node.Index{
+        \\        ast.Node.Index(0), 
+        \\        ast.Node.Index(1), 
+        \\        ast.Node.Index(2), 
+        \\        ast.Node.Index(3), 
+        \\        ast.Node.Index(4)
+        \\    },
+        \\}
+    ));
+    try t.expectTokenAt(markers[0], node.?);
 }
 
 test "should parse template literal with object as substitution" {
@@ -950,38 +951,37 @@ test "should parse template literal with object as substitution" {
         \\>^
     ;
 
-    try TestParser.run(text, parseTemplateLiteral, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectASTSnapshot(node, snap(@src(),
-                \\ast.Node{
-                \\    .template_literal = [_]ast.Node.Index{
-                \\        ast.Node.Index(0), 
-                \\        ast.Node.Index(4), 
-                \\        ast.Node.Index(5)
-                \\    },
-                \\}
-            ));
-            try t.expectTokenAt(markers[0], node.?);
+    const t, const node, const markers = try TestParser.run(text, parseTemplateLiteral);
+    defer t.deinit();
 
-            try t.expectASTSnapshot(t.parser.getNode(node.?).template_literal[0], snap(@src(),
-                \\ast.Node{
-                \\    .template_part = string_interner.StringId(1),
-                \\}
-            ));
-            try t.expectASTSnapshot(t.parser.getNode(node.?).template_literal[1], snap(@src(),
-                \\ast.Node{
-                \\    .object_literal = [_]ast.Node.Index{
-                \\        ast.Node.Index(3)
-                \\    },
-                \\}
-            ));
-            try t.expectASTSnapshot(t.parser.getNode(node.?).template_literal[2], snap(@src(),
-                \\ast.Node{
-                \\    .template_part = string_interner.StringId(4),
-                \\}
-            ));
-        }
-    });
+    try t.expectASTSnapshot(node, snap(@src(),
+        \\ast.Node{
+        \\    .template_literal = [_]ast.Node.Index{
+        \\        ast.Node.Index(0), 
+        \\        ast.Node.Index(4), 
+        \\        ast.Node.Index(5)
+        \\    },
+        \\}
+    ));
+    try t.expectTokenAt(markers[0], node.?);
+
+    try t.expectASTSnapshot(t.parser.getNode(node.?).template_literal[0], snap(@src(),
+        \\ast.Node{
+        \\    .template_part = string_interner.StringId(1),
+        \\}
+    ));
+    try t.expectASTSnapshot(t.parser.getNode(node.?).template_literal[1], snap(@src(),
+        \\ast.Node{
+        \\    .object_literal = [_]ast.Node.Index{
+        \\        ast.Node.Index(3)
+        \\    },
+        \\}
+    ));
+    try t.expectASTSnapshot(t.parser.getNode(node.?).template_literal[2], snap(@src(),
+        \\ast.Node{
+        \\    .template_part = string_interner.StringId(4),
+        \\}
+    ));
 }
 
 test "should return syntax error if substitution is unclosed" {
@@ -990,11 +990,10 @@ test "should return syntax error if substitution is unclosed" {
         \\>     ^
     ;
 
-    try TestParser.runAny(text, parseTemplateLiteral, struct {
-        pub fn expect(t: TestParser, nodeOrError: ParserError!?AST.Node.Index, comptime markers: MarkerList(text)) !void {
-            try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{"}"}, markers[0]);
-        }
-    });
+    const t, const nodeOrError, const markers = try TestParser.runCatch(text, parseTemplateLiteral);
+    defer t.deinit();
+
+    try t.expectSyntaxErrorAt(nodeOrError, diagnostics.ARG_expected, .{"}"}, markers[0]);
 }
 
 test "should return null if no grouping expression" {
@@ -1002,9 +1001,8 @@ test "should return null if no grouping expression" {
         \\1
     ;
 
-    try TestParser.run(text, parseGroupingExpression, struct {
-        pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(text)) !void {
-            try t.expectAST(node, null);
-        }
-    });
+    const t, const node, _ = try TestParser.run(text, parseGroupingExpression);
+    defer t.deinit();
+
+    try t.expectAST(node, null);
 }

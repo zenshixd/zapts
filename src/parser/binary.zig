@@ -15,7 +15,6 @@ const parseConditionalExpression = @import("expressions.zig").parseConditionalEx
 
 const TestParser = @import("../tests/test_parser.zig");
 const Marker = TestParser.Marker;
-const MarkerList = TestParser.MarkerList;
 
 const expectEqual = std.testing.expectEqual;
 const expectEqualDeep = std.testing.expectEqualDeep;
@@ -150,7 +149,7 @@ pub fn expectBinaryExpressionExtra(parser: *Parser, operator_index: comptime_int
 }
 
 test "should parse binary expression" {
-    const test_cases = .{
+    const test_cases = [_][:0]const u8{
         "a ?? b",
         "a || b",
         "a && b",
@@ -180,16 +179,16 @@ test "should parse binary expression" {
     const marker = "  ^";
 
     try expectEqual(test_cases.len, binary_operators.len);
+
     inline for (test_cases, 0..) |test_case, i| {
-        try TestParser.run(test_case, parseBinaryExpression, struct {
-            pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(test_case)) !void {
-                try t.expectAST(node, @unionInit(AST.Node, binary_operators[i][1], .{
-                    .left = AST.Node.at(0),
-                    .right = AST.Node.at(1),
-                }));
-                try t.expectTokenAt(comptime Marker.fromText(marker), node.?);
-            }
-        });
+        const t, const node, _ = try TestParser.run(test_case, parseBinaryExpression);
+        defer t.deinit();
+
+        try t.expectAST(node, @unionInit(AST.Node, binary_operators[i][1], .{
+            .left = AST.Node.at(0),
+            .right = AST.Node.at(1),
+        }));
+        try t.expectTokenAt(comptime Marker.fromText(marker), node.?);
     }
 }
 
@@ -223,14 +222,13 @@ test "should parse assignment expression" {
 
     try expectEqual(test_cases.len, assignment_map.len);
     inline for (test_cases, 0..) |test_case, i| {
-        try TestParser.run(test_case, parseAssignment, struct {
-            pub fn expect(t: TestParser, node: ?AST.Node.Index, _: MarkerList(test_case)) !void {
-                try t.expectAST(node, @unionInit(AST.Node, assignment_map[i][1], .{
-                    .left = AST.Node.at(0),
-                    .right = AST.Node.at(1),
-                }));
-                try t.expectTokenAt(comptime Marker.fromText(marker), node.?);
-            }
-        });
+        const t, const node, _ = try TestParser.run(test_case, parseAssignment);
+        defer t.deinit();
+
+        try t.expectAST(node, @unionInit(AST.Node, assignment_map[i][1], .{
+            .left = AST.Node.at(0),
+            .right = AST.Node.at(1),
+        }));
+        try t.expectTokenAt(comptime Marker.fromText(marker), node.?);
     }
 }
