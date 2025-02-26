@@ -1,95 +1,128 @@
 const std = @import("std");
 const FileSource = std.build.FileSource;
 
+pub const BuildConfig = struct {
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.Mode,
+    filter: ?[]const u8,
+};
+
 pub fn build(b: *std.Build) void {
-    const gpa = std.heap.page_allocator;
+    const config = getBuildConfig(b);
+
+    addZaptsExe(b, config);
+    addUnitTests(b, config);
+    addRefTests(b, config);
+}
+
+fn getBuildConfig(b: *std.Build) BuildConfig {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
-    const zapts_module = b.addModule("zapts", .{
-        .root_source_file = b.path("src/compile.zig"),
-    });
 
-    const exe = b.addExecutable(.{
-        .name = "zapts",
-        .root_source_file = zapts_module.root_source_file,
+    return BuildConfig{
         .target = target,
         .optimize = optimize,
+        .filter = b.option([]const u8, "filter", "Filter tests to run"),
+    };
+}
+
+fn addZaptsExe(b: *std.Build, config: BuildConfig) void {
+    const exe = b.addExecutable(.{
+        .name = "zapts",
+        .root_source_file = b.path("src/main.zig"),
+        .target = config.target,
+        .optimize = config.optimize,
     });
 
     b.installArtifact(exe);
 
-    const run_cmd = b.addRunArtifact(exe);
-    run_cmd.step.dependOn(b.getInstallStep());
+    const run = b.addRunArtifact(exe);
+    run.step.dependOn(b.getInstallStep());
 
     if (b.args) |args| {
-        run_cmd.addArgs(args);
+        run.addArgs(args);
     }
 
-    const run_step = b.step("run", "Run the app");
-    run_step.dependOn(&run_cmd.step);
+    const step = b.step("run", "Run the app");
+    step.dependOn(&run.step);
+}
 
-    const maybe_filter = b.option([]const u8, "filter", "Filter tests to run");
-    const test_name = if (maybe_filter) |filter|
-        std.mem.replaceOwned(u8, gpa, filter, " ", "_") catch @panic("oom")
-    else
-        "test";
-    defer {
-        if (maybe_filter) |_| {
-            gpa.free(test_name);
-        }
+fn addUnitTests(b: *std.Build, config: BuildConfig) void {
+    var test_name = std.ArrayList(u8).init(std.heap.page_allocator);
+    defer test_name.deinit();
+
+    if (config.filter) |filter| {
+        test_name.appendSlice("test_") catch unreachable;
+        test_name.appendSlice(filter) catch unreachable;
+    } else {
+        test_name.appendSlice("test") catch unreachable;
     }
-    const exe_unit_tests = b.addTest(.{
+
+    std.mem.replaceScalar(u8, test_name.items, ' ', '_');
+
+    const clean_coverage = b.addSystemCommand(&.{
+        "rm",
+        "-rf",
+        b.pathJoin(&.{ b.build_root.path.?, "lcov-report" }),
+    });
+    const exe = b.addTest(.{
         .root_source_file = b.path("src/main.zig"),
-        .name = test_name,
-        .target = target,
-        .optimize = optimize,
+        .name = test_name.items,
+        .target = config.target,
+        .optimize = config.optimize,
         .test_runner = .{
             .path = b.path("src/tests/unit_tests_runner.zig"),
             .mode = .simple,
         },
-        .filter = maybe_filter,
+        .filter = config.filter,
     });
 
-    const run_unit_tests = b.addSystemCommand(&.{
+    const run = b.addSystemCommand(&.{
         "kcov",
         "--clean",
         "--include-pattern=src",
         b.pathJoin(&.{ b.build_root.path.?, "lcov-report" }),
     });
-    run_unit_tests.addArtifactArg(exe_unit_tests);
+    run.addArtifactArg(exe);
 
     if (b.option(bool, "update", "Update snapshots")) |_| {
-        run_unit_tests.setEnvironmentVariable("ZAPTS_SNAPSHOT_UPDATE", "1");
+        run.setEnvironmentVariable("ZAPTS_SNAPSHOT_UPDATE", "1");
     }
 
-    const unit_tests_step = b.step("test", "Run unit tests");
-    unit_tests_step.dependOn(&run_unit_tests.step);
+    const step = b.step("test", "Run unit tests");
+    step.dependOn(&clean_coverage.step);
+    step.dependOn(&run.step);
+}
 
-    const run_test_artifact_path = b.addSystemCommand(&.{
-        "echo",
-    });
-    run_test_artifact_path.addArtifactArg(exe_unit_tests);
+fn addRefTests(b: *std.Build, config: BuildConfig) void {
+    var test_name = std.ArrayList(u8).init(std.heap.page_allocator);
+    defer test_name.deinit();
 
-    const test_artifact_path_step = b.step("test:artifact", "Print test artifact path");
-    test_artifact_path_step.dependOn(&run_test_artifact_path.step);
+    if (config.filter) |filter| {
+        test_name.appendSlice("reftest_") catch unreachable;
+        test_name.appendSlice(filter) catch unreachable;
+    } else {
+        test_name.appendSlice("reftest") catch unreachable;
+    }
+    std.mem.replaceScalar(u8, test_name.items, ' ', '_');
 
-    const compile_tests = b.addTest(.{
-        .root_source_file = b.path("tests/e2e_tests_runner.zig"),
-        .target = target,
-        .optimize = optimize,
+    const exe = b.addTest(.{
+        .name = test_name.items,
+        .root_source_file = b.path("src/tests/ref_tests_runner.zig"),
+        .target = config.target,
+        .optimize = config.optimize,
         .test_runner = .{
-            .path = b.path("tests/e2e_tests_runner.zig"),
+            .path = b.path("src/tests/ref_tests_runner.zig"),
             .mode = .simple,
         },
+        .filter = config.filter,
     });
-    compile_tests.root_module.addImport("zapts", zapts_module);
+    exe.root_module.addImport("zapts", b.createModule(.{
+        .root_source_file = b.path("src/root.zig"),
+    }));
 
-    const run_compile_tests = b.addRunArtifact(compile_tests);
+    const run = b.addRunArtifact(exe);
 
-    const compile_tests_step = b.step("test:compiler", "Run local compiler tests");
-    compile_tests_step.dependOn(&run_compile_tests.step);
-
-    if (b.args) |args| {
-        run_compile_tests.addArgs(args);
-    }
+    const step = b.step("test:ref", "Run reference tests");
+    step.dependOn(&run.step);
 }

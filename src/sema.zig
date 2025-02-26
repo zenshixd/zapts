@@ -8,43 +8,36 @@ const Reporter = @import("reporter.zig");
 const diagnostics = @import("diagnostics.zig");
 const StringId = @import("string_interner.zig").StringId;
 const Symbol = @import("symbols.zig").Symbol;
-const Type = @import("type.zig");
+const Type = @import("types.zig").Type;
 
 const Sema = @This();
 
-pub const SemaError = error{ SemanticError, OutOfMemory, NoSpaceLeft };
+pub const SemaError = error{ SemanticError, OutOfMemory, NoSpaceLeft, UnknownNode };
 
 parser: *Parser,
 reporter: *Reporter,
 
 gpa: std.mem.Allocator,
-node: AST.Node = undefined,
-token: Token.Index = Token.at(0),
-symbols: std.MultiArrayList(Symbol) = .empty,
-declarations: std.AutoHashMapUnmanaged(StringId, Symbol.Index) = .empty,
+declarations: std.AutoHashMapUnmanaged(StringId, Symbol) = .empty,
 
 pub fn deinit(self: *Sema) void {
-    self.symbols.deinit(self.gpa);
     self.declarations.deinit(self.gpa);
 }
 
-pub fn report(self: *Sema, comptime error_msg: diagnostics.DiagnosticMessage, args: anytype) void {
-    self.reporter.put(error_msg, args, self.token);
+pub fn report(self: *Sema, node_idx: AST.Node.Index, comptime error_msg: diagnostics.DiagnosticMessage, args: anytype) void {
+    const token = self.parser.getRawNode(node_idx).main_token;
+    self.reporter.put(error_msg, args, token);
 }
 
 pub fn getType(self: Sema, index: Type.Index) Type {
-    return self.parser.types.items[index.int()];
+    return self.parser.getType(index);
 }
 
 pub fn addType(self: *Sema, kind: Type.Kind, data: Type.Data) !Type.Index {
-    const idx = self.parser.types.items.len;
-
-    try self.parser.types.append(.{
+    return try self.parser.addType(.{
         .kind = kind,
         .data = data,
     });
-
-    return Type.at(@intCast(idx));
 }
 
 pub fn getNodeType(self: Sema, index: AST.Node.Index) Type.Index {
@@ -55,33 +48,11 @@ pub fn setNodeType(self: *Sema, index: AST.Node.Index, ty: Type.Index) void {
     self.parser.ast.nodes.items[index.int()].ty = ty;
 }
 
-pub fn getSymbol(self: Sema, index: Symbol.Index) Symbol {
-    return self.symbols.get(index.int());
-}
-
-pub fn addSymbolAsType(self: *Sema, name: StringId, ty: Type.Index) Symbol.Index {
-    return self.addSymbol(name, .type, ty);
-}
-
-pub fn addSymbolAsValue(self: *Sema, name: StringId, ty: Type.Index) Symbol.Index {
-    return self.addSymbol(name, .value, ty);
-}
-
-pub fn addSymbol(self: *Sema, name: StringId, kind: Symbol.Kind, ty: Type.Index) Symbol.Index {
-    const index = Symbol.at(self.symbols.len);
-    self.symbols.append(self.gpa, Symbol{
-        .name = name,
-        .kind = kind,
-        .ty = ty,
-    }) catch unreachable;
-    return index;
-}
-
-pub fn getDeclaration(self: Sema, name: StringId) ?Symbol.Index {
+pub fn getDeclaration(self: Sema, name: StringId) ?Symbol {
     return self.declarations.get(name);
 }
 
-pub fn addDeclaration(self: *Sema, name: StringId, symbol: Symbol.Index) void {
+pub fn addDeclaration(self: *Sema, name: StringId, symbol: Symbol) void {
     self.declarations.put(self.gpa, name, symbol) catch unreachable;
 }
 
@@ -98,10 +69,9 @@ pub fn analyzeNode(self: *Sema, node_idx: AST.Node.Index) SemaError!void {
         return;
     }
 
-    self.node = self.parser.getNode(node_idx);
-    self.token = self.parser.getRawNode(node_idx).main_token;
+    const node = self.parser.getNode(node_idx);
 
-    switch (self.node) {
+    switch (node) {
         .root => |root| {
             for (root) |child_node_idx| {
                 try self.analyzeNode(child_node_idx);
@@ -120,8 +90,10 @@ pub fn analyzeNode(self: *Sema, node_idx: AST.Node.Index) SemaError!void {
                     self.getNodeType(child_node.decl_binding.value);
 
                 self.setNodeType(child_node_idx, binding_type);
-                const binding_symbol = self.addSymbolAsValue(child_node.decl_binding.name, binding_type);
-                self.addDeclaration(child_node.decl_binding.name, binding_symbol);
+                self.addDeclaration(child_node.decl_binding.name, .{
+                    .kind = .value,
+                    .ty = binding_type,
+                });
             }
         },
         .assignment => |assignment| {
@@ -134,7 +106,7 @@ pub fn analyzeNode(self: *Sema, node_idx: AST.Node.Index) SemaError!void {
             if (self.getNodeType(assignment.left) != self.getNodeType(assignment.right)) {
                 const lty = self.getType(self.getNodeType(assignment.left));
                 const rty = self.getType(self.getNodeType(assignment.right));
-                self.report(diagnostics.type_ARG_is_not_assignable_to_type_ARG, .{ lty, rty });
+                self.report(node_idx, diagnostics.type_ARG_is_not_assignable_to_type_ARG, .{ lty, rty });
             }
         },
         .simple_value => |val| {
@@ -148,13 +120,13 @@ pub fn analyzeNode(self: *Sema, node_idx: AST.Node.Index) SemaError!void {
                 .undefined, .void => self.setNodeType(node_idx, .undefined),
                 .unknown => self.setNodeType(node_idx, .unknown),
                 .never => self.setNodeType(node_idx, .never),
-                .this => self.report(diagnostics.ARG_expected, .{"not implemented"}),
+                .this => self.report(node_idx, diagnostics.ARG_expected, .{"not implemented"}),
                 .any => self.setNodeType(node_idx, .any),
                 .private_identifier, .identifier => {
                     if (self.getDeclaration(val.id)) |decl| {
-                        self.setNodeType(node_idx, self.getSymbol(decl).ty);
+                        self.setNodeType(node_idx, decl.ty);
                     } else {
-                        self.report(diagnostics.cannot_find_name_ARG, .{self.parser.lookupStr(val.id)});
+                        self.report(node_idx, diagnostics.cannot_find_name_ARG, .{self.parser.lookupStr(val.id)});
                         self.setNodeType(node_idx, .any);
                     }
                 },
@@ -185,25 +157,26 @@ pub fn analyzeNode(self: *Sema, node_idx: AST.Node.Index) SemaError!void {
                 .undefined, .void => self.setNodeType(node_idx, .undefined),
                 .unknown => self.setNodeType(node_idx, .unknown),
                 .never => self.setNodeType(node_idx, .never),
-                .this => self.report(diagnostics.ARG_expected, .{"not implemented"}),
+                .this => self.report(node_idx, diagnostics.ARG_expected, .{"not implemented"}),
                 .any => self.setNodeType(node_idx, .any),
                 .private_identifier, .identifier => {
                     if (self.getDeclaration(simple_type.id)) |decl| {
-                        self.setNodeType(node_idx, self.getSymbol(decl).ty);
+                        self.setNodeType(node_idx, decl.ty);
                     } else {
-                        self.report(diagnostics.cannot_find_name_ARG, .{self.parser.lookupStr(simple_type.id)});
+                        self.report(node_idx, diagnostics.cannot_find_name_ARG, .{self.parser.lookupStr(simple_type.id)});
                         self.setNodeType(node_idx, .any);
                     }
                 },
             }
         },
-        else => try self.unknownNode(),
+        else => return try self.unknownNode(node_idx),
     }
 }
 
-fn unknownNode(sema: *Sema) SemaError!void {
-    var buf: [256]u8 = undefined;
-    @panic(try std.fmt.bufPrint(&buf, "Unknown node {s}", .{@tagName(sema.node)}));
+fn unknownNode(self: *Sema, node_idx: AST.Node.Index) SemaError!void {
+    const node = self.parser.getNode(node_idx);
+    std.debug.print("Unknown node {s}", .{@tagName(node)});
+    return error.UnknownNode;
 }
 
 test "analyze" {

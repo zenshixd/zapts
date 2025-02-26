@@ -28,7 +28,7 @@ var arena: std.heap.ArenaAllocator = std.heap.ArenaAllocator.init(std.testing.al
 
 parser: Parser,
 
-pub fn run(text: [:0]const u8, fn_ptr: anytype) !struct { TestParser, ?AST.Node.Index, []Marker } {
+pub fn run(text: [:0]const u8, fn_ptr: anytype) !struct { TestParser, ReturnTypeOf(fn_ptr), []Marker } {
     const sourceText, const markers = try getMarkers(arena.allocator(), text);
     const reporter = try arena.allocator().create(Reporter);
     reporter.* = Reporter.init(arena.allocator());

@@ -1,6 +1,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
+pub const MAX_FILE_SIZE = std.math.maxInt(u32);
 pub const newline = "\n";
 pub const PUNCTUATION_CHARS = ".,:;()[]'\"{}";
 pub const OPERATOR_CHARS = "<>?+-=*|&!%/\\";

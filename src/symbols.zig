@@ -1,12 +1,11 @@
 const std = @import("std");
 const Token = @import("consts.zig").Token;
 const StringId = @import("string_interner.zig").StringId;
-const Type = @import("type.zig");
+const Type = @import("types.zig").Type;
 
 const AST = @import("ast.zig");
 
 pub const Symbol = struct {
-    name: StringId,
     kind: Kind,
     ty: Type.Index,
 

@@ -1,7 +1,7 @@
 const std = @import("std");
 const Lexer = @import("lexer.zig");
+const Reporter = @import("reporter.zig");
 const Parser = @import("parser.zig");
-const Printer = @import("printer.zig");
 const OutputFiles = @import("printer.zig").OutputFiles;
 
 const fs = std.fs;
@@ -20,6 +20,7 @@ pub const CompileResult = struct {
     source_filename: []const u8,
     source_buffer: []const u8,
     outputFiles: []OutputFiles,
+    messages: Reporter.ErrorList.Slice,
 };
 
 pub fn compile(opts: CompileOptions) ![]CompileResult {
@@ -47,29 +48,20 @@ pub fn compile(opts: CompileOptions) ![]CompileResult {
 }
 
 pub fn compileBuffer(allocator: std.mem.Allocator, filename: []const u8, buffer: [:0]const u8) !CompileResult {
-    var parser = Parser.init(allocator, buffer);
+    var reporter = Reporter.init(allocator);
+    defer reporter.deinit();
+
+    var parser = Parser.init(allocator, buffer, &reporter);
     defer parser.deinit();
 
-    _ = parser.parse() catch |err| {
-        std.log.info("Error: {}", .{err});
-        std.log.info("Current token: {}", .{parser.token()});
-        for (parser.errors.items) |parser_error| {
-            std.log.info("{s}", .{parser_error});
-        }
-        return err;
-    };
-
-    for (parser.errors.items) |parser_error| {
-        std.debug.print("Error: {s}\n", .{parser_error});
-    }
-
-    var printer = Printer.init(allocator, filename, buffer, &parser);
-
-    const output = try printer.print();
+    _ = try parser.parse();
 
     return CompileResult{
         .source_filename = filename,
         .source_buffer = buffer,
-        .outputFiles = try allocator.dupe(OutputFiles, &.{output}),
+        .outputFiles = try allocator.dupe(OutputFiles, &[_]OutputFiles{
+            .{ .filename = "filename", .buffer = "buffer" },
+        }),
+        .messages = try reporter.toOwnedSlice(),
     };
 }

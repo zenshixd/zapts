@@ -147,6 +147,14 @@ pub fn unsetContext(self: *Self, context: Context) void {
 }
 
 pub fn next(self: *Self, start_index: u32) Token {
+    if (self.buffer.len == 0) {
+        return .{
+            .type = .Eof,
+            .start = 0,
+            .end = 0,
+        };
+    }
+
     var index = start_index;
     var result: Token = .{
         .type = undefined,
@@ -504,7 +512,13 @@ pub fn next(self: *Self, start_index: u32) Token {
                     result.type = .LineComment;
                     break;
                 },
-                else => {},
+                else => {
+                    if (self.is_eof(index)) {
+                        index -= 1;
+                        result.type = .LineComment;
+                        break;
+                    }
+                },
             },
             .multiline_comment => switch (self.buffer[index]) {
                 '*' => {
@@ -738,7 +752,13 @@ pub fn next(self: *Self, start_index: u32) Token {
                     result.type = .Shebang;
                     break;
                 },
-                else => {},
+                else => {
+                    if (self.is_eof(index)) {
+                        result.type = .Shebang;
+                        index -= 1;
+                        break;
+                    }
+                },
             },
             .escape_sequence => switch (self.buffer[index]) {
                 'u' => state = .escape_sequence_unicode,

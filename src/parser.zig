@@ -6,7 +6,8 @@ const TokenType = @import("consts.zig").TokenType;
 const Reporter = @import("reporter.zig");
 const StringInterner = @import("string_interner.zig");
 const StringId = @import("string_interner.zig").StringId;
-const Type = @import("type.zig");
+const Types = @import("types.zig");
+const Type = @import("types.zig").Type;
 
 const ErrorUnionOf = @import("meta.zig").ErrorUnionOf;
 const ReturnTypeOf = @import("meta.zig").ReturnTypeOf;
@@ -27,7 +28,7 @@ const diagnostics = @import("diagnostics.zig");
 const TestParser = @import("tests/test_parser.zig");
 const Marker = TestParser.Marker;
 
-const parseStatement = @import("parser/statements.zig").parseStatement;
+const expectStatement = @import("parser/statements.zig").expectStatement;
 
 const Parser = @This();
 pub const ParserError = error{ SyntaxError, OutOfMemory };
@@ -46,7 +47,7 @@ tokens: std.ArrayList(Token),
 cur_token: Token.Index = Token.at(0),
 ast: AST = .{},
 str_interner: StringInterner = .{},
-types: std.ArrayList(Type),
+types: Types = .{},
 
 pub fn init(gpa: std.mem.Allocator, buffer: [:0]const u8, reporter: *Reporter) Parser {
     return .{
@@ -55,14 +56,13 @@ pub fn init(gpa: std.mem.Allocator, buffer: [:0]const u8, reporter: *Reporter) P
         .buffer = buffer,
         .lexer = .{ .reporter = reporter, .buffer = buffer },
         .tokens = std.ArrayList(Token).init(gpa),
-        .types = Type.initArray(gpa),
     };
 }
 
 pub fn deinit(self: *Parser) void {
     self.tokens.deinit();
     self.ast.deinit(self.gpa);
-    self.types.deinit();
+    self.types.deinit(self.gpa);
     self.str_interner.deinit(self.gpa);
 }
 
@@ -97,6 +97,15 @@ pub fn internStr(self: *Parser, tok_idx: Token.Index) StringId {
 
     return self.str_interner.intern(self.gpa, self.tokens.items[tok_idx.int()].literal(self.buffer));
 }
+
+pub fn getType(self: Parser, index: Type.Index) Type {
+    return self.types.getType(index);
+}
+
+pub fn addType(self: *Parser, ty: Type) !Type.Index {
+    return self.types.addType(self.gpa, ty);
+}
+
 pub fn parse(self: *Parser) ParserError!AST.Node.Index {
     const root_idx = self.addRawNode(.{
         .tag = .root,
@@ -112,9 +121,8 @@ pub fn parse(self: *Parser) ParserError!AST.Node.Index {
             continue;
         }
 
-        if (try parseStatement(self)) |node| {
-            try nodes.append(node);
-        }
+        const node = try expectStatement(self);
+        try nodes.append(node);
     }
 
     const subrange = self.listToSubrange(nodes.items);
@@ -250,6 +258,7 @@ pub fn needsSemicolon(self: Parser, node: AST.Node.Index) bool {
     if (node == AST.Node.Empty) {
         return false;
     }
+
     const nodeRaw = self.getRawNode(node);
     var tag = nodeRaw.tag;
     if (tag == .export_node or tag == .export_default) {

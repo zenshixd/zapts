@@ -431,7 +431,7 @@ test "should parse static block" {
         \\    },
         \\}
     ));
-    try t.expectTokenAt(markers[0], node.?);
+    try t.expectTokenAt(markers[0], node);
 }
 
 test "should parse static field" {
@@ -451,7 +451,7 @@ test "should parse static field" {
         \\    },
         \\}
     ));
-    try t.expectTokenAt(markers[0], node.?);
+    try t.expectTokenAt(markers[0], node);
 }
 
 test "should parse class member with modifiers" {
@@ -519,7 +519,7 @@ test "should parse class member with modifiers" {
         defer t.deinit();
 
         try t.expectASTSnapshot(node, test_case[1]);
-        try t.expectTokenAt(comptime Marker.fromText(marker), node.?);
+        try t.expectTokenAt(comptime Marker.fromText(marker), node);
     }
 }
 

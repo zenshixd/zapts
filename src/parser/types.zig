@@ -417,7 +417,7 @@ test "should parse optional data type" {
         \\    },
         \\}
     ));
-    try t.expectTokenAt(markers[0], node.?);
+    try t.expectTokenAt(markers[0], node);
 }
 
 test "should return Empty node if no data type" {

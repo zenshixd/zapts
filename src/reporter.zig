@@ -4,6 +4,8 @@ const diagnostics = @import("diagnostics.zig");
 
 const Self = @This();
 
+pub const ErrorList = std.MultiArrayList(Message);
+
 pub const Message = struct {
     message: []const u8,
     location: Token.Index,
@@ -17,7 +19,7 @@ pub const Message = struct {
 };
 
 gpa: std.mem.Allocator,
-errors: std.MultiArrayList(Message),
+errors: ErrorList = .empty,
 
 pub fn init(allocator: std.mem.Allocator) Self {
     return .{
@@ -43,4 +45,8 @@ pub fn print(self: *Self, tokens: []const Token) void {
         stderr.print("{s}\n", .{self.errors.items(.message)[i]}) catch @panic("Out of memory");
         stderr.print("at token: {}\n", .{tokens[self.errors.items(.location)[i].int()]}) catch @panic("Out of memory");
     }
+}
+
+pub fn toOwnedSlice(self: *Self) !ErrorList.Slice {
+    return self.errors.toOwnedSlice();
 }
