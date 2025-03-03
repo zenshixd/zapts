@@ -2,6 +2,7 @@ const std = @import("std");
 const consts = @import("consts.zig");
 
 const Reporter = @import("reporter.zig");
+const MessageId = @import("reporter.zig").MessageId;
 const diagnostics = @import("diagnostics.zig");
 const Token = consts.Token;
 const TokenType = consts.TokenType;
@@ -918,7 +919,7 @@ fn expectSyntaxErrorWithContexts(text: [:0]const u8, contextsList: []ContextChan
 
     var buffer: [512]u8 = undefined;
     const expected_string = try std.fmt.bufPrint(&buffer, expected_error.format(), args);
-    try expectEqualStrings(expected_string, lexer.reporter.errors.items(.message)[0]);
+    try expectEqualStrings(expected_string, lexer.reporter.getMessage(MessageId.at(0)));
 }
 
 test "is_whitespace" {

@@ -7,6 +7,7 @@ const diagnostics = @import("../diagnostics.zig");
 const Parser = @import("../parser.zig");
 const ParserError = @import("../parser.zig").ParserError;
 const Reporter = @import("../reporter.zig");
+const MessageId = @import("../reporter.zig").MessageId;
 
 const Snapshot = @import("snapshots.zig").Snapshot;
 const expectSnapshotMatch = @import("snapshots.zig").expectSnapshotMatch;
@@ -206,7 +207,7 @@ pub fn expectSyntaxError(
     const expected_string = try std.fmt.allocPrint(std.testing.allocator, expected_error.format(), args);
     defer std.testing.allocator.free(expected_string);
 
-    try expectEqualStrings(expected_string, t.parser.reporter.errors.items(.message)[0]);
+    try expectEqualStrings(expected_string, t.parser.reporter.getMessage(MessageId.at(0)));
 }
 
 pub fn expectSyntaxErrorAt(

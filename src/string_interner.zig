@@ -40,7 +40,7 @@ pub fn lookup(self: *StringInterner, id: StringId) ?[]const u8 {
     }
 
     const loc = self.string_table.items[@intFromEnum(id)];
-    return self.string_bytes.items[loc.pos .. loc.pos + loc.len];
+    return self.string_bytes.items[loc.pos..][0..loc.len];
 }
 
 pub fn search(self: *StringInterner, str: []const u8) ?StringId {

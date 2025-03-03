@@ -91,6 +91,7 @@ pub const Type = struct {
         none: void,
         literal: StringId,
     };
+
     pub fn format(self: Type, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
         if (self.kind != .other_type) {
             try writer.print("{s}", .{@tagName(self.kind)});
