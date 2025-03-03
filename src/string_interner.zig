@@ -1,4 +1,5 @@
 const std = @import("std");
+const assert = std.debug.assert;
 const Reporter = @import("reporter.zig");
 
 const expectEqual = std.testing.expectEqual;
@@ -7,24 +8,26 @@ const expectEqualStrings = std.testing.expectEqualStrings;
 const StringInterner = @This();
 
 pub const StringId = enum(u32) {
-    empty,
+    empty = std.math.maxInt(u32) - 1,
     none = std.math.maxInt(u32),
     _,
 
     pub inline fn at(index: u32) StringId {
         return @enumFromInt(index);
     }
-
-    pub inline fn int(self: StringId) u32 {
-        return @intFromEnum(self);
-    }
 };
 
-strings: std.StringHashMapUnmanaged(StringId) = .{},
-next_id: StringId = @enumFromInt(@intFromEnum(StringId.empty) + 1),
+const StringLocation = struct {
+    pos: u32,
+    len: u32,
+};
+
+string_bytes: std.ArrayListUnmanaged(u8) = .empty,
+string_table: std.ArrayListUnmanaged(StringLocation) = .empty,
 
 pub fn deinit(self: *StringInterner, gpa: std.mem.Allocator) void {
-    self.strings.deinit(gpa);
+    self.string_bytes.deinit(gpa);
+    self.string_table.deinit(gpa);
 }
 
 pub fn lookup(self: *StringInterner, id: StringId) ?[]const u8 {
@@ -32,10 +35,24 @@ pub fn lookup(self: *StringInterner, id: StringId) ?[]const u8 {
         return "";
     }
 
-    var it = self.strings.iterator();
-    while (it.next()) |entry| {
-        if (entry.value_ptr.* == id) {
-            return entry.key_ptr.*;
+    if (@intFromEnum(id) >= self.string_table.items.len) {
+        return null;
+    }
+
+    const loc = self.string_table.items[@intFromEnum(id)];
+    return self.string_bytes.items[loc.pos .. loc.pos + loc.len];
+}
+
+pub fn search(self: *StringInterner, str: []const u8) ?StringId {
+    if (str.len == 0) {
+        return StringId.empty;
+    }
+
+    for (0..self.string_table.items.len) |i| {
+        const str2 = self.lookup(@enumFromInt(i)) orelse break;
+
+        if (std.mem.eql(u8, str, str2)) {
+            return @enumFromInt(i);
         }
     }
 
@@ -47,14 +64,20 @@ pub fn intern(self: *StringInterner, gpa: std.mem.Allocator, str: []const u8) St
         return StringId.empty;
     }
 
-    const result = self.strings.getOrPut(gpa, str) catch unreachable;
-    if (result.found_existing) {
-        return result.value_ptr.*;
+    const result = self.search(str);
+    if (result) |id| {
+        return id;
     }
 
-    defer self.next_id = @enumFromInt(@intFromEnum(self.next_id) + 1);
-    result.value_ptr.* = self.next_id;
-    return self.next_id;
+    const id = self.string_table.items.len;
+    const pos = self.string_bytes.items.len;
+    assert(pos < @intFromEnum(StringId.empty));
+    self.string_bytes.appendSlice(gpa, str) catch unreachable;
+    self.string_table.append(gpa, .{
+        .pos = @intCast(pos),
+        .len = @intCast(str.len),
+    }) catch unreachable;
+    return @enumFromInt(id);
 }
 
 pub fn toSlice(self: *StringInterner, gpa: std.mem.Allocator) []const []const u8 {
@@ -77,16 +100,16 @@ test "should intern string" {
     const id3 = str_interner.intern(gpa, "abc3");
     const id4 = str_interner.intern(gpa, "");
 
-    try expectEqual(1, id1.int());
-    try expectEqual(2, id2.int());
-    try expectEqual(3, id3.int());
-    try expectEqual(StringId.empty.int(), id4.int());
+    try expectEqual(0, @intFromEnum(id1));
+    try expectEqual(1, @intFromEnum(id2));
+    try expectEqual(2, @intFromEnum(id3));
+    try expectEqual(@intFromEnum(StringId.empty), @intFromEnum(id4));
 
     try expectEqualStrings("", str_interner.lookup(StringId.empty) orelse return error.TestExpectedEqual);
     try expectEqualStrings("abc1", str_interner.lookup(id1) orelse return error.TestExpectedEqual);
     try expectEqualStrings("abc2", str_interner.lookup(id2) orelse return error.TestExpectedEqual);
     try expectEqualStrings("abc3", str_interner.lookup(id3) orelse return error.TestExpectedEqual);
-    try expectEqual(null, str_interner.lookup(StringId.at(99999)));
+    try expectEqual(null, str_interner.lookup(@enumFromInt(99999)));
 
     const id1_copy = str_interner.intern(gpa, "abc1");
     const id2_copy = str_interner.intern(gpa, "abc2");

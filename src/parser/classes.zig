@@ -193,7 +193,7 @@ test "shoud parse class declaration" {
         \\ast.Node{
         \\    .class = ast.Node.ClassDeclaration{
         \\        .abstract = false,
-        \\        .name = string_interner.StringId(1),
+        \\        .name = string_interner.StringId(0),
         \\        .super_class = ast.Node.Index.empty,
         \\        .implements = [_]string_interner.StringId{},
         \\        .body = [_]ast.Node.Index{},
@@ -240,7 +240,7 @@ test "should parse abstract class declaration" {
         \\ast.Node{
         \\    .class = ast.Node.ClassDeclaration{
         \\        .abstract = true,
-        \\        .name = string_interner.StringId(1),
+        \\        .name = string_interner.StringId(0),
         \\        .super_class = ast.Node.Index.empty,
         \\        .implements = [_]string_interner.StringId{},
         \\        .body = [_]ast.Node.Index{},
@@ -272,7 +272,7 @@ test "should parse class declaration with extends" {
         \\ast.Node{
         \\    .class = ast.Node.ClassDeclaration{
         \\        .abstract = false,
-        \\        .name = string_interner.StringId(1),
+        \\        .name = string_interner.StringId(0),
         \\        .super_class = ast.Node.Index(0),
         \\        .implements = [_]string_interner.StringId{},
         \\        .body = [_]ast.Node.Index{},
@@ -291,11 +291,11 @@ test "should parse class declaration with implements" {
         \\ast.Node{
         \\    .class = ast.Node.ClassDeclaration{
         \\        .abstract = false,
-        \\        .name = string_interner.StringId(1),
+        \\        .name = string_interner.StringId(0),
         \\        .super_class = ast.Node.Index.empty,
         \\        .implements = [_]string_interner.StringId{
-        \\            string_interner.StringId(2), 
-        \\            string_interner.StringId(3)
+        \\            string_interner.StringId(1), 
+        \\            string_interner.StringId(2)
         \\        },
         \\        .body = [_]ast.Node.Index{},
         \\    },
@@ -328,7 +328,7 @@ test "should parse class declaration without name" {
         \\        .name = string_interner.StringId.none,
         \\        .super_class = ast.Node.Index(0),
         \\        .implements = [_]string_interner.StringId{
-        \\            string_interner.StringId(2)
+        \\            string_interner.StringId(1)
         \\        },
         \\        .body = [_]ast.Node.Index{},
         \\    },
@@ -351,7 +351,7 @@ test "should parse class members" {
         \\ast.Node{
         \\    .class = ast.Node.ClassDeclaration{
         \\        .abstract = false,
-        \\        .name = string_interner.StringId(1),
+        \\        .name = string_interner.StringId(0),
         \\        .super_class = ast.Node.Index.empty,
         \\        .implements = [_]string_interner.StringId{},
         \\        .body = [_]ast.Node.Index{
@@ -400,7 +400,7 @@ test "should skip semicolons when parsing class members" {
         \\ast.Node{
         \\    .class = ast.Node.ClassDeclaration{
         \\        .abstract = false,
-        \\        .name = string_interner.StringId(1),
+        \\        .name = string_interner.StringId(0),
         \\        .super_class = ast.Node.Index.empty,
         \\        .implements = [_]string_interner.StringId{},
         \\        .body = [_]ast.Node.Index{

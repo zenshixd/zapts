@@ -267,7 +267,7 @@ test "should parse primary expression" {
                 \\ast.Node{
                 \\    .simple_value = ast.Node.SimpleValue{
                 \\        .kind = ast.SimpleValueKind.this,
-                \\        .id = string_interner.StringId(1),
+                \\        .id = string_interner.StringId(0),
                 \\    },
                 \\}
             ),
@@ -280,7 +280,7 @@ test "should parse primary expression" {
                 \\ast.Node{
                 \\    .simple_value = ast.Node.SimpleValue{
                 \\        .kind = ast.SimpleValueKind.identifier,
-                \\        .id = string_interner.StringId(1),
+                \\        .id = string_interner.StringId(0),
                 \\    },
                 \\}
             ),
@@ -293,7 +293,7 @@ test "should parse primary expression" {
                 \\ast.Node{
                 \\    .simple_value = ast.Node.SimpleValue{
                 \\        .kind = ast.SimpleValueKind.number,
-                \\        .id = string_interner.StringId(1),
+                \\        .id = string_interner.StringId(0),
                 \\    },
                 \\}
             ),
@@ -421,7 +421,7 @@ test "should parse primary expression" {
                 \\ast.Node{
                 \\    .simple_value = ast.Node.SimpleValue{
                 \\        .kind = ast.SimpleValueKind.regex,
-                \\        .id = string_interner.StringId(1),
+                \\        .id = string_interner.StringId(0),
                 \\    },
                 \\}
             ),
@@ -482,7 +482,7 @@ test "should parse identifier" {
         const t, const node, const markers = try TestParser.run(test_case[0], parseIdentifier);
         defer t.deinit();
 
-        try t.expectAST(node, AST.Node{ .simple_value = .{ .kind = .identifier, .id = StringId.at(1) } });
+        try t.expectAST(node, AST.Node{ .simple_value = .{ .kind = .identifier, .id = StringId.at(0) } });
         try t.expectToken(TokenType.Identifier, std.mem.sliceTo(test_case[0][1..], '\n'), node.?);
         try t.expectTokenAt(markers[0], node.?);
     }
@@ -501,7 +501,7 @@ test "should parse allowed keyword as identifier" {
         \\ast.Node{
         \\    .simple_value = ast.Node.SimpleValue{
         \\        .kind = ast.SimpleValueKind.identifier,
-        \\        .id = string_interner.StringId(1),
+        \\        .id = string_interner.StringId(0),
         \\    },
         \\}
     ));
@@ -606,7 +606,7 @@ test "should parse literal" {
         try t.expectAST(node, AST.Node{
             .simple_value = .{
                 .kind = test_case[1],
-                .id = StringId.at(1),
+                .id = StringId.at(0),
             },
         });
         try t.expectToken(test_case[2], test_case[3], node.?);
@@ -904,20 +904,20 @@ test "should parse template literal" {
 
     try t.expectASTSnapshot(t.parser.getNode(node.?).template_literal[0], snap(@src(),
         \\ast.Node{
-        \\    .template_part = string_interner.StringId(1),
+        \\    .template_part = string_interner.StringId(0),
         \\}
     ));
     try t.expectASTSnapshot(t.parser.getNode(node.?).template_literal[1], snap(@src(),
         \\ast.Node{
         \\    .simple_value = ast.Node.SimpleValue{
         \\        .kind = ast.SimpleValueKind.identifier,
-        \\        .id = string_interner.StringId(2),
+        \\        .id = string_interner.StringId(1),
         \\    },
         \\}
     ));
     try t.expectASTSnapshot(t.parser.getNode(node.?).template_literal[2], snap(@src(),
         \\ast.Node{
-        \\    .template_part = string_interner.StringId(3),
+        \\    .template_part = string_interner.StringId(2),
         \\}
     ));
 }
@@ -967,7 +967,7 @@ test "should parse template literal with object as substitution" {
 
     try t.expectASTSnapshot(t.parser.getNode(node.?).template_literal[0], snap(@src(),
         \\ast.Node{
-        \\    .template_part = string_interner.StringId(1),
+        \\    .template_part = string_interner.StringId(0),
         \\}
     ));
     try t.expectASTSnapshot(t.parser.getNode(node.?).template_literal[1], snap(@src(),
@@ -979,7 +979,7 @@ test "should parse template literal with object as substitution" {
     ));
     try t.expectASTSnapshot(t.parser.getNode(node.?).template_literal[2], snap(@src(),
         \\ast.Node{
-        \\    .template_part = string_interner.StringId(4),
+        \\    .template_part = string_interner.StringId(3),
         \\}
     ));
 }

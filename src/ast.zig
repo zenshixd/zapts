@@ -195,8 +195,8 @@ pub const Raw = struct {
     }
 
     pub const Data = struct {
-        lhs: u32 = Node.Index.empty.int(),
-        rhs: u32 = Node.Index.empty.int(),
+        lhs: u32 = @intFromEnum(Node.Index.empty),
+        rhs: u32 = @intFromEnum(Node.Index.empty),
     };
 
     // LCOV_EXCL_START
@@ -695,14 +695,14 @@ pub fn addNode(self: *AST, allocator: std.mem.Allocator, main_token: Token.Index
             return self.addRawNode(allocator, .{
                 .tag = .root,
                 .main_token = main_token,
-                .data = .{ .lhs = subrange.start.int(), .rhs = subrange.end.int() },
+                .data = .{ .lhs = @intFromEnum(subrange.start), .rhs = @intFromEnum(subrange.end) },
             });
         },
         .binding_decl => |binding_decl| {
             return self.addRawNode(allocator, .{
                 .tag = .binding_decl,
                 .main_token = main_token,
-                .data = .{ .lhs = binding_decl.name.int(), .rhs = binding_decl.alias.int() },
+                .data = .{ .lhs = @intFromEnum(binding_decl.name), .rhs = @intFromEnum(binding_decl.alias) },
             });
         },
         .import => |import| {
@@ -711,7 +711,7 @@ pub fn addNode(self: *AST, allocator: std.mem.Allocator, main_token: Token.Index
                     return self.addRawNode(allocator, .{
                         .tag = .import,
                         .main_token = main_token,
-                        .data = .{ .rhs = simple.int() },
+                        .data = .{ .rhs = @intFromEnum(simple) },
                     });
                 },
                 .full => |full| {
@@ -721,7 +721,7 @@ pub fn addNode(self: *AST, allocator: std.mem.Allocator, main_token: Token.Index
                         .main_token = main_token,
                         .data = .{
                             .lhs = self.addExtra(allocator, span).int(),
-                            .rhs = full.path.int(),
+                            .rhs = @intFromEnum(full.path),
                         },
                     });
                 },
@@ -735,8 +735,8 @@ pub fn addNode(self: *AST, allocator: std.mem.Allocator, main_token: Token.Index
                         .tag = .import_binding_named,
                         .main_token = main_token,
                         .data = .{
-                            .lhs = span.start.int(),
-                            .rhs = span.end.int(),
+                            .lhs = @intFromEnum(span.start),
+                            .rhs = @intFromEnum(span.end),
                         },
                     });
                 },
@@ -744,14 +744,14 @@ pub fn addNode(self: *AST, allocator: std.mem.Allocator, main_token: Token.Index
                     return self.addRawNode(allocator, .{
                         .tag = .import_binding_default,
                         .main_token = main_token,
-                        .data = .{ .lhs = default.int() },
+                        .data = .{ .lhs = @intFromEnum(default) },
                     });
                 },
                 .namespace => |namespace| {
                     return self.addRawNode(allocator, .{
                         .tag = .import_binding_namespace,
                         .main_token = main_token,
-                        .data = .{ .lhs = namespace.int() },
+                        .data = .{ .lhs = @intFromEnum(namespace) },
                     });
                 },
             }
@@ -764,8 +764,8 @@ pub fn addNode(self: *AST, allocator: std.mem.Allocator, main_token: Token.Index
                         .tag = .export_named,
                         .main_token = main_token,
                         .data = .{
-                            .lhs = span.start.int(),
-                            .rhs = span.end.int(),
+                            .lhs = @intFromEnum(span.start),
+                            .rhs = @intFromEnum(span.end),
                         },
                     });
                 },
@@ -776,7 +776,7 @@ pub fn addNode(self: *AST, allocator: std.mem.Allocator, main_token: Token.Index
                         .main_token = main_token,
                         .data = .{
                             .lhs = self.addExtra(allocator, span).int(),
-                            .rhs = from.path.int(),
+                            .rhs = @intFromEnum(from.path),
                         },
                     });
                 },
@@ -785,8 +785,8 @@ pub fn addNode(self: *AST, allocator: std.mem.Allocator, main_token: Token.Index
                         .tag = .export_from_all,
                         .main_token = main_token,
                         .data = .{
-                            .lhs = from.alias.int(),
-                            .rhs = from.path.int(),
+                            .lhs = @intFromEnum(from.alias),
+                            .rhs = @intFromEnum(from.path),
                         },
                     });
                 },
@@ -794,14 +794,14 @@ pub fn addNode(self: *AST, allocator: std.mem.Allocator, main_token: Token.Index
                     return self.addRawNode(allocator, .{
                         .tag = .export_default,
                         .main_token = main_token,
-                        .data = .{ .lhs = default.int() },
+                        .data = .{ .lhs = @intFromEnum(default) },
                     });
                 },
                 .node => |node| {
                     return self.addRawNode(allocator, .{
                         .tag = .export_node,
                         .main_token = main_token,
-                        .data = .{ .lhs = node.int() },
+                        .data = .{ .lhs = @intFromEnum(node) },
                     });
                 },
             }
@@ -813,7 +813,7 @@ pub fn addNode(self: *AST, allocator: std.mem.Allocator, main_token: Token.Index
                 .tag = if (class.abstract) .abstract_class_decl else .class_decl,
                 .main_token = main_token,
                 .data = .{
-                    .lhs = class.name.int(),
+                    .lhs = @intFromEnum(class.name),
                     .rhs = self.addExtra(allocator, Extra.ClassDeclaration{
                         .super_class = class.super_class,
                         .implements_start = implements_span.start,
@@ -830,8 +830,8 @@ pub fn addNode(self: *AST, allocator: std.mem.Allocator, main_token: Token.Index
                 .tag = .class_static_block,
                 .main_token = main_token,
                 .data = .{
-                    .lhs = subrange.start.int(),
-                    .rhs = subrange.end.int(),
+                    .lhs = @intFromEnum(subrange.start),
+                    .rhs = @intFromEnum(subrange.end),
                 },
             });
         },
@@ -841,7 +841,7 @@ pub fn addNode(self: *AST, allocator: std.mem.Allocator, main_token: Token.Index
                 .main_token = main_token,
                 .data = .{
                     .lhs = member.flags,
-                    .rhs = member.node.int(),
+                    .rhs = @intFromEnum(member.node),
                 },
             });
         },
@@ -854,8 +854,8 @@ pub fn addNode(self: *AST, allocator: std.mem.Allocator, main_token: Token.Index
                 .tag = .class_field,
                 .main_token = main_token,
                 .data = .{
-                    .lhs = field.name.int(),
-                    .rhs = binding.int(),
+                    .lhs = @intFromEnum(field.name),
+                    .rhs = @intFromEnum(binding),
                 },
             });
         },
@@ -870,8 +870,8 @@ pub fn addNode(self: *AST, allocator: std.mem.Allocator, main_token: Token.Index
                 .tag = tag,
                 .main_token = main_token,
                 .data = .{
-                    .lhs = subrange.start.int(),
-                    .rhs = subrange.end.int(),
+                    .lhs = @intFromEnum(subrange.start),
+                    .rhs = @intFromEnum(subrange.end),
                 },
             });
         },
@@ -880,7 +880,7 @@ pub fn addNode(self: *AST, allocator: std.mem.Allocator, main_token: Token.Index
                 .tag = .decl_binding,
                 .main_token = main_token,
                 .data = .{
-                    .lhs = declaration.name.int(),
+                    .lhs = @intFromEnum(declaration.name),
                     .rhs = self.addExtra(allocator, Extra.Declaration{
                         .decl_type = declaration.decl_type,
                         .value = declaration.value,
@@ -897,7 +897,7 @@ pub fn addNode(self: *AST, allocator: std.mem.Allocator, main_token: Token.Index
                         .expr = if_node.expr,
                         .body = if_node.body,
                     }).int(),
-                    .rhs = if_node.@"else".int(),
+                    .rhs = @intFromEnum(if_node.@"else"),
                 },
             });
         },
@@ -907,7 +907,7 @@ pub fn addNode(self: *AST, allocator: std.mem.Allocator, main_token: Token.Index
                 .tag = .@"switch",
                 .main_token = main_token,
                 .data = .{
-                    .lhs = switch_node.expr.int(),
+                    .lhs = @intFromEnum(switch_node.expr),
                     .rhs = self.addExtra(allocator, cases).int(),
                 },
             });
@@ -920,8 +920,8 @@ pub fn addNode(self: *AST, allocator: std.mem.Allocator, main_token: Token.Index
                         .tag = .default,
                         .main_token = main_token,
                         .data = .{
-                            .lhs = stmts.start.int(),
-                            .rhs = stmts.end.int(),
+                            .lhs = @intFromEnum(stmts.start),
+                            .rhs = @intFromEnum(stmts.end),
                         },
                     });
                 },
@@ -931,7 +931,7 @@ pub fn addNode(self: *AST, allocator: std.mem.Allocator, main_token: Token.Index
                         .tag = .case,
                         .main_token = main_token,
                         .data = .{
-                            .lhs = case_node.expr.int(),
+                            .lhs = @intFromEnum(case_node.expr),
                             .rhs = self.addExtra(allocator, stmts).int(),
                         },
                     });
@@ -950,7 +950,7 @@ pub fn addNode(self: *AST, allocator: std.mem.Allocator, main_token: Token.Index
                                 .cond = classic.cond,
                                 .post = classic.post,
                             }).int(),
-                            .rhs = classic.body.int(),
+                            .rhs = @intFromEnum(classic.body),
                         },
                     });
                 },
@@ -963,7 +963,7 @@ pub fn addNode(self: *AST, allocator: std.mem.Allocator, main_token: Token.Index
                                 .left = in.left,
                                 .right = in.right,
                             }).int(),
-                            .rhs = in.body.int(),
+                            .rhs = @intFromEnum(in.body),
                         },
                     });
                 },
@@ -976,7 +976,7 @@ pub fn addNode(self: *AST, allocator: std.mem.Allocator, main_token: Token.Index
                                 .left = of.left,
                                 .right = of.right,
                             }).int(),
-                            .rhs = of.body.int(),
+                            .rhs = @intFromEnum(of.body),
                         },
                     });
                 },
@@ -987,8 +987,8 @@ pub fn addNode(self: *AST, allocator: std.mem.Allocator, main_token: Token.Index
                 .tag = if (key == .@"while") .@"while" else .do_while,
                 .main_token = main_token,
                 .data = .{
-                    .lhs = while_node.cond.int(),
-                    .rhs = while_node.body.int(),
+                    .lhs = @intFromEnum(while_node.cond),
+                    .rhs = @intFromEnum(while_node.body),
                 },
             });
         },
@@ -1002,14 +1002,14 @@ pub fn addNode(self: *AST, allocator: std.mem.Allocator, main_token: Token.Index
                     else => unreachable, // LCOV_EXCL_LINE
                 },
                 .main_token = main_token,
-                .data = .{ .lhs = subrange.start.int(), .rhs = subrange.end.int() },
+                .data = .{ .lhs = @intFromEnum(subrange.start), .rhs = @intFromEnum(subrange.end) },
             });
         },
         .function_param => |param| {
             return self.addRawNode(allocator, .{
                 .tag = .function_param,
                 .main_token = main_token,
-                .data = .{ .lhs = param.identifier.int(), .rhs = param.type.int() },
+                .data = .{ .lhs = @intFromEnum(param.identifier), .rhs = @intFromEnum(param.type) },
             });
         },
         .function_decl, .function_expr => |func_decl| {
@@ -1023,7 +1023,7 @@ pub fn addNode(self: *AST, allocator: std.mem.Allocator, main_token: Token.Index
                 .tag = tag,
                 .main_token = main_token,
                 .data = .{
-                    .lhs = func_decl.name.int(),
+                    .lhs = @intFromEnum(func_decl.name),
                     .rhs = self.addExtra(allocator, Extra.Function{
                         .flags = func_decl.flags,
                         .params_start = subrange.start,
@@ -1045,7 +1045,7 @@ pub fn addNode(self: *AST, allocator: std.mem.Allocator, main_token: Token.Index
                 .tag = tag,
                 .main_token = main_token,
                 .data = .{
-                    .lhs = method_decl.name.int(),
+                    .lhs = @intFromEnum(method_decl.name),
                     .rhs = self.addExtra(allocator, Extra.Function{
                         .flags = method_decl.flags,
                         .params_start = subrange.start,
@@ -1068,7 +1068,7 @@ pub fn addNode(self: *AST, allocator: std.mem.Allocator, main_token: Token.Index
                         .return_type = arrow_func.return_type,
                         .body = arrow_func.body,
                     }).int(),
-                    .rhs = arrow_func.body.int(),
+                    .rhs = @intFromEnum(arrow_func.body),
                 },
             });
         },
@@ -1078,7 +1078,7 @@ pub fn addNode(self: *AST, allocator: std.mem.Allocator, main_token: Token.Index
                 .tag = .call_expr,
                 .main_token = main_token,
                 .data = .{
-                    .lhs = expr.node.int(),
+                    .lhs = @intFromEnum(expr.node),
                     .rhs = self.addExtra(allocator, subrange).int(),
                 },
             });
@@ -1095,8 +1095,8 @@ pub fn addNode(self: *AST, allocator: std.mem.Allocator, main_token: Token.Index
                 .tag = tag,
                 .main_token = main_token,
                 .data = .{
-                    .lhs = subrange.start.int(),
-                    .rhs = subrange.end.int(),
+                    .lhs = @intFromEnum(subrange.start),
+                    .rhs = @intFromEnum(subrange.end),
                 },
             });
         },
@@ -1104,7 +1104,7 @@ pub fn addNode(self: *AST, allocator: std.mem.Allocator, main_token: Token.Index
             return self.addRawNode(allocator, .{
                 .tag = .template_part,
                 .main_token = main_token,
-                .data = .{ .lhs = template_part.int() },
+                .data = .{ .lhs = @intFromEnum(template_part) },
             });
         },
         .function_type => |func_type| {
@@ -1120,8 +1120,8 @@ pub fn addNode(self: *AST, allocator: std.mem.Allocator, main_token: Token.Index
                 .tag = .function_type,
                 .main_token = main_token,
                 .data = .{
-                    .lhs = extra.int(),
-                    .rhs = func_type.return_type.int(),
+                    .lhs = @intFromEnum(extra),
+                    .rhs = @intFromEnum(func_type.return_type),
                 },
             });
         },
@@ -1232,8 +1232,8 @@ pub fn addNode(self: *AST, allocator: std.mem.Allocator, main_token: Token.Index
                 .tag = tag,
                 .main_token = main_token,
                 .data = .{
-                    .lhs = binary.left.int(),
-                    .rhs = binary.right.int(),
+                    .lhs = @intFromEnum(binary.left),
+                    .rhs = @intFromEnum(binary.right),
                 },
             });
         },
@@ -1285,7 +1285,7 @@ pub fn addNode(self: *AST, allocator: std.mem.Allocator, main_token: Token.Index
             return self.addRawNode(allocator, .{
                 .tag = tag,
                 .main_token = main_token,
-                .data = .{ .lhs = node.int() },
+                .data = .{ .lhs = @intFromEnum(node) },
             });
         },
 
@@ -1314,7 +1314,7 @@ pub fn addNode(self: *AST, allocator: std.mem.Allocator, main_token: Token.Index
             return self.addRawNode(allocator, .{
                 .tag = .object_type_field,
                 .main_token = main_token,
-                .data = .{ .lhs = obj_field_type.name.int(), .rhs = obj_field_type.type.int() },
+                .data = .{ .lhs = @intFromEnum(obj_field_type.name), .rhs = @intFromEnum(obj_field_type.type) },
             });
         },
         .generic_type => |generic_type| {
@@ -1323,7 +1323,7 @@ pub fn addNode(self: *AST, allocator: std.mem.Allocator, main_token: Token.Index
                 .tag = .generic_type,
                 .main_token = main_token,
                 .data = .{
-                    .lhs = generic_type.name.int(),
+                    .lhs = @intFromEnum(generic_type.name),
                     .rhs = self.addExtra(allocator, span).int(),
                 },
             });
@@ -1335,7 +1335,7 @@ pub fn addNode(self: *AST, allocator: std.mem.Allocator, main_token: Token.Index
                 .tag = .interface_decl,
                 .main_token = main_token,
                 .data = .{
-                    .lhs = interface_decl.name.int(),
+                    .lhs = @intFromEnum(interface_decl.name),
                     .rhs = self.addExtra(allocator, Extra.Interface{
                         .extends_start = extends_span.start,
                         .extends_end = extends_span.end,
@@ -1350,7 +1350,7 @@ pub fn addNode(self: *AST, allocator: std.mem.Allocator, main_token: Token.Index
 
 pub fn getNode(self: AST, index: Node.Index) Node {
     assert(index != Node.Empty);
-    const node = self.nodes.items[index.int()];
+    const node = self.nodes.items[@intFromEnum(index)];
 
     switch (node.tag) {
         .root => {
@@ -1359,7 +1359,7 @@ pub fn getNode(self: AST, index: Node.Index) Node {
             };
         },
         .import => {
-            if (node.data.lhs == Node.Empty.int()) {
+            if (node.data.lhs == @intFromEnum(Node.Empty)) {
                 return .{
                     .import = .{
                         .simple = StringId.at(node.data.rhs),
@@ -1370,7 +1370,7 @@ pub fn getNode(self: AST, index: Node.Index) Node {
             const subrange = getExtra(self, Extra.Subrange, Extra.at(node.data.lhs));
             return .{
                 .import = .{ .full = .{
-                    .bindings = getExtraItems(self, Node.Index, subrange.start.int(), subrange.end.int()),
+                    .bindings = getExtraItems(self, Node.Index, @intFromEnum(subrange.start), @intFromEnum(subrange.end)),
                     .path = StringId.at(node.data.rhs),
                 } },
             };
@@ -1416,7 +1416,7 @@ pub fn getNode(self: AST, index: Node.Index) Node {
             return .{
                 .@"export" = .{
                     .from = .{
-                        .bindings = getExtraItems(self, Node.Index, span.start.int(), span.end.int()),
+                        .bindings = getExtraItems(self, Node.Index, @intFromEnum(span.start), @intFromEnum(span.end)),
                         .path = StringId.at(node.data.rhs),
                     },
                 },
@@ -1453,8 +1453,8 @@ pub fn getNode(self: AST, index: Node.Index) Node {
                     .abstract = node.tag == .abstract_class_decl,
                     .name = StringId.at(node.data.lhs),
                     .super_class = class.super_class,
-                    .implements = getExtraItems(self, StringId, class.implements_start.int(), class.implements_end.int()),
-                    .body = getExtraItems(self, Node.Index, class.body_start.int(), class.body_end.int()),
+                    .implements = getExtraItems(self, StringId, @intFromEnum(class.implements_start), @intFromEnum(class.implements_end)),
+                    .body = getExtraItems(self, Node.Index, @intFromEnum(class.body_start), @intFromEnum(class.body_end)),
                 },
             };
         },
@@ -1969,7 +1969,7 @@ test "imports" {
     const alias_node = StringId.at(2);
     const path_node_index = StringId.at(4);
     const identifier_token = StringId.at(2);
-    var named_bindings = [_]Node.Index{Node.at(identifier_token.int())};
+    var named_bindings = [_]Node.Index{Node.at(5)};
     var import_bindings = [_]Node.Index{ Node.at(1), Node.at(2), Node.at(3) };
 
     const tests = .{
@@ -1979,23 +1979,23 @@ test "imports" {
         },
         .{
             Node{ .import_binding = .{ .default = identifier_token } },
-            Raw{ .tag = .import_binding_default, .main_token = Token.at(0), .data = .{ .lhs = identifier_token.int() } },
+            Raw{ .tag = .import_binding_default, .main_token = Token.at(0), .data = .{ .lhs = @intFromEnum(identifier_token) } },
         },
         .{
             Node{ .import_binding = .{ .namespace = identifier_token } },
-            Raw{ .tag = .import_binding_namespace, .main_token = Token.at(0), .data = .{ .lhs = identifier_token.int() } },
+            Raw{ .tag = .import_binding_namespace, .main_token = Token.at(0), .data = .{ .lhs = @intFromEnum(identifier_token) } },
         },
         .{
             Node{ .import = .{ .simple = path_node_index } },
-            Raw{ .tag = .import, .main_token = Token.at(0), .data = .{ .rhs = path_node_index.int() } },
+            Raw{ .tag = .import, .main_token = Token.at(0), .data = .{ .rhs = @intFromEnum(path_node_index) } },
         },
         .{
             Node{ .import = .{ .full = .{ .bindings = &import_bindings, .path = path_node_index } } },
-            Raw{ .tag = .import, .main_token = Token.at(0), .data = .{ .lhs = import_bindings.len, .rhs = path_node_index.int() } },
+            Raw{ .tag = .import, .main_token = Token.at(0), .data = .{ .lhs = import_bindings.len, .rhs = @intFromEnum(path_node_index) } },
         },
         .{
             Node{ .binding_decl = .{ .name = name_node, .alias = alias_node } },
-            Raw{ .tag = .binding_decl, .main_token = Token.at(0), .data = .{ .lhs = name_node.int(), .rhs = alias_node.int() } },
+            Raw{ .tag = .binding_decl, .main_token = Token.at(0), .data = .{ .lhs = @intFromEnum(name_node), .rhs = @intFromEnum(alias_node) } },
         },
     };
 
@@ -2017,19 +2017,19 @@ test "exports" {
         },
         .{
             Node{ .@"export" = .{ .from = .{ .bindings = &bindings, .path = path_index } } },
-            Raw{ .tag = .export_from, .main_token = Token.at(0), .data = .{ .lhs = bindings.len, .rhs = path_index.int() } },
+            Raw{ .tag = .export_from, .main_token = Token.at(0), .data = .{ .lhs = bindings.len, .rhs = @intFromEnum(path_index) } },
         },
         .{
             Node{ .@"export" = .{ .from_all = .{ .alias = alias_index, .path = path_index } } },
-            Raw{ .tag = .export_from_all, .main_token = Token.at(0), .data = .{ .lhs = alias_index.int(), .rhs = path_index.int() } },
+            Raw{ .tag = .export_from_all, .main_token = Token.at(0), .data = .{ .lhs = @intFromEnum(alias_index), .rhs = @intFromEnum(path_index) } },
         },
         .{
             Node{ .@"export" = .{ .default = node_index } },
-            Raw{ .tag = .export_default, .main_token = Token.at(0), .data = .{ .lhs = node_index.int() } },
+            Raw{ .tag = .export_default, .main_token = Token.at(0), .data = .{ .lhs = @intFromEnum(node_index) } },
         },
         .{
             Node{ .@"export" = .{ .node = node_index } },
-            Raw{ .tag = .export_node, .main_token = Token.at(0), .data = .{ .lhs = node_index.int() } },
+            Raw{ .tag = .export_node, .main_token = Token.at(0), .data = .{ .lhs = @intFromEnum(node_index) } },
         },
     };
 
@@ -2059,7 +2059,7 @@ test "class declaration" {
         try expectRawNode(Raw{
             .tag = test_case[1],
             .main_token = Token.at(0),
-            .data = .{ .lhs = name_node.int(), .rhs = @intCast(implements.len + body.len) },
+            .data = .{ .lhs = @intFromEnum(name_node), .rhs = @intCast(implements.len + body.len) },
         }, test_case[0]);
     }
 }
@@ -2075,11 +2075,11 @@ test "class members" {
     const tests = .{
         .{
             Node{ .class_field = .{ .name = name_node, .decl_type = decl_type_node, .value = value_node } },
-            Raw{ .tag = .class_field, .main_token = Token.at(0), .data = .{ .lhs = name_node.int(), .rhs = 0 } },
+            Raw{ .tag = .class_field, .main_token = Token.at(0), .data = .{ .lhs = @intFromEnum(name_node), .rhs = 0 } },
         },
         .{
             Node{ .class_member = .{ .flags = @intCast(flags), .node = class_field_node } },
-            Raw{ .tag = .class_member, .main_token = Token.at(0), .data = .{ .lhs = flags, .rhs = class_field_node.int() } },
+            Raw{ .tag = .class_member, .main_token = Token.at(0), .data = .{ .lhs = flags, .rhs = @intFromEnum(class_field_node) } },
         },
         .{
             Node{ .class_static_block = &class_static_nodes },
@@ -2101,7 +2101,7 @@ test "declarations" {
     const tests = .{
         .{
             Node{ .decl_binding = .{ .name = name_node, .decl_type = decl_type_node, .value = value_node } },
-            Raw{ .tag = .decl_binding, .main_token = Token.at(0), .data = .{ .lhs = name_node.int(), .rhs = 0 } },
+            Raw{ .tag = .decl_binding, .main_token = Token.at(0), .data = .{ .lhs = @intFromEnum(name_node), .rhs = 0 } },
         },
         .{
             Node{ .declaration = .{ .kind = .@"var", .list = &binding_list } },
@@ -2132,7 +2132,7 @@ test "ifs" {
         .main_token = Token.at(0),
         .data = .{
             .lhs = 0,
-            .rhs = else_node.int(),
+            .rhs = @intFromEnum(else_node),
         },
     }, Node{ .@"if" = .{ .expr = expr_node, .body = body_node, .@"else" = else_node } });
 }
@@ -2145,7 +2145,7 @@ test "switches" {
     const tests = .{
         .{
             Node{ .case = .{ .case = .{ .expr = case_expr_node, .body = &case_body_node } } },
-            Raw{ .tag = .case, .main_token = Token.at(0), .data = .{ .lhs = case_expr_node.int(), .rhs = case_body_node.len } },
+            Raw{ .tag = .case, .main_token = Token.at(0), .data = .{ .lhs = @intFromEnum(case_expr_node), .rhs = case_body_node.len } },
         },
         .{
             Node{ .case = .{ .default = &case_body_node } },
@@ -2153,7 +2153,7 @@ test "switches" {
         },
         .{
             Node{ .@"switch" = .{ .expr = case_expr_node, .cases = &switch_cases } },
-            Raw{ .tag = .@"switch", .main_token = Token.at(0), .data = .{ .lhs = case_expr_node.int(), .rhs = @intCast(switch_cases.len) } },
+            Raw{ .tag = .@"switch", .main_token = Token.at(0), .data = .{ .lhs = @intFromEnum(case_expr_node), .rhs = @intCast(switch_cases.len) } },
         },
     };
 
@@ -2178,7 +2178,7 @@ test "for loops" {
                     .body = body_node,
                 },
             } },
-            Raw{ .tag = .@"for", .main_token = Token.at(0), .data = .{ .lhs = 0, .rhs = body_node.int() } },
+            Raw{ .tag = .@"for", .main_token = Token.at(0), .data = .{ .lhs = 0, .rhs = @intFromEnum(body_node) } },
         },
         .{
             Node{ .@"for" = .{
@@ -2188,7 +2188,7 @@ test "for loops" {
                     .body = body_node,
                 },
             } },
-            Raw{ .tag = .for_in, .main_token = Token.at(0), .data = .{ .lhs = 0, .rhs = body_node.int() } },
+            Raw{ .tag = .for_in, .main_token = Token.at(0), .data = .{ .lhs = 0, .rhs = @intFromEnum(body_node) } },
         },
         .{
             Node{ .@"for" = .{
@@ -2198,15 +2198,15 @@ test "for loops" {
                     .body = body_node,
                 },
             } },
-            Raw{ .tag = .for_of, .main_token = Token.at(0), .data = .{ .lhs = 0, .rhs = body_node.int() } },
+            Raw{ .tag = .for_of, .main_token = Token.at(0), .data = .{ .lhs = 0, .rhs = @intFromEnum(body_node) } },
         },
         .{
             Node{ .@"while" = .{ .cond = cond_node, .body = body_node } },
-            Raw{ .tag = .@"while", .main_token = Token.at(0), .data = .{ .lhs = cond_node.int(), .rhs = body_node.int() } },
+            Raw{ .tag = .@"while", .main_token = Token.at(0), .data = .{ .lhs = @intFromEnum(cond_node), .rhs = @intFromEnum(body_node) } },
         },
         .{
             Node{ .do_while = .{ .cond = cond_node, .body = body_node } },
-            Raw{ .tag = .do_while, .main_token = Token.at(0), .data = .{ .lhs = cond_node.int(), .rhs = body_node.int() } },
+            Raw{ .tag = .do_while, .main_token = Token.at(0), .data = .{ .lhs = @intFromEnum(cond_node), .rhs = @intFromEnum(body_node) } },
         },
     };
 
@@ -2246,15 +2246,15 @@ test "function expressions" {
     const tests = .{
         .{
             Node{ .function_param = .{ .identifier = param_name_node, .type = param_type_node } },
-            Raw{ .tag = .function_param, .main_token = Token.at(0), .data = .{ .lhs = param_name_node.int(), .rhs = param_type_node.int() } },
+            Raw{ .tag = .function_param, .main_token = Token.at(0), .data = .{ .lhs = @intFromEnum(param_name_node), .rhs = @intFromEnum(param_type_node) } },
         },
         .{
             Node{ .function_decl = async_func_data },
-            Raw{ .tag = .func_decl, .main_token = Token.at(0), .data = .{ .lhs = name_node.int(), .rhs = @intCast(params.len) } },
+            Raw{ .tag = .func_decl, .main_token = Token.at(0), .data = .{ .lhs = @intFromEnum(name_node), .rhs = @intCast(params.len) } },
         },
         .{
             Node{ .function_expr = async_func_data },
-            Raw{ .tag = .func_expr, .main_token = Token.at(0), .data = .{ .lhs = name_node.int(), .rhs = @intCast(params.len) } },
+            Raw{ .tag = .func_expr, .main_token = Token.at(0), .data = .{ .lhs = @intFromEnum(name_node), .rhs = @intCast(params.len) } },
         },
     };
 
@@ -2274,11 +2274,11 @@ test "method declarations" {
     const tests = .{
         .{
             Node{ .class_method = async_func_data },
-            Raw{ .tag = .class_method, .main_token = Token.at(0), .data = .{ .lhs = name_node.int(), .rhs = @intCast(params.len) } },
+            Raw{ .tag = .class_method, .main_token = Token.at(0), .data = .{ .lhs = @intFromEnum(name_node), .rhs = @intCast(params.len) } },
         },
         .{
             Node{ .object_method = async_func_data },
-            Raw{ .tag = .object_method, .main_token = Token.at(0), .data = .{ .lhs = name_node.int(), .rhs = @intCast(params.len) } },
+            Raw{ .tag = .object_method, .main_token = Token.at(0), .data = .{ .lhs = @intFromEnum(name_node), .rhs = @intCast(params.len) } },
         },
     };
 
@@ -2295,11 +2295,11 @@ test "arrow functions" {
     const tests = .{
         .{
             Node{ .arrow_function = .{ .type = .arrow, .params = &params, .body = body_node, .return_type = return_type } },
-            Raw{ .tag = .arrow_function, .main_token = Token.at(0), .data = .{ .lhs = @intCast(params.len), .rhs = body_node.int() } },
+            Raw{ .tag = .arrow_function, .main_token = Token.at(0), .data = .{ .lhs = @intCast(params.len), .rhs = @intFromEnum(body_node) } },
         },
         .{
             Node{ .arrow_function = .{ .type = .async_arrow, .params = &params, .body = body_node, .return_type = return_type } },
-            Raw{ .tag = .async_arrow_function, .main_token = Token.at(0), .data = .{ .lhs = @intCast(params.len), .rhs = body_node.int() } },
+            Raw{ .tag = .async_arrow_function, .main_token = Token.at(0), .data = .{ .lhs = @intCast(params.len), .rhs = @intFromEnum(body_node) } },
         },
     };
     inline for (tests) |test_case| {
@@ -2314,7 +2314,7 @@ test "call expressions" {
     try expectRawNode(Raw{
         .tag = .call_expr,
         .main_token = Token.at(0),
-        .data = .{ .lhs = main_node.int(), .rhs = @intCast(params.len) },
+        .data = .{ .lhs = @intFromEnum(main_node), .rhs = @intCast(params.len) },
     }, Node{ .call_expr = .{ .node = main_node, .params = &params } });
 }
 
@@ -2383,8 +2383,8 @@ test "binary" {
             .tag = test_case[1],
             .main_token = Token.at(0),
             .data = .{
-                .lhs = data.left.int(),
-                .rhs = data.right.int(),
+                .lhs = @intFromEnum(data.left),
+                .rhs = @intFromEnum(data.right),
             },
         }, test_case[0]);
     }
@@ -2420,7 +2420,7 @@ test "single node" {
         try expectRawNode(Raw{
             .tag = test_case[1],
             .main_token = Token.at(0),
-            .data = .{ .lhs = node.int() },
+            .data = .{ .lhs = @intFromEnum(node) },
         }, test_case[0]);
     }
 }
@@ -2454,7 +2454,7 @@ test "simple_value" {
         try expectRawNode(Raw{
             .tag = test_case[1],
             .main_token = Token.at(0),
-            .data = .{ .lhs = @intFromEnum(data.kind), .rhs = data.id.int() },
+            .data = .{ .lhs = @intFromEnum(data.kind), .rhs = @intFromEnum(data.id) },
         }, test_case[0]);
     }
 }
@@ -2467,7 +2467,7 @@ test "object type" {
     const tests = .{
         .{
             Node{ .object_type_field = .{ .name = field_name, .type = field_type } },
-            Raw{ .tag = .object_type_field, .main_token = Token.at(0), .data = .{ .lhs = field_name.int(), .rhs = field_type.int() } },
+            Raw{ .tag = .object_type_field, .main_token = Token.at(0), .data = .{ .lhs = @intFromEnum(field_name), .rhs = @intFromEnum(field_type) } },
         },
         .{
             Node{ .object_type = &field_list },
@@ -2493,7 +2493,7 @@ test "template_part" {
     const tests = .{
         .{
             Node{ .template_part = part },
-            Raw{ .tag = .template_part, .main_token = Token.at(0), .data = .{ .lhs = part.int() } },
+            Raw{ .tag = .template_part, .main_token = Token.at(0), .data = .{ .lhs = @intFromEnum(part) } },
         },
     };
 
@@ -2518,7 +2518,7 @@ test "generic_type" {
             .tag = test_case[1],
             .main_token = Token.at(0),
             .data = .{
-                .lhs = name_node.int(),
+                .lhs = @intFromEnum(name_node),
                 .rhs = @intCast(params.len),
             },
         }, test_case[0]);
@@ -2533,7 +2533,7 @@ test "function_type" {
     const tests = .{
         .{
             Node{ .function_type = .{ .generic_params = &generic_params, .params = &params, .return_type = return_type } },
-            Raw{ .tag = .function_type, .main_token = Token.at(0), .data = .{ .lhs = generic_params.len + params.len, .rhs = return_type.int() } },
+            Raw{ .tag = .function_type, .main_token = Token.at(0), .data = .{ .lhs = generic_params.len + params.len, .rhs = @intFromEnum(return_type) } },
         },
     };
 
@@ -2561,7 +2561,7 @@ test "interface_decl" {
             .tag = test_case[1],
             .main_token = Token.at(0),
             .data = .{
-                .lhs = name_node.int(),
+                .lhs = @intFromEnum(name_node),
                 .rhs = @intCast(extends.len + body.len),
             },
         }, test_case[0]);

@@ -188,7 +188,7 @@ test "should parse statements" {
                 \\ast.Node{
                 \\    .class = ast.Node.ClassDeclaration{
                 \\        .abstract = false,
-                \\        .name = string_interner.StringId(1),
+                \\        .name = string_interner.StringId(0),
                 \\        .super_class = ast.Node.Index.empty,
                 \\        .implements = [_]string_interner.StringId{},
                 \\        .body = [_]ast.Node.Index{},
@@ -203,7 +203,7 @@ test "should parse statements" {
             snap(@src(),
                 \\ast.Node{
                 \\    .import = ast.Node.Import{
-                \\        .simple = string_interner.StringId(1),
+                \\        .simple = string_interner.StringId(0),
                 \\    },
                 \\}
             ),
@@ -265,7 +265,7 @@ test "should parse statements" {
                 \\ast.Node{
                 \\    .simple_value = ast.Node.SimpleValue{
                 \\        .kind = ast.SimpleValueKind.identifier,
-                \\        .id = string_interner.StringId(1),
+                \\        .id = string_interner.StringId(0),
                 \\    },
                 \\}
             ),

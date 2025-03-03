@@ -474,7 +474,7 @@ test "should parse member expression" {
                 \\ast.Node{
                 \\    .simple_value = ast.Node.SimpleValue{
                 \\        .kind = ast.SimpleValueKind.identifier,
-                \\        .id = string_interner.StringId(1),
+                \\        .id = string_interner.StringId(0),
                 \\    },
                 \\}
             ),

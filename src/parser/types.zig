@@ -413,7 +413,7 @@ test "should parse optional data type" {
         \\ast.Node{
         \\    .simple_type = ast.Node.SimpleValue{
         \\        .kind = ast.SimpleValueKind.number,
-        \\        .id = string_interner.StringId(1),
+        \\        .id = string_interner.StringId(0),
         \\    },
         \\}
     ));
@@ -439,7 +439,7 @@ test "should parse primary symbol type" {
                 \\ast.Node{
                 \\    .simple_type = ast.Node.SimpleValue{
                 \\        .kind = ast.SimpleValueKind.number,
-                \\        .id = string_interner.StringId(1),
+                \\        .id = string_interner.StringId(0),
                 \\    },
                 \\}
             ),
@@ -452,7 +452,7 @@ test "should parse primary symbol type" {
                 \\ast.Node{
                 \\    .simple_type = ast.Node.SimpleValue{
                 \\        .kind = ast.SimpleValueKind.bigint,
-                \\        .id = string_interner.StringId(1),
+                \\        .id = string_interner.StringId(0),
                 \\    },
                 \\}
             ),
@@ -465,7 +465,7 @@ test "should parse primary symbol type" {
                 \\ast.Node{
                 \\    .simple_type = ast.Node.SimpleValue{
                 \\        .kind = ast.SimpleValueKind.string,
-                \\        .id = string_interner.StringId(1),
+                \\        .id = string_interner.StringId(0),
                 \\    },
                 \\}
             ),
@@ -478,7 +478,7 @@ test "should parse primary symbol type" {
                 \\ast.Node{
                 \\    .simple_type = ast.Node.SimpleValue{
                 \\        .kind = ast.SimpleValueKind.boolean,
-                \\        .id = string_interner.StringId(1),
+                \\        .id = string_interner.StringId(0),
                 \\    },
                 \\}
             ),
@@ -491,7 +491,7 @@ test "should parse primary symbol type" {
                 \\ast.Node{
                 \\    .simple_type = ast.Node.SimpleValue{
                 \\        .kind = ast.SimpleValueKind.null,
-                \\        .id = string_interner.StringId(1),
+                \\        .id = string_interner.StringId(0),
                 \\    },
                 \\}
             ),
@@ -504,7 +504,7 @@ test "should parse primary symbol type" {
                 \\ast.Node{
                 \\    .simple_type = ast.Node.SimpleValue{
                 \\        .kind = ast.SimpleValueKind.undefined,
-                \\        .id = string_interner.StringId(1),
+                \\        .id = string_interner.StringId(0),
                 \\    },
                 \\}
             ),
@@ -517,7 +517,7 @@ test "should parse primary symbol type" {
                 \\ast.Node{
                 \\    .simple_type = ast.Node.SimpleValue{
                 \\        .kind = ast.SimpleValueKind.void,
-                \\        .id = string_interner.StringId(1),
+                \\        .id = string_interner.StringId(0),
                 \\    },
                 \\}
             ),
@@ -530,7 +530,7 @@ test "should parse primary symbol type" {
                 \\ast.Node{
                 \\    .simple_type = ast.Node.SimpleValue{
                 \\        .kind = ast.SimpleValueKind.any,
-                \\        .id = string_interner.StringId(1),
+                \\        .id = string_interner.StringId(0),
                 \\    },
                 \\}
             ),
@@ -543,7 +543,7 @@ test "should parse primary symbol type" {
                 \\ast.Node{
                 \\    .simple_type = ast.Node.SimpleValue{
                 \\        .kind = ast.SimpleValueKind.unknown,
-                \\        .id = string_interner.StringId(1),
+                \\        .id = string_interner.StringId(0),
                 \\    },
                 \\}
             ),
@@ -625,7 +625,7 @@ test "should parse generic type" {
     try t.expectASTSnapshot(node, snap(@src(),
         \\ast.Node{
         \\    .generic_type = ast.Node.GenericType{
-        \\        .name = string_interner.StringId(2),
+        \\        .name = string_interner.StringId(1),
         \\        .params = [_]ast.Node.Index{
         \\            ast.Node.Index(0)
         \\        },
@@ -638,7 +638,7 @@ test "should parse generic type" {
         \\ast.Node{
         \\    .simple_type = ast.Node.SimpleValue{
         \\        .kind = ast.SimpleValueKind.number,
-        \\        .id = string_interner.StringId(1),
+        \\        .id = string_interner.StringId(0),
         \\    },
         \\}
     ));
@@ -657,7 +657,7 @@ test "should parse generic type with multiple params" {
     try t.expectASTSnapshot(node, snap(@src(),
         \\ast.Node{
         \\    .generic_type = ast.Node.GenericType{
-        \\        .name = string_interner.StringId(3),
+        \\        .name = string_interner.StringId(2),
         \\        .params = [_]ast.Node.Index{
         \\            ast.Node.Index(0), 
         \\            ast.Node.Index(1)
@@ -680,7 +680,7 @@ test "should parse nested generic type" {
     try t.expectASTSnapshot(node, snap(@src(),
         \\ast.Node{
         \\    .generic_type = ast.Node.GenericType{
-        \\        .name = string_interner.StringId(2),
+        \\        .name = string_interner.StringId(1),
         \\        .params = [_]ast.Node.Index{
         \\            ast.Node.Index(1)
         \\        },
@@ -692,7 +692,7 @@ test "should parse nested generic type" {
     try t.expectASTSnapshot(t.parser.getNode(node.?).generic_type.params[0], snap(@src(),
         \\ast.Node{
         \\    .generic_type = ast.Node.GenericType{
-        \\        .name = string_interner.StringId(2),
+        \\        .name = string_interner.StringId(1),
         \\        .params = [_]ast.Node.Index{
         \\            ast.Node.Index(0)
         \\        },
@@ -959,7 +959,7 @@ test "should parse type identifier" {
         \\ast.Node{
         \\    .simple_type = ast.Node.SimpleValue{
         \\        .kind = ast.SimpleValueKind.identifier,
-        \\        .id = string_interner.StringId(1),
+        \\        .id = string_interner.StringId(0),
         \\    },
         \\}
     ));

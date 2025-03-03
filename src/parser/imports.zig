@@ -250,7 +250,7 @@ test "should parse simple import statement" {
     try t.expectASTSnapshot(node, snap(@src(),
         \\ast.Node{
         \\    .import = ast.Node.Import{
-        \\        .simple = string_interner.StringId(1),
+        \\        .simple = string_interner.StringId(0),
         \\    },
         \\}
     ));
@@ -273,7 +273,7 @@ test "should parse default import statement" {
         \\            .bindings = [_]ast.Node.Index{
         \\                ast.Node.Index(0)
         \\            },
-        \\            .path = string_interner.StringId(2),
+        \\            .path = string_interner.StringId(1),
         \\        },
         \\    },
         \\}
@@ -284,7 +284,7 @@ test "should parse default import statement" {
     try t.expectASTSnapshot(full_import.bindings[0], snap(@src(),
         \\ast.Node{
         \\    .import_binding = ast.Node.ImportBinding{
-        \\        .default = string_interner.StringId(1),
+        \\        .default = string_interner.StringId(0),
         \\    },
         \\}
     ));
@@ -307,7 +307,7 @@ test "should parse namespace import statement" {
         \\            .bindings = [_]ast.Node.Index{
         \\                ast.Node.Index(0)
         \\            },
-        \\            .path = string_interner.StringId(2),
+        \\            .path = string_interner.StringId(1),
         \\        },
         \\    },
         \\}
@@ -318,7 +318,7 @@ test "should parse namespace import statement" {
     try t.expectASTSnapshot(full_import.bindings[0], snap(@src(),
         \\ast.Node{
         \\    .import_binding = ast.Node.ImportBinding{
-        \\        .namespace = string_interner.StringId(1),
+        \\        .namespace = string_interner.StringId(0),
         \\    },
         \\}
     ));
@@ -353,7 +353,7 @@ test "should parse named import statement" {
         \\            .bindings = [_]ast.Node.Index{
         \\                ast.Node.Index(2)
         \\            },
-        \\            .path = string_interner.StringId(3),
+        \\            .path = string_interner.StringId(2),
         \\        },
         \\    },
         \\}
@@ -377,7 +377,7 @@ test "should parse named import statement" {
     try t.expectASTSnapshot(named_bindings[0], snap(@src(),
         \\ast.Node{
         \\    .binding_decl = ast.Node.BindingDecl{
-        \\        .name = string_interner.StringId(1),
+        \\        .name = string_interner.StringId(0),
         \\        .alias = string_interner.StringId.none,
         \\    },
         \\}
@@ -387,7 +387,7 @@ test "should parse named import statement" {
     try t.expectASTSnapshot(named_bindings[1], snap(@src(),
         \\ast.Node{
         \\    .binding_decl = ast.Node.BindingDecl{
-        \\        .name = string_interner.StringId(2),
+        \\        .name = string_interner.StringId(1),
         \\        .alias = string_interner.StringId.none,
         \\    },
         \\}
@@ -411,7 +411,7 @@ test "should parse named bindings with aliases in import statement" {
         \\            .bindings = [_]ast.Node.Index{
         \\                ast.Node.Index(2)
         \\            },
-        \\            .path = string_interner.StringId(5),
+        \\            .path = string_interner.StringId(4),
         \\        },
         \\    },
         \\}
@@ -435,8 +435,8 @@ test "should parse named bindings with aliases in import statement" {
     try t.expectASTSnapshot(named_bindings[0], snap(@src(),
         \\ast.Node{
         \\    .binding_decl = ast.Node.BindingDecl{
-        \\        .name = string_interner.StringId(1),
-        \\        .alias = string_interner.StringId(2),
+        \\        .name = string_interner.StringId(0),
+        \\        .alias = string_interner.StringId(1),
         \\    },
         \\}
     ));
@@ -445,8 +445,8 @@ test "should parse named bindings with aliases in import statement" {
     try t.expectASTSnapshot(named_bindings[1], snap(@src(),
         \\ast.Node{
         \\    .binding_decl = ast.Node.BindingDecl{
-        \\        .name = string_interner.StringId(3),
-        \\        .alias = string_interner.StringId(4),
+        \\        .name = string_interner.StringId(2),
+        \\        .alias = string_interner.StringId(3),
         \\    },
         \\}
     ));
@@ -506,7 +506,7 @@ test "should parse default import and namespace binding" {
         \\                ast.Node.Index(0), 
         \\                ast.Node.Index(1)
         \\            },
-        \\            .path = string_interner.StringId(3),
+        \\            .path = string_interner.StringId(2),
         \\        },
         \\    },
         \\}
@@ -517,7 +517,7 @@ test "should parse default import and namespace binding" {
     try t.expectASTSnapshot(full_import.bindings[0], snap(@src(),
         \\ast.Node{
         \\    .import_binding = ast.Node.ImportBinding{
-        \\        .default = string_interner.StringId(1),
+        \\        .default = string_interner.StringId(0),
         \\    },
         \\}
     ));
@@ -526,7 +526,7 @@ test "should parse default import and namespace binding" {
     try t.expectASTSnapshot(full_import.bindings[1], snap(@src(),
         \\ast.Node{
         \\    .import_binding = ast.Node.ImportBinding{
-        \\        .namespace = string_interner.StringId(2),
+        \\        .namespace = string_interner.StringId(1),
         \\    },
         \\}
     ));
@@ -550,7 +550,7 @@ test "should parse default import and named binding" {
         \\                ast.Node.Index(0), 
         \\                ast.Node.Index(2)
         \\            },
-        \\            .path = string_interner.StringId(3),
+        \\            .path = string_interner.StringId(2),
         \\        },
         \\    },
         \\}
@@ -561,7 +561,7 @@ test "should parse default import and named binding" {
     try t.expectASTSnapshot(full_import.bindings[0], snap(@src(),
         \\ast.Node{
         \\    .import_binding = ast.Node.ImportBinding{
-        \\        .default = string_interner.StringId(1),
+        \\        .default = string_interner.StringId(0),
         \\    },
         \\}
     ));
@@ -570,7 +570,7 @@ test "should parse default import and named binding" {
     try t.expectASTSnapshot(full_import.bindings[0], snap(@src(),
         \\ast.Node{
         \\    .import_binding = ast.Node.ImportBinding{
-        \\        .default = string_interner.StringId(1),
+        \\        .default = string_interner.StringId(0),
         \\    },
         \\}
     ));
@@ -650,7 +650,7 @@ test "should parse export statement with named bindings" {
         \\                ast.Node.Index(0), 
         \\                ast.Node.Index(1)
         \\            },
-        \\            .path = string_interner.StringId(3),
+        \\            .path = string_interner.StringId(2),
         \\        },
         \\    },
         \\}
@@ -661,7 +661,7 @@ test "should parse export statement with named bindings" {
     try t.expectASTSnapshot(export_from.from.bindings[0], snap(@src(),
         \\ast.Node{
         \\    .binding_decl = ast.Node.BindingDecl{
-        \\        .name = string_interner.StringId(1),
+        \\        .name = string_interner.StringId(0),
         \\        .alias = string_interner.StringId.none,
         \\    },
         \\}
@@ -671,7 +671,7 @@ test "should parse export statement with named bindings" {
     try t.expectASTSnapshot(export_from.from.bindings[1], snap(@src(),
         \\ast.Node{
         \\    .binding_decl = ast.Node.BindingDecl{
-        \\        .name = string_interner.StringId(2),
+        \\        .name = string_interner.StringId(1),
         \\        .alias = string_interner.StringId.none,
         \\    },
         \\}
@@ -696,7 +696,7 @@ test "should parse export statement with aliased bindings" {
         \\                ast.Node.Index(0), 
         \\                ast.Node.Index(1)
         \\            },
-        \\            .path = string_interner.StringId(5),
+        \\            .path = string_interner.StringId(4),
         \\        },
         \\    },
         \\}
@@ -707,8 +707,8 @@ test "should parse export statement with aliased bindings" {
     try t.expectASTSnapshot(export_from.bindings[0], snap(@src(),
         \\ast.Node{
         \\    .binding_decl = ast.Node.BindingDecl{
-        \\        .name = string_interner.StringId(1),
-        \\        .alias = string_interner.StringId(2),
+        \\        .name = string_interner.StringId(0),
+        \\        .alias = string_interner.StringId(1),
         \\    },
         \\}
     ));
@@ -717,8 +717,8 @@ test "should parse export statement with aliased bindings" {
     try t.expectASTSnapshot(export_from.bindings[1], snap(@src(),
         \\ast.Node{
         \\    .binding_decl = ast.Node.BindingDecl{
-        \\        .name = string_interner.StringId(3),
-        \\        .alias = string_interner.StringId(4),
+        \\        .name = string_interner.StringId(2),
+        \\        .alias = string_interner.StringId(3),
         \\    },
         \\}
     ));
@@ -805,7 +805,7 @@ test "should parse from all export statement" {
         \\    .export = ast.Node.Export{
         \\        .from_all = ast.Node.ExportAll{
         \\            .alias = string_interner.StringId.none,
-        \\            .path = string_interner.StringId(1),
+        \\            .path = string_interner.StringId(0),
         \\        },
         \\    },
         \\}
@@ -850,8 +850,8 @@ test "should parse from all export statement with alias" {
         \\ast.Node{
         \\    .export = ast.Node.Export{
         \\        .from_all = ast.Node.ExportAll{
-        \\            .alias = string_interner.StringId(1),
-        \\            .path = string_interner.StringId(2),
+        \\            .alias = string_interner.StringId(0),
+        \\            .path = string_interner.StringId(1),
         \\        },
         \\    },
         \\}

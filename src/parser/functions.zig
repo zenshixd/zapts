@@ -313,7 +313,7 @@ test "should parse function statement" {
     try t.expectASTSnapshot(function_decl.params[0], snap(@src(),
         \\ast.Node{
         \\    .function_param = ast.Node.FunctionParam{
-        \\        .identifier = string_interner.StringId(1),
+        \\        .identifier = string_interner.StringId(0),
         \\        .type = ast.Node.Index(0),
         \\    },
         \\}
@@ -323,7 +323,7 @@ test "should parse function statement" {
     try t.expectASTSnapshot(function_decl.params[1], snap(@src(),
         \\ast.Node{
         \\    .function_param = ast.Node.FunctionParam{
-        \\        .identifier = string_interner.StringId(3),
+        \\        .identifier = string_interner.StringId(2),
         \\        .type = ast.Node.Index.empty,
         \\    },
         \\}
@@ -333,7 +333,7 @@ test "should parse function statement" {
     try t.expectASTSnapshot(function_decl.params[2], snap(@src(),
         \\ast.Node{
         \\    .function_param = ast.Node.FunctionParam{
-        \\        .identifier = string_interner.StringId(4),
+        \\        .identifier = string_interner.StringId(3),
         \\        .type = ast.Node.Index(3),
         \\    },
         \\}
@@ -354,7 +354,7 @@ test "should parse function statement with name" {
         \\ast.Node{
         \\    .function_decl = ast.Node.FunctionDeclaration{
         \\        .flags = 0,
-        \\        .name = string_interner.StringId(1),
+        \\        .name = string_interner.StringId(0),
         \\        .params = [_]ast.Node.Index{
         \\            ast.Node.Index(1), 
         \\            ast.Node.Index(2), 
