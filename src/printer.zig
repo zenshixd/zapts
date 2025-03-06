@@ -1,14 +1,17 @@
 const std = @import("std");
+const assert = std.debug.assert;
+const Allocator = std.mem.Allocator;
+
 const builtin = @import("builtin");
 const AST = @import("ast.zig");
 const Token = @import("consts.zig").Token;
-const newline = @import("consts.zig").newline;
 
 const Lexer = @import("lexer.zig");
 const Parser = @import("parser.zig");
 const needsSemicolon = Parser.needsSemicolon;
+const StringInterner = @import("string_interner.zig");
 
-const assert = std.debug.assert;
+const newline = "\n";
 
 pub const OutputFiles = struct {
     filename: []const u8,
@@ -17,105 +20,165 @@ pub const OutputFiles = struct {
 
 const Printer = @This();
 
-const WorkerItem = union(enum) {
-    node: AST.Node.Index,
-    token: Token.Index,
-    text: []const u8,
-    indent_up: void,
-    indent_down: void,
-    indent: void,
-
-    pub fn format(self: WorkerItem, comptime _: []const u8, _: anytype, writer: anytype) !void {
-        try writer.writeAll("WorkerItem{");
-        switch (self) {
-            .text => {
-                try writer.writeAll("text: ");
-                try writer.writeAll(self.text);
-            },
-            .token => {
-                try writer.writeAll("token: ");
-                try std.fmt.format(writer, "{d}", .{self.token});
-            },
-            .node => {
-                try writer.writeAll("node: ");
-                try std.fmt.format(writer, "{d}", .{self.node});
-            },
-            .indent => try writer.writeAll("indent"),
-            .indent_up => try writer.writeAll("indent_up"),
-            .indent_down => try writer.writeAll("indent_down"),
-        }
-        try writer.writeAll("}\n");
-    }
+const PrinterNodeId = enum(u32) {
+    none = std.math.maxInt(u32),
+    _,
 };
 
-const WorkerQueue = struct {
+const PrinterNode = struct {
+    const Data = union(enum) {
+        node: AST.Node.Index,
+        token: Token.Index,
+        text: []const u8,
+        indent_up: void,
+        indent_down: void,
+        indent: void,
+
+        pub fn format(self: PrinterNode, comptime _: []const u8, _: anytype, writer: anytype) !void {
+            try writer.writeAll("WorkerItem{");
+            switch (self) {
+                .text => {
+                    try writer.writeAll("text: ");
+                    try writer.writeAll(self.text);
+                },
+                .token => {
+                    try writer.writeAll("token: ");
+                    try std.fmt.format(writer, "{d}", .{self.token});
+                },
+                .node => {
+                    try writer.writeAll("node: ");
+                    try std.fmt.format(writer, "{d}", .{self.node});
+                },
+                .indent => try writer.writeAll("indent"),
+                .indent_up => try writer.writeAll("indent_up"),
+                .indent_down => try writer.writeAll("indent_down"),
+            }
+            try writer.writeAll("}\n");
+        }
+    };
+
+    data: Data,
+    next: PrinterNodeId = .none,
+    prev: PrinterNodeId = .none,
+};
+
+const PrinterQueue = struct {
     const Self = @This();
-    const WorkerQueueList = std.DoublyLinkedList(WorkerItem);
 
-    list: WorkerQueueList = .{},
-    allocator: std.mem.Allocator,
+    nodes: std.ArrayListUnmanaged(PrinterNode) = .empty,
+    first: PrinterNodeId = .none,
+    last: PrinterNodeId = .none,
 
-    pub fn append(self: *Self, item: WorkerItem) !void {
-        self.list.append(try self.createNode(item));
+    pub fn len(self: PrinterQueue) usize {
+        return self.nodes.len;
     }
 
-    pub fn prepend(self: *Self, item: WorkerItem) !void {
-        self.list.prepend(try self.createNode(item));
+    pub fn deinit(self: *Self, allocator: Allocator) void {
+        self.nodes.deinit(allocator);
     }
 
-    pub fn popFirst(self: *Self) ?*WorkerQueueList.Node {
-        return self.list.popFirst();
+    pub fn getNode(self: PrinterQueue, node_id: PrinterNodeId) PrinterNode {
+        assert(node_id != .none);
+        return self.nodes[@intFromEnum(node_id)];
+    }
+
+    pub fn getNodePtr(self: PrinterQueue, node_id: PrinterNodeId) *PrinterNode {
+        assert(node_id != .none);
+        return &self.nodes[@intFromEnum(node_id)];
+    }
+
+    pub fn append(self: *Self, allocator: Allocator, new_node: PrinterNode) !void {
+        if (self.last != .none) {
+            self.insertAfter(allocator, self.last, new_node);
+        } else {
+            self.prepend(new_node);
+        }
+    }
+
+    pub fn prepend(self: *Self, allocator: Allocator, new_node: PrinterNode) !void {
+        if (self.first != .none) {
+            self.insertBefore(allocator, self.first, new_node);
+        } else {
+            const new_node_id: PrinterNodeId = @enumFromInt(self.nodes.len);
+            self.first = new_node_id;
+            self.last = new_node_id;
+            new_node.prev = .none;
+            new_node.next = .none;
+            try self.nodes.append(allocator, new_node);
+        }
+    }
+
+    pub fn popFirst(self: *Self) ?PrinterNode {
+        if (self.first == .none) {
+            return null;
+        }
+
+        const item = self.getItem(self.first);
+        self.first = item.next;
+        return item;
     }
 
     pub fn prependMany(self: *Self, other: *Self) void {
+        _ = &self;
         if (other.list.len == 0) {
             return;
         }
-
-        const current_first = self.list.first;
-        self.list.first = other.list.first;
-        if (self.list.last == null) {
-            self.list.last = other.list.last;
-        } else {
-            other.list.last.?.next = current_first;
-        }
-        self.list.len += other.list.len;
-
-        other.list.first = null;
-        other.list.last = null;
-        other.list.len = 0;
     }
 
-    fn createNode(self: *Self, item: WorkerItem) !*WorkerQueueList.Node {
-        const node = try self.allocator.create(WorkerQueueList.Node);
-        node.data = item;
-        node.next = null;
-        node.prev = null;
-        return node;
+    pub fn insertAfter(self: *Self, allocator: Allocator, node_id: PrinterNodeId, new_node: PrinterNode) !void {
+        const new_node_id = self.nodes.len;
+        new_node.prev = node_id;
+        const node = self.getNodePtr(node_id);
+        if (node.next != .none) {
+            const next_node = self.getNodePtr(node.next);
+            // Intermediate node.
+            new_node.next = node_id;
+            next_node.prev = new_node_id;
+        } else {
+            // Last element of the list.
+            new_node.next = null;
+            self.last = new_node_id;
+        }
+
+        node.next = new_node_id;
+        try self.nodes.append(allocator, new_node);
+    }
+
+    pub fn insertBefore(self: *Self, allocator: Allocator, node_id: PrinterNodeId, new_node: PrinterNode) !void {
+        const new_node_id = self.nodes.len;
+        new_node.next = node_id;
+        const node = self.getNodePtr(node_id);
+        if (node.prev != .none) {
+            // Intermediate node.
+            const prev_node = self.getNodePtr(node.prev);
+            new_node.prev = node.prev;
+            prev_node.next = new_node_id;
+        } else {
+            // First element of the list.
+            new_node.prev = null;
+            self.first = new_node_id;
+        }
+
+        node.prev = new_node_id;
+        try self.nodes.append(allocator, new_node);
     }
 };
 
-gpa: std.mem.Allocator,
-arena: std.heap.ArenaAllocator,
+gpa: Allocator,
 filename: []const u8,
-buffer: [:0]const u8,
-tokens: []const Token,
-output: std.ArrayList(u8),
-queue: WorkerQueue,
-local_queue: WorkerQueue,
+output: std.ArrayListUnmanaged(u8) = .empty,
+ast: AST,
+string_interner: StringInterner,
+queue: PrinterQueue = .empty,
+local_queue: PrinterQueue = .empty,
 indent: usize = 0,
 
-pub fn init(allocator: std.mem.Allocator, filename: []const u8, buffer: [:0]const u8, parser: *Parser) Printer {
+pub fn init(allocator: Allocator, filename: []const u8, ast: AST, string_interner: StringInterner) Printer {
     return .{
         .filename = filename,
-        .buffer = buffer,
         .gpa = allocator,
-        .arena = std.heap.ArenaAllocator.init(allocator),
-        .tokens = parser.tokens,
-        .pool = parser.pool,
-        .output = std.ArrayList(u8).init(allocator),
-        .queue = .{ .allocator = allocator },
-        .local_queue = .{ .allocator = allocator },
+        .ast = ast,
+        .string_interner = string_interner,
     };
 }
 
@@ -144,7 +207,7 @@ pub fn print(self: *Printer) !OutputFiles {
     };
 }
 
-fn processWorkerItem(self: *Printer, item: WorkerItem) !void {
+fn processWorkerItem(self: *Printer, item: PrinterNode) !void {
     switch (item) {
         .text => |text| try self.output.appendSlice(text),
         .token => |token| try self.output.appendSlice(self.getTokenValue(token)),
@@ -825,7 +888,7 @@ fn printBinaryOperator(node: AST.Node) []const u8 {
     };
 }
 
-pub fn getOutputFile(allocator: std.mem.Allocator, filename: []const u8) ![]const u8 {
+pub fn getOutputFile(allocator: Allocator, filename: []const u8) ![]const u8 {
     if (!std.mem.endsWith(u8, filename, ".ts")) {
         return allocator.dupe(u8, filename);
     }
@@ -846,4 +909,23 @@ test "getOutputFile" {
     defer allocator.free(output_filename);
 
     try std.testing.expectEqualStrings("test.js", output_filename);
+}
+
+test "should print identifiers" {
+    const text =
+        \\b;
+    ;
+    var printer = Printer.init(std.testing.allocator, "test.ts", AST.Node.empty, StringInterner.init(std.testing.allocator));
+    defer printer.deinit();
+
+    const root = try printer.print(text);
+    defer printer.pool.deinit(std.testing.allocator);
+
+    try std.testing.expectEqualStrings(
+        \\const a = b;
+        \\const x = a;
+        \\const y;
+        \\a;
+        \\
+    , printer.output.items);
 }
